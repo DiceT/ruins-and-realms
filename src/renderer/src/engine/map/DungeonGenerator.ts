@@ -406,37 +406,39 @@ export class DungeonGenerator {
     }
   }
 
-  public placeStartingRoom(x: number, y: number, w: number, h: number): boolean {
-    // Rule 98: Bottom edge must touch entrance
-    // entrance is at this.entrance.x, this.entrance.y
-    // Room bottom row is y + h - 1.
-    // So (y + h - 1) + 1 should be entrance.y => y + h = entrance.y
-    if (y + h !== this.entrance.y) {
-      console.warn('[DungeonGenerator] Room bottom must touch entrance row')
-      return false
-    }
+  /* -------------------------------------------------------------------------- */
+  /*                             Room Helper Methods                            */
+  /* -------------------------------------------------------------------------- */
 
-    // Rule 99: Entrance tile must be directly below one of the room's bottom tiles
-    // Entrance x is this.entrance.x
-    // Room spans x to x + w - 1
-    if (this.entrance.x < x || this.entrance.x >= x + w) {
-      console.warn('[DungeonGenerator] Room must span over the entrance')
-      return false
+  /**
+   * Helper to classify a room based on dimensions and area.
+   */
+  private classifyRoom(w: number, h: number): RoomClassification {
+    const area = w * h
+    if (w === 1 || h === 1) {
+      return 'corridor'
+    } else if (area <= 6) {
+      return 'small'
+    } else if (area >= 32) {
+      return 'large'
+    } else {
+      return 'medium'
     }
+  }
 
-    if (!this.canPlaceRoom(x, y, w, h)) {
-      console.warn('[DungeonGenerator] Room does not fit')
-      return false
-    }
+  /**
+   * Centralized method to create a room, update tiles, and add to the rooms list.
+   */
+  private createRoom(x: number, y: number, w: number, h: number, type: 'start' | 'normal'): Room {
+    const roomId = `room_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
+    const classification = type === 'start' ? 'starter' : this.classifyRoom(w, h)
 
-    // Place it
-    const roomId = `room_${Date.now()}`
     const newRoom: Room = {
       id: roomId,
       x, y, width: w, height: h,
       exits: [],
-      type: 'start',
-      classification: 'starter'
+      type,
+      classification
     }
     
     this.rooms.push(newRoom)
@@ -452,6 +454,30 @@ export class DungeonGenerator {
         this.tiles[ty][tx].roomId = roomId
       }
     }
+
+    return newRoom
+  }
+
+  public placeStartingRoom(x: number, y: number, w: number, h: number): boolean {
+    // Rule 98: Bottom edge must touch entrance
+    if (y + h !== this.entrance.y) {
+      console.warn('[DungeonGenerator] Room bottom must touch entrance row')
+      return false
+    }
+
+    // Rule 99: Entrance tile must be directly below one of the room's bottom tiles
+    if (this.entrance.x < x || this.entrance.x >= x + w) {
+      console.warn('[DungeonGenerator] Room must span over the entrance')
+      return false
+    }
+
+    if (!this.canPlaceRoom(x, y, w, h)) {
+      console.warn('[DungeonGenerator] Room does not fit')
+      return false
+    }
+
+    // Use Helper
+    this.createRoom(x, y, w, h, 'start')
 
     console.log(`[DungeonGenerator] Placed Starting Room at ${x},${y} (${w}x${h})`)
     return true
@@ -485,49 +511,14 @@ export class DungeonGenerator {
     }
     if (!exit || !parentRoom) return null
 
-    // Create the new room
-    const roomId = `room_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
-    
-    // Calculate classification based on dimensions and area
-    let classification: RoomClassification
-    const area = w * h
-    if (w === 1 || h === 1) {
-      classification = 'corridor'
-    } else if (area <= 6) {
-      classification = 'small'
-    } else if (area >= 32) {
-      classification = 'large'
-    } else {
-      classification = 'medium'
-    }
-    
-    const newRoom: Room = {
-      id: roomId,
-      x,
-      y,
-      width: w,
-      height: h,
-      type: 'normal',
-      exits: [],
-      classification
-    }
-    this.rooms.push(newRoom)
-
-    // Mark all tiles as floor
-    for (let ry = 0; ry < h; ry++) {
-      for (let rx = 0; rx < w; rx++) {
-        const tx = x + rx
-        const ty = y + ry
-        this.tiles[ty][tx].type = 'active'
-        this.tiles[ty][tx].roomId = roomId
-      }
-    }
+    // Use Helper
+    const newRoom = this.createRoom(x, y, w, h, 'normal')
 
     // Connect the exit to this room
-    exit.connectedRoomId = roomId
+    exit.connectedRoomId = newRoom.id
 
     console.log(`[DungeonGenerator] Placed New Room at ${x},${y} (${w}x${h}), connected to exit ${exitId}`)
-    return roomId
+    return newRoom.id
   }
 
   /**
