@@ -107,7 +107,7 @@ export class MapEngine {
     }
 
     // 4. Render Loop
-    let lastLog = 0
+    // let lastLog = 0
     this.tickerCallback = () => {
       if (!this.destroyed) {
         // Track mouse to update tile hover (SAFENED)

@@ -1,4 +1,7 @@
+import { diceEngine } from '../../integrations/anvil-dice-app'
 import { DungeonState, Exit, Room, RoomClassification, Tile, TileType } from './types.js'
+
+// ... existing imports
 
 export class DungeonGenerator {
   private width: number
@@ -6,6 +9,7 @@ export class DungeonGenerator {
   private tiles: Tile[][]
   private rooms: Room[]
   private entrance: { x: number; y: number }
+
   /* -------------------------------------------------------------------------- */
   /*                             New Room Generation                            */
   /* -------------------------------------------------------------------------- */
@@ -15,6 +19,7 @@ export class DungeonGenerator {
    * Checks for map boundaries and existing obstacles (Dead/Active tiles).
    */
   public calculateMaxDimensions(exitId: string): { maxW: number; maxH: number } {
+    // ... (This method remains synchronous as it is just logic)
     let exit: Exit | null = null
     let parentRoom: Room | null = null
 
@@ -40,27 +45,30 @@ export class DungeonGenerator {
     if (direction === 'left') dx = -1
     if (direction === 'right') dx = 1
 
+    // Helper: Valid build space is 'live' OR 'dead' (buffer), but NOT 'active' (wall) or OOB
+    const isValid = (tx: number, ty: number) => {
+      // Bounds check (including map border where x<2 etc which are dead)
+      if (tx < 2 || ty < 2 || tx >= this.width - 2 || ty >= this.height - 2) return false
+      
+      const t = this.tiles[ty][tx]
+      // We can build on 'live' (empty) or 'dead' (buffer).
+      // We CANNOT build on 'active' (existing room/wall).
+      return t.type !== 'active'
+    }
+
     // Scan primary direction
     // Start adjacent to exit
     let cx = ex + dx
     let cy = ey + dy
     
     while (cx >= 0 && cy >= 0 && cx < this.width && cy < this.height) {
-      const tile = this.tiles[cy][cx]
-      // Check for obstacle (anything NOT void). 
-      // Note: Dead zones are obstacles.
-      if (tile.type !== 'live') break
+      if (!isValid(cx, cy)) break
       maxDepth++
       cx += dx
       cy += dy
     }
 
     // Check secondary width (perpendicular to extension)
-    // We scan both perpendicular directions from the exit's projected position?
-    // User asked for "Maximum X and Y". 
-    // This implies determining the MAX possible width/height if we positioned the room optimally.
-    // So we scan both sides perpendicular to the exit.
-    
     let pdx = 0, pdy = 0 // Perpendicular delta
     if (dx !== 0) { // Moving Horizontally -> Scan Vertically
        pdy = 1 
@@ -72,16 +80,7 @@ export class DungeonGenerator {
     let maxPerpPos = 0
     let px = ex + dx + pdx
     let py = ey + dy + pdy
-    // Note: We check the tile adjacent to the "start" of the new room (ex+dx), not the exit tile itself?
-    // Actually, checking the line immediately adjacent to the exit (e.g. exit+dx) gives the constraint for the "entrance wall" of the new room.
-    // The room must be at least 1 tile deep. So verifying the first layer of depth is crucial.
-    // But a room is a rectangle. It might be blocked further out.
-    // "Calculate the maximum X and Y a room can be".
-    // This is complex for a rectangle.
-    // WE SIMPLIFY: Max Secondary Dimension is calculated based on the available space at the INTERFACE (depth 1).
-    // This gives a loose upper bound. The placement logic might fail if it narrows further out, but we satisfy "clamp high end".
     
-    // Reset to just outside exit
     const startX = ex + dx
     const startY = ey + dy
 
@@ -89,7 +88,7 @@ export class DungeonGenerator {
     px = startX + pdx
     py = startY + pdy
     while (px >= 0 && py >= 0 && px < this.width && py < this.height) {
-       if (this.tiles[py][px].type !== 'live') break
+       if (!isValid(px, py)) break
        maxPerpPos++
        px += pdx
        py += pdy
@@ -100,7 +99,7 @@ export class DungeonGenerator {
     px = startX - pdx
     py = startY - pdy
     while (px >= 0 && py >= 0 && px < this.width && py < this.height) {
-       if (this.tiles[py][px].type !== 'live') break
+       if (!isValid(px, py)) break
        maxPerpNeg++
        px -= pdx
        py -= pdy
@@ -109,37 +108,57 @@ export class DungeonGenerator {
     const maxSecondary = 1 + maxPerpPos + maxPerpNeg
 
     if (dx !== 0) {
-      // Horizontal Exit -> Depth is Width (Primary), perp is Height
-      // Wait, if exiting Right (dx=1), Depth is X (Width).
       return { maxW: maxDepth, maxH: maxSecondary }
     } else {
-      // Vertical Exit -> Depth is Y (Height), perp is Width
       return { maxW: maxSecondary, maxH: maxDepth }
     }
   }
 
-  public rollNewRoomAttributes(exitId: string): { 
+  public async rollNewRoomAttributes(exitId: string): Promise<{ 
      width: number, 
      height: number, 
      type: 'Corridor' | 'Small' | 'Medium' | 'Large',
      rolls: string[],
      maxW: number,
      maxH: number
-  } {
+  }> {
     const { maxW, maxH } = this.calculateMaxDimensions(exitId)
     const logs: string[] = []
 
-    const rollDie = (): number => Math.floor(Math.random() * 6) + 1
+    // Roll 2d8 for initial dimensions via Dice Engine
+    const result = await diceEngine.roll('2d8')
+    
+    // Parse individual dice values
+    // We expect 2 dice in the breakdown
+    // If something fails, default to 1 (safe fallback)
+    let w = 1
+    let h = 1
+    
+    if (result.breakdown && result.breakdown.length >= 2) {
+       w = result.breakdown[0].value
+       h = result.breakdown[1].value
+    } else {
+       // Fallback logic if breakdown fails
+       w = Math.floor(result.total / 2) || 1
+       h = (result.total - w) || 1
+    }
 
-    let w = rollDie()
-    let h = rollDie()
-    logs.push(`Rolled: ${w} x ${h}`)
+    logs.push(`Rolled 2d8: ${w} x ${h}`)
 
     // Check Doubles
     if (w === h) {
-      const w2 = rollDie()
-      const h2 = rollDie()
-      logs.push(`Doubles! Rolling bonus: +${w2} (W), +${h2} (H)`)
+      logs.push(`Doubles! Rolling bonus 2d8...`)
+      
+      const bonusResult = await diceEngine.roll('2d8')
+      
+      let w2 = 1
+      let h2 = 1
+      if (bonusResult.breakdown && bonusResult.breakdown.length >= 2) {
+         w2 = bonusResult.breakdown[0].value
+         h2 = bonusResult.breakdown[1].value
+      }
+
+      logs.push(`Bonus Result: +${w2} (W), +${h2} (H)`)
       w += w2
       h += h2
       logs.push(`Total before clamp: ${w} x ${h}`)
@@ -240,15 +259,25 @@ export class DungeonGenerator {
    * Part 3: Rolling for Starting Room
    * Returns the dimensions for the starting room based on 2d6 roll
    */
-  public rollStartingRoomSize(): { width: number; height: number; original: [number, number] } {
-    // 1. Roll 2 dice
-    const d1 = Math.floor(Math.random() * 6) + 1
-    const d2 = Math.floor(Math.random() * 6) + 1
+  public async rollStartingRoomSize(): Promise<{ width: number; height: number; original: [number, number] }> {
+    // 1. Roll 2 dice using Dice Engine
+    const result = await diceEngine.roll('2d8')
+    
+    let d1 = 1
+    let d2 = 1
+
+    if (result.breakdown && result.breakdown.length >= 2) {
+       d1 = result.breakdown[0].value
+       d2 = result.breakdown[1].value
+    } else {
+       d1 = Math.floor(result.total / 2) || 1
+       d2 = (result.total - d1) || 1
+    }
     
     let w = d1
     let h = d2
 
-    console.log(`[DungeonGenerator] Rolled ${d1}x${d2}`)
+    console.log(`[DungeonGenerator] Rolled ${d1}x${d2} (via DiceEngine)`)
 
     // Rule 80: 1s become 2s
     if (w === 1) w = 2
@@ -277,17 +306,22 @@ export class DungeonGenerator {
    * Checks boundaries AND that all tiles in the area are 'live'.
    */
   public canPlaceRoom(x: number, y: number, w: number, h: number): boolean {
-    // 1. Check boundaries (including dead border)
+    // 1. Check boundaries
     if (x < 0 || y < 0) return false
     if (x + w > this.width || y + h > this.height) return false
 
-    // 2. Check all tiles are 'live' (not dead or active)
+    // 2. Check tiles
     for (let ry = 0; ry < h; ry++) {
       for (let rx = 0; rx < w; rx++) {
         const tx = x + rx
         const ty = y + ry
-        if (tx < 0 || ty < 0 || tx >= this.width || ty >= this.height) return false
-        if (this.tiles[ty][tx].type !== 'live') return false
+        
+        // Map Border Check (strictly enforced)
+        if (tx < 2 || ty < 2 || tx >= this.width - 2 || ty >= this.height - 2) return false
+
+        // Collision Check: Allow 'live' (void) or 'dead' (buffer).
+        // Disallow 'active' (existing walls/rooms).
+        if (this.tiles[ty][tx].type === 'active') return false
       }
     }
 
@@ -488,14 +522,10 @@ export class DungeonGenerator {
    * Returns the room ID if successful, null otherwise.
    */
   public placeNewRoom(x: number, y: number, w: number, h: number, exitId: string): string | null {
-    // Validate all tiles are void
-    for (let ry = 0; ry < h; ry++) {
-      for (let rx = 0; rx < w; rx++) {
-        const tx = x + rx
-        const ty = y + ry
-        if (tx < 0 || ty < 0 || tx >= this.width || ty >= this.height) return null
-        if (this.tiles[ty][tx].type !== 'live') return null
-      }
+    // Validate placement using standardized logic (allows overwriting dead zones)
+    if (!this.canPlaceRoom(x, y, w, h)) {
+      console.warn(`[placeNewRoom] Failed to place room at ${x},${y} (${w}x${h}) - Collision or OOB`)
+      return null
     }
 
     // Find the exit and its parent room
@@ -654,15 +684,20 @@ export class DungeonGenerator {
   }
 
   /**
-   * Rolls for number of exits based on 1d6.
-   * 1 = 0 exits, 2-3 = 1 exit, 4-5 = 2 exits, 6 = 3 exits
+   * Rolls for number of exits based on 1d8.
+   * 1 = 0 exits, 2-4 = 1 exit, 5-7 = 2 exits, 8 = 3 exits
    */
-  public rollForExitCount(): { roll: number; exitCount: number } {
-    const roll = Math.floor(Math.random() * 6) + 1
+  public async rollForExitCount(): Promise<{ roll: number; exitCount: number }> {
+    const result = await diceEngine.roll('1d8')
+    const roll = result.total
     let exitCount = 0
+    // 1 is 0 Exits
+    // 2, 3, 4 is 1 Exit
+    // 5, 6, 7 is 2 Exits
+    // 8 is 3 Exits
     if (roll === 1) exitCount = 0
-    else if (roll <= 3) exitCount = 1
-    else if (roll <= 5) exitCount = 2
+    else if (roll <= 4) exitCount = 1
+    else if (roll <= 7) exitCount = 2
     else exitCount = 3
     return { roll, exitCount }
   }

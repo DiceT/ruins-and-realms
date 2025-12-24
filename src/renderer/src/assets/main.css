@@ -1,3 +1,37 @@
+/* Dice App Fonts */
+@font-face {
+  font-family: 'Faculty';
+  src: url('/fonts/FacultyGlyphic-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Orbitron';
+  src: url('/fonts/Orbitron-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'IMFellEnglishSC-Regular';
+  src: url('/fonts/IMFellEnglishSC-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Oxanium';
+  src: url('/fonts/Oxanium-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Teko';
+  src: url('/fonts/Teko-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Valkyrie';
+  src: url('/fonts/ValkyrieRegular-p7ZYy.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Cinzel';
+  src: url('/fonts/Cinzel-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Unica One';
+  src: url('/fonts/UnicaOne-Regular.ttf') format('truetype');
+}
+
 /* Reset and Fundamental Styles */
 * {
   box-sizing: border-box;

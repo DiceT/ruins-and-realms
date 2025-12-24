@@ -9,6 +9,12 @@ interface GameWindowProps {
   onBack?: () => void
 }
 
+import { DiceOverlay } from './DiceOverlay'
+import { DiceSettingsWrapper } from './DiceSettingsWrapper'
+import { SettingsProvider, SettingsSync, diceEngine } from '../integrations/anvil-dice-app'
+import { D8IconPanel } from './D8IconPanel'
+import diceLanding from '../assets/images/ui/dice-landing.png'
+
 export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const pixiContainerRef = useRef<HTMLDivElement>(null)
@@ -27,9 +33,12 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   // Local State for New Map Modal
   const [isNewMapModalOpen, setIsNewMapModalOpen] = useState(false)
 
+  // Local State for Dice Settings
+  const [showDiceSettings, setShowDiceSettings] = useState(false)
+
   const [mapConfig, setMapConfig] = useState<{ width: number; height: number; id: number }>({
-    width: 20,
-    height: 20,
+    width: 26,
+    height: 26,
     id: 0
   })
 
@@ -52,7 +61,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const [pendingRoom, setPendingRoom] = useState<{ width: number; height: number } | null>(null)
   const [newlyPlacedRoomId, setNewlyPlacedRoomId] = useState<string | null>(null)
   const [exitsToPlace, setExitsToPlace] = useState(0)
-  const [eligibleWalls, setEligibleWalls] = useState<{ top: boolean; bottom: boolean; left: boolean; right: boolean } | null>(null)
+  const [_eligibleWalls, setEligibleWalls] = useState<{ top: boolean; bottom: boolean; left: boolean; right: boolean } | null>(null)
+
+  // Rolling State
+  const [isRolling, setIsRolling] = useState(false)
 
   // Ref to track current newlyPlacedRoomId for use in callbacks (avoids stale closure)
   const newlyPlacedRoomIdRef = useRef<string | null>(null)
@@ -288,463 +300,581 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   }
 
   return (
-    <div
-      ref={containerRef}
-      style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}
-    >
-      <div ref={pixiContainerRef} style={{ width: '100%', height: '100%' }} />
-
-      {/* HTML Overlay UI */}
+    <SettingsProvider>
       <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '0',
-          pointerEvents: 'none',
-          zIndex: 10
-        }}
+        ref={containerRef}
+        style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}
       >
-        {/* SHOW/HIDE MAP Button */}
-        <div
-          onClick={toggleMap}
-          style={{
-            position: 'absolute',
-            left: '50px',
-            top: '20px',
-            width: '200px',
-            height: '50px',
-            backgroundColor: '#2e3f41',
-            color: '#bcd3d2',
-            fontFamily: 'IMFellEnglishSC-Regular',
-            fontSize: '24px',
-            cursor: 'pointer',
-            pointerEvents: 'auto',
-            border: '1px solid #bcd3d2',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            userSelect: 'none'
-          }}
-        >
-          {showMap ? 'HIDE MAP' : 'SHOW MAP'}
-        </div>
 
-        {/* NEW MAP Button */}
-        <div
-          onClick={() => setIsNewMapModalOpen(true)}
-          style={{
-            position: 'absolute',
-            left: '50px',
-            top: '80px',
-            width: '200px',
-            height: '50px',
-            backgroundColor: '#2e3f41',
-            color: '#bcd3d2',
-            fontFamily: 'IMFellEnglishSC-Regular',
-            fontSize: '24px',
-            cursor: 'pointer',
-            pointerEvents: 'auto',
-            border: '1px solid #bcd3d2',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            userSelect: 'none'
-          }}
-        >
-          NEW MAP
-        </div>
+        <div ref={pixiContainerRef} style={{ width: '100%', height: '100%' }} />
 
-        {/* --- Right Panel --- */}
-        <div
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: 0,
-            width: '300px',
-            height: '100%',
-            pointerEvents: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            padding: '24px',
-            boxSizing: 'border-box',
-            color: '#bcd3d2',
-            fontFamily: 'IMFellEnglishSC-Regular',
-            backgroundColor: 'rgba(20, 29, 31, 0.8)'
-          }}
-        >
-          {/* EXIT Button */}
-          <div
-            onClick={onBack}
-            style={{
-              width: '100%',
-              height: '50px',
-              backgroundColor: '#2e3f41',
-              border: '1px solid #bcd3d2',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              fontSize: '24px',
-              userSelect: 'none',
-              flexShrink: 0,
-              marginBottom: '30px'
-            }}
-          >
-            EXIT
-          </div>
-
-          <h2 style={{
-            fontSize: '28px',
-            borderBottom: '1px solid #bcd3d2',
-            margin: '0 0 20px 0',
-            paddingBottom: '10px',
-            textAlign: 'center',
-            flexShrink: 0
-          }}>
-            Dungeon Blueprint
-          </h2>
-
-          <div style={{ flexShrink: 0 }}>
-            <div style={{ fontSize: '20px', color: currentStep === 1 ? '#fff' : '#666', textAlign: 'center' }}>
-              Step 1: Place Entrance
-            </div>
-            <div style={{ fontSize: '20px', color: currentStep === 2 ? '#fff' : '#666', textAlign: 'center', marginTop: '10px' }}>
-              Step 2: Roll Room Size
-            </div>
-            <div style={{ fontSize: '20px', color: currentStep === 3 ? '#fff' : '#666', textAlign: 'center', marginTop: '10px' }}>
-              Step 3: Place Room
-            </div>
-            <div style={{ fontSize: '20px', color: currentStep === 4 ? '#fff' : '#666', textAlign: 'center', marginTop: '10px' }}>
-              Step 4: Exits ({exitCount}/3)
-            </div>
-
-            <button
-              disabled={isPlacingEntrance || currentStep !== 1}
-              onClick={() => {
-                if (mapEngineRef.current) {
-                  mapEngineRef.current.interactionState.mode = 'placing_entrance'
-                  setIsPlacingEntrance(true)
-                  addLog('Ready to place entrance. Click bottom edge.')
-                }
-              }}
-              style={{
-                display: currentStep === 1 ? 'block' : 'none',
-                width: '100%',
-                marginTop: '15px',
-                padding: '12px',
-                backgroundColor: isPlacingEntrance ? '#4a5d5e' : '#2e3f41',
-                border: '1px solid #bcd3d2',
-                color: '#bcd3d2',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontSize: '18px'
-              }}
-            >
-              {isPlacingEntrance ? 'SELECT TILE...' : 'PLACE ENTRANCE'}
-            </button>
-
-            {/* Step 2: Roll Room Size */}
-            <button
-              onClick={() => {
-                if (mapEngineRef.current) {
-                  const result = mapEngineRef.current.dungeon.rollStartingRoomSize()
-                  setPendingRoom(result)
-                  addLog(`Rolled ${result.original[0]} (X) & ${result.original[1]} (Y) -> Size: ${result.width}x${result.height}`)
-                  setCurrentStep(3)
-                }
-              }}
-              style={{
-                display: currentStep === 2 ? 'block' : 'none',
-                width: '100%',
-                marginTop: '15px',
-                padding: '12px',
-                backgroundColor: '#2e3f41',
-                border: '1px solid #bcd3d2',
-                color: '#bcd3d2',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontSize: '18px'
-              }}
-            >
-              ROLL ROOM SIZE (2d6)
-            </button>
-
-            {/* Step 3: Place Room */}
-            <button
-              disabled={isPlacingRoom || currentStep !== 3 || !pendingRoom}
-              onClick={() => {
-                if (mapEngineRef.current && pendingRoom) {
-                  mapEngineRef.current.interactionState.pendingRoomSize = { w: pendingRoom.width, h: pendingRoom.height }
-                  mapEngineRef.current.interactionState.mode = 'placing_room'
-                  setIsPlacingRoom(true)
-                  addLog('Click grid to place room.')
-                }
-              }}
-              style={{
-                display: currentStep === 3 ? 'block' : 'none',
-                width: '100%',
-                marginTop: '15px',
-                padding: '12px',
-                backgroundColor: isPlacingRoom ? '#4a5d5e' : '#2e3f41',
-                border: '1px solid #bcd3d2',
-                color: '#bcd3d2',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontSize: '18px'
-              }}
-            >
-              {isPlacingRoom ? 'SELECT TILE...' : 'PLACE ROOM'}
-            </button>
-
-            {/* Step 4: Place Exits */}
-            <button
-              disabled={isPlacingExit || currentStep !== 4}
-              onClick={() => {
-                if (mapEngineRef.current) {
-                  // Find starter room ID
-                  const rooms = mapEngineRef.current.dungeon.getState().rooms
-                  const starter = rooms.find(r => r.type === 'start')
-                  if (starter) {
-                    mapEngineRef.current.interactionState.activeRoomId = starter.id
-                    mapEngineRef.current.interactionState.mode = 'placing_exit'
-                    setIsPlacingExit(true)
-                    addLog('Click room walls to place exit.')
-                  } else {
-                    addLog('Error: No starter room found.')
-                  }
-                }
-              }}
-              style={{
-                display: currentStep === 4 ? 'block' : 'none',
-                width: '100%',
-                marginTop: '15px',
-                padding: '12px',
-                backgroundColor: isPlacingExit ? '#4a5d5e' : '#2e3f41',
-                border: '1px solid #bcd3d2',
-                color: '#bcd3d2',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontSize: '18px'
-              }}
-            >
-              {isPlacingExit ? 'SELECT WALL...' : 'PLACE EXIT'}
-            </button>
-
-            {/* Step 5: New Room - Roll Size / Place Room */}
-            <button
-              disabled={!activeExitId}
-              onClick={() => {
-                if (!mapEngineRef.current || !activeExitId) return
-
-                if (!pendingNewRoom) {
-                  // Roll the room size
-                  const result = mapEngineRef.current.dungeon.rollNewRoomAttributes(activeExitId)
-
-                  // Display all roll logs
-                  result.rolls.forEach((log) => addLog(log))
-
-                  // Display initial classification
-                  addLog(`Rolled: ${result.type} (${result.width}x${result.height})`)
-
-                  // Check if room fits, clamp if needed
-                  const clamped = mapEngineRef.current.dungeon.clampRoomToAvailableSpace(
-                    result.width,
-                    result.height,
-                    activeExitId
-                  )
-
-                  let finalWidth = result.width
-                  let finalHeight = result.height
-
-                  if (clamped.clamped) {
-                    addLog(`⚠️ ${clamped.reason}`)
-                    finalWidth = clamped.width
-                    finalHeight = clamped.height
-                    addLog(`Final size: ${finalWidth}x${finalHeight}`)
-                  }
-
-                  // Store pending room with (possibly clamped) dimensions
-                  setPendingNewRoom({ width: finalWidth, height: finalHeight, type: result.type })
-                } else {
-                  // Switch to placing mode
-                  mapEngineRef.current.interactionState.mode = 'placing_new_room'
-                  mapEngineRef.current.interactionState.pendingRoomSize = { w: pendingNewRoom.width, h: pendingNewRoom.height }
-                  mapEngineRef.current.interactionState.activeExitId = activeExitId
-                  addLog('Click to place the new room.')
-                }
-              }}
-              style={{
-                display: activeExitId ? 'block' : 'none',
-                width: '100%',
-                marginTop: '15px',
-                padding: '12px',
-                backgroundColor: pendingNewRoom ? '#4a5d5e' : '#2e3f41',
-                border: '1px solid #bcd3d2',
-                color: '#bcd3d2',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontSize: '18px'
-              }}
-            >
-              {pendingNewRoom ? 'PLACE ROOM' : 'ROLL ROOM SIZE'}
-            </button>
-
-            {/* Step: Roll for Exits (for newly placed room) */}
-            <button
-              disabled={!newlyPlacedRoomId || exitsToPlace > 0}
-              onClick={() => {
-                if (mapEngineRef.current && newlyPlacedRoomId) {
-                  const result = mapEngineRef.current.dungeon.rollForExitCount()
-                  addLog(`Rolled 1d6: ${result.roll}`)
-
-                  let exitText = ''
-                  if (result.exitCount === 0) exitText = 'No Exits'
-                  else if (result.exitCount === 1) exitText = '1 Exit'
-                  else exitText = `${result.exitCount} Exits`
-
-                  addLog(`Result: ${exitText}`)
-
-                  if (result.exitCount === 0) {
-                    // No exits - finalize the room and clear UI
-                    mapEngineRef.current.dungeon.finalizeNewRoom(newlyPlacedRoomId)
-                    addLog('Room completed. Dead zones marked.')
-                    setNewlyPlacedRoomId(null)
-                    setLogs([]) // Clear logs
-                  } else {
-                    // 1+ exits - prepare for placing exits
-                    const eligibility = mapEngineRef.current.dungeon.calculateEligibleWalls(newlyPlacedRoomId)
-
-                    // Cap exit count to number of eligible walls
-                    const actualExits = Math.min(result.exitCount, eligibility.count)
-
-                    if (actualExits === 0) {
-                      // No eligible walls - finalize room
-                      addLog(`Eligible walls: 0 of 3 - No exits can be placed.`)
-                      mapEngineRef.current.dungeon.finalizeNewRoom(newlyPlacedRoomId)
-                      addLog('Room completed. Dead zones marked.')
-                      setNewlyPlacedRoomId(null)
-                      setLogs([]) // Clear logs
-                    } else {
-                      if (actualExits < result.exitCount) {
-                        addLog(`Capped to ${actualExits} (only ${eligibility.count} wall(s) eligible)`)
-                      }
-                      setExitsToPlace(actualExits)
-                      setEligibleWalls({ top: eligibility.top, bottom: eligibility.bottom, left: eligibility.left, right: eligibility.right })
-                      mapEngineRef.current.interactionState.mode = 'placing_exit'
-                      mapEngineRef.current.interactionState.activeRoomId = newlyPlacedRoomId
-                      addLog(`Click on eligible walls to place ${actualExits} exit(s).`)
-                    }
-                  }
-                }
-              }}
-              style={{
-                display: newlyPlacedRoomId && exitsToPlace === 0 ? 'block' : 'none',
-                width: '100%',
-                marginTop: '15px',
-                padding: '12px',
-                backgroundColor: '#2e3f41',
-                border: '1px solid #bcd3d2',
-                color: '#bcd3d2',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontSize: '18px'
-              }}
-            >
-              ROLL FOR EXITS
-            </button>
-
-            {/* Step: Place Exits (for newly placed room) */}
-            <button
-              disabled={exitsToPlace === 0}
-              onClick={() => {
-                // This button is just informational - exits are placed via map clicks
-              }}
-              style={{
-                display: exitsToPlace > 0 ? 'block' : 'none',
-                width: '100%',
-                marginTop: '15px',
-                padding: '12px',
-                backgroundColor: '#4a5d5e',
-                border: '1px solid #bcd3d2',
-                color: '#bcd3d2',
-                cursor: 'default',
-                fontFamily: 'inherit',
-                fontSize: '18px'
-              }}
-            >
-              PLACE EXIT ({exitsToPlace} remaining)
-            </button>
-          </div>
-
-          <div
-            style={{
-              marginTop: 'auto',
-              height: '240px',
-              border: '1px solid #2e3f41',
-              padding: '10px',
-              fontSize: '14px',
-              overflowY: 'auto',
-              backgroundColor: 'rgba(0,0,0,0.3)',
-              fontFamily: 'monospace',
-              flexShrink: 0
-            }}
-          >
-            {logs.map((log, i) => (
-              <div key={i} style={{ marginBottom: '5px', color: i === 0 ? '#fff' : '#888' }}>
-                {`> ${log}`}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {isNewMapModalOpen && (
+        {/* HTML Overlay UI */}
         <div
           style={{
             position: 'absolute',
             top: 0,
             left: 0,
             width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 20
+            height: '100%', // Fix: Must be 100% for children like Right Panel to use height: 100%
+            pointerEvents: 'none',
+            zIndex: 10
           }}
         >
+          {/* SHOW/HIDE MAP Button */}
           <div
+            onClick={toggleMap}
             style={{
-              width: '400px',
-              backgroundColor: '#141d1f',
-              border: '2px solid #bcd3d2',
-              padding: '20px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
+              position: 'absolute',
+              left: '50px',
+              top: '20px',
+              width: '200px',
+              height: '50px',
+              backgroundColor: '#2e3f41',
               color: '#bcd3d2',
-              fontFamily: 'IMFellEnglishSC-Regular'
+              fontFamily: 'IMFellEnglishSC-Regular',
+              fontSize: '24px',
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              border: '1px solid #bcd3d2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none'
             }}
           >
-            <h2 style={{ margin: 0, textAlign: 'center', fontSize: '32px' }}>Create New Map</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <span>Width (X): {modalWidth}</span>
-              <input type="range" min="20" max="40" value={modalWidth} onChange={(e) => setModalWidth(Number(e.target.value))} style={{ width: '100%', accentColor: '#2e3f41' }} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <span>Height (Y): {modalHeight}</span>
-              <input type="range" min="20" max="40" value={modalHeight} onChange={(e) => setModalHeight(Number(e.target.value))} style={{ width: '100%', accentColor: '#2e3f41' }} />
-            </div>
-            <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
-              <button onClick={() => setIsNewMapModalOpen(false)} style={{ flex: 1, padding: '10px', backgroundColor: 'transparent', border: '1px solid #bcd3d2', color: '#bcd3d2', fontFamily: 'inherit', fontSize: '20px', cursor: 'pointer' }}>CANCEL</button>
-              <button onClick={handleCreateNewMap} style={{ flex: 1, padding: '10px', backgroundColor: '#2e3f41', border: '1px solid #bcd3d2', color: '#bcd3d2', fontFamily: 'inherit', fontSize: '20px', cursor: 'pointer' }}>CREATE</button>
+            {showMap ? 'HIDE MAP' : 'SHOW MAP'}
+          </div>
+
+          {/* NEW MAP Button */}
+          <div
+            onClick={() => setIsNewMapModalOpen(true)}
+            style={{
+              position: 'absolute',
+              left: '50px',
+              top: '80px',
+              width: '200px',
+              height: '50px',
+              backgroundColor: '#2e3f41',
+              color: '#bcd3d2',
+              fontFamily: 'IMFellEnglishSC-Regular',
+              fontSize: '24px',
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              border: '1px solid #bcd3d2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none'
+            }}
+          >
+            NEW MAP
+          </div>
+
+          {/* DICE SETTINGS Button */}
+          <div
+            onClick={() => setShowDiceSettings(true)}
+            style={{
+              position: 'absolute',
+              left: '50px',
+              top: '140px',
+              width: '200px',
+              height: '50px',
+              backgroundColor: '#2e3f41',
+              color: '#bcd3d2',
+              fontFamily: 'IMFellEnglishSC-Regular',
+              fontSize: '24px',
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              border: '1px solid #bcd3d2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none'
+            }}
+          >
+            DICE SETTINGS
+          </div>
+
+          {/* ROLL 2d8 Button */}
+          <div
+            onClick={() => {
+              diceEngine.roll('2d8').then((result) => {
+                console.log('Roll Result:', result)
+              })
+            }}
+            style={{
+              position: 'absolute',
+              left: '50px',
+              top: '200px',
+              width: '200px',
+              height: '50px',
+              backgroundColor: '#2e3f41',
+              color: '#bcd3d2',
+              fontFamily: 'IMFellEnglishSC-Regular',
+              fontSize: '24px',
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              border: '1px solid #bcd3d2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none'
+            }}
+          >
+            ROLL 2d8
+          </div>
+
+          {/* EXIT Button (Moved to Left Panel) */}
+          <div
+            onClick={onBack}
+            style={{
+              position: 'absolute',
+              left: '50px',
+              top: '260px',
+              width: '200px',
+              height: '50px',
+              backgroundColor: '#2e3f41',
+              color: '#bcd3d2',
+              fontFamily: 'IMFellEnglishSC-Regular',
+              fontSize: '24px',
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              border: '1px solid #bcd3d2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none'
+            }}
+          >
+            EXIT
+          </div>
+
+          <D8IconPanel />
+
+          {/* --- Right Panel --- */}
+          <div
+            style={{
+              position: 'absolute',
+              right: 0,
+              top: 0,
+              width: '300px',
+              height: '100%',
+              pointerEvents: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '0', // Removed global padding
+              boxSizing: 'border-box',
+              color: '#bcd3d2',
+              fontFamily: 'IMFellEnglishSC-Regular',
+              backgroundColor: 'rgba(20, 29, 31, 0.8)'
+            }}
+          >
+
+            {/* Dice Landing Image */}
+            <img
+              src={diceLanding}
+              alt="Dice Landing"
+              style={{
+                width: '100%',
+                height: 'auto',
+                maxHeight: '250px', // Constrain height
+                objectFit: 'cover',
+                display: 'block',
+                borderBottom: '1px solid #bcd3d2',
+                flexShrink: 0 // Prevent squashing if flex gets weird
+              }}
+            />
+
+            {/* Content Wrapper with Padding */}
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '24px',
+              overflowY: 'auto', // Enable scrolling
+              minHeight: 0 // Crucial for flex nested scrolling
+            }}>
+              <h2 style={{
+                fontSize: '28px',
+                borderBottom: '1px solid #bcd3d2',
+                margin: '0 0 20px 0',
+                paddingBottom: '10px',
+                textAlign: 'center',
+                flexShrink: 0
+              }}>
+                Dungeon Blueprint
+              </h2>
+
+              <div style={{ flexShrink: 0 }}>
+                <div style={{ fontSize: '20px', color: currentStep === 1 ? '#fff' : '#666', textAlign: 'center' }}>
+                  Step 1: Place Entrance
+                </div>
+                <div style={{ fontSize: '20px', color: currentStep === 2 ? '#fff' : '#666', textAlign: 'center', marginTop: '10px' }}>
+                  Step 2: Roll Room Size
+                </div>
+                <div style={{ fontSize: '20px', color: currentStep === 3 ? '#fff' : '#666', textAlign: 'center', marginTop: '10px' }}>
+                  Step 3: Place Room
+                </div>
+                <div style={{ fontSize: '20px', color: currentStep === 4 ? '#fff' : '#666', textAlign: 'center', marginTop: '10px' }}>
+                  Step 4: Exits ({exitCount}/3)
+                </div>
+
+                <button
+                  disabled={isPlacingEntrance || currentStep !== 1}
+                  onClick={() => {
+                    if (mapEngineRef.current) {
+                      mapEngineRef.current.interactionState.mode = 'placing_entrance'
+                      setIsPlacingEntrance(true)
+                      addLog('Ready to place entrance. Click bottom edge.')
+                    }
+                  }}
+                  style={{
+                    display: currentStep === 1 ? 'block' : 'none',
+                    width: '100%',
+                    marginTop: '15px',
+                    padding: '12px',
+                    backgroundColor: isPlacingEntrance ? '#4a5d5e' : '#2e3f41',
+                    border: '1px solid #bcd3d2',
+                    color: '#bcd3d2',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: '18px'
+                  }}
+                >
+                  {isPlacingEntrance ? 'SELECT TILE...' : 'PLACE ENTRANCE'}
+                </button>
+
+                {/* Step 2: Roll Room Size */}
+                <button
+                  disabled={isRolling}
+                  onClick={async () => {
+                    if (mapEngineRef.current) {
+                      setIsRolling(true)
+                      try {
+                        const result = await mapEngineRef.current.dungeon.rollStartingRoomSize()
+                        setPendingRoom(result)
+                        addLog(`Rolled ${result.original[0]} (X) & ${result.original[1]} (Y) -> Size: ${result.width}x${result.height}`)
+                        setCurrentStep(3)
+                      } catch (err) {
+                        console.error(err)
+                        addLog('Error rolling dice.')
+                      } finally {
+                        setIsRolling(false)
+                      }
+                    }
+                  }}
+                  style={{
+                    display: currentStep === 2 ? 'block' : 'none',
+                    width: '100%',
+                    marginTop: '15px',
+                    padding: '12px',
+                    backgroundColor: '#2e3f41',
+                    border: '1px solid #bcd3d2',
+                    color: '#bcd3d2',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: '18px'
+                  }}
+                >
+                  ROLL ROOM SIZE (2d6)
+                </button>
+
+                {/* Step 3: Place Room */}
+                <button
+                  disabled={isPlacingRoom || currentStep !== 3 || !pendingRoom}
+                  onClick={() => {
+                    if (mapEngineRef.current && pendingRoom) {
+                      mapEngineRef.current.interactionState.pendingRoomSize = { w: pendingRoom.width, h: pendingRoom.height }
+                      mapEngineRef.current.interactionState.mode = 'placing_room'
+                      setIsPlacingRoom(true)
+                      addLog('Click grid to place room.')
+                    }
+                  }}
+                  style={{
+                    display: currentStep === 3 ? 'block' : 'none',
+                    width: '100%',
+                    marginTop: '15px',
+                    padding: '12px',
+                    backgroundColor: isPlacingRoom ? '#4a5d5e' : '#2e3f41',
+                    border: '1px solid #bcd3d2',
+                    color: '#bcd3d2',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: '18px'
+                  }}
+                >
+                  {isPlacingRoom ? 'SELECT TILE...' : 'PLACE ROOM'}
+                </button>
+
+                {/* Step 4: Place Exits */}
+                <button
+                  disabled={isPlacingExit || currentStep !== 4}
+                  onClick={() => {
+                    if (mapEngineRef.current) {
+                      // Find starter room ID
+                      const rooms = mapEngineRef.current.dungeon.getState().rooms
+                      const starter = rooms.find(r => r.type === 'start')
+                      if (starter) {
+                        mapEngineRef.current.interactionState.activeRoomId = starter.id
+                        mapEngineRef.current.interactionState.mode = 'placing_exit'
+                        setIsPlacingExit(true)
+                        addLog('Click room walls to place exit.')
+                      } else {
+                        addLog('Error: No starter room found.')
+                      }
+                    }
+                  }}
+                  style={{
+                    display: currentStep === 4 ? 'block' : 'none',
+                    width: '100%',
+                    marginTop: '15px',
+                    padding: '12px',
+                    backgroundColor: isPlacingExit ? '#4a5d5e' : '#2e3f41',
+                    border: '1px solid #bcd3d2',
+                    color: '#bcd3d2',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: '18px'
+                  }}
+                >
+                  {isPlacingExit ? 'SELECT WALL...' : 'PLACE EXIT'}
+                </button>
+
+                {/* Step 5: New Room - Roll Size / Place Room */}
+                <button
+                  disabled={!activeExitId || isRolling}
+                  onClick={async () => {
+                    if (!mapEngineRef.current || !activeExitId) return
+
+                    if (!pendingNewRoom) {
+                      setIsRolling(true)
+                      try {
+                        // Roll the room size
+                        const result = await mapEngineRef.current.dungeon.rollNewRoomAttributes(activeExitId)
+
+                        // Display all roll logs
+                        result.rolls.forEach((log) => addLog(log))
+
+                        // Display initial classification
+                        addLog(`Rolled: ${result.type} (${result.width}x${result.height})`)
+
+                        // Check if room fits, clamp if needed
+                        const clamped = mapEngineRef.current.dungeon.clampRoomToAvailableSpace(
+                          result.width,
+                          result.height,
+                          activeExitId
+                        )
+
+                        let finalWidth = result.width
+                        let finalHeight = result.height
+
+                        if (clamped.clamped) {
+                          addLog(`⚠️ ${clamped.reason}`)
+                          finalWidth = clamped.width
+                          finalHeight = clamped.height
+                          addLog(`Final size: ${finalWidth}x${finalHeight}`)
+                        }
+
+                        // Store pending room with (possibly clamped) dimensions
+                        setPendingNewRoom({ width: finalWidth, height: finalHeight, type: result.type })
+                      } catch (err) {
+                        console.error(err)
+                        addLog('Error rolling room attributes.')
+                      } finally {
+                        setIsRolling(false)
+                      }
+                    } else {
+                      // Switch to placing mode
+                      mapEngineRef.current.interactionState.mode = 'placing_new_room'
+                      mapEngineRef.current.interactionState.pendingRoomSize = { w: pendingNewRoom.width, h: pendingNewRoom.height }
+                      mapEngineRef.current.interactionState.activeExitId = activeExitId
+                      addLog('Click to place the new room.')
+                    }
+                  }}
+                  style={{
+                    display: activeExitId ? 'block' : 'none',
+                    width: '100%',
+                    marginTop: '15px',
+                    padding: '12px',
+                    backgroundColor: pendingNewRoom ? '#4a5d5e' : '#2e3f41',
+                    border: '1px solid #bcd3d2',
+                    color: '#bcd3d2',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: '18px'
+                  }}
+                >
+                  {pendingNewRoom ? 'PLACE ROOM' : 'ROLL ROOM SIZE'}
+                </button>
+
+                {/* Step: Roll for Exits (for newly placed room) */}
+                <button
+                  disabled={!newlyPlacedRoomId || exitsToPlace > 0 || isRolling}
+                  onClick={async () => {
+                    if (mapEngineRef.current && newlyPlacedRoomId) {
+                      setIsRolling(true)
+                      try {
+                        const result = await mapEngineRef.current.dungeon.rollForExitCount()
+                        addLog(`Rolled 1d8: ${result.roll}`)
+
+                        let exitText = ''
+                        if (result.exitCount === 0) exitText = 'No Exits'
+                        else if (result.exitCount === 1) exitText = '1 Exit'
+                        else exitText = `${result.exitCount} Exits`
+
+                        addLog(`Result: ${exitText}`)
+
+                        if (result.exitCount === 0) {
+                          // No exits - finalize the room and clear UI
+                          mapEngineRef.current.dungeon.finalizeNewRoom(newlyPlacedRoomId)
+                          addLog('Room completed. Dead zones marked.')
+                          setNewlyPlacedRoomId(null)
+                          setLogs([]) // Clear logs
+                        } else {
+                          // 1+ exits - prepare for placing exits
+                          const eligibility = mapEngineRef.current.dungeon.calculateEligibleWalls(newlyPlacedRoomId)
+
+                          // Cap exit count to number of eligible walls
+                          const actualExits = Math.min(result.exitCount, eligibility.count)
+
+                          if (actualExits === 0) {
+                            // No eligible walls - finalize room
+                            addLog(`Eligible walls: 0 of 3 - No exits can be placed.`)
+                            mapEngineRef.current.dungeon.finalizeNewRoom(newlyPlacedRoomId)
+                            addLog('Room completed. Dead zones marked.')
+                            setNewlyPlacedRoomId(null)
+                            setLogs([]) // Clear logs
+                          } else {
+                            if (actualExits < result.exitCount) {
+                              addLog(`Capped to ${actualExits} (only ${eligibility.count} wall(s) eligible)`)
+                            }
+                            setExitsToPlace(actualExits)
+                            setEligibleWalls({ top: eligibility.top, bottom: eligibility.bottom, left: eligibility.left, right: eligibility.right })
+                            mapEngineRef.current.interactionState.mode = 'placing_exit'
+                            mapEngineRef.current.interactionState.activeRoomId = newlyPlacedRoomId
+                            addLog(`Click on eligible walls to place ${actualExits} exit(s).`)
+                          }
+                        }
+                      } catch (err) {
+                        console.error(err)
+                        addLog('Error rolling for exits.')
+                      } finally {
+                        setIsRolling(false)
+                      }
+                    }
+                  }}
+                  style={{
+                    display: newlyPlacedRoomId && exitsToPlace === 0 ? 'block' : 'none',
+                    width: '100%',
+                    marginTop: '15px',
+                    padding: '12px',
+                    backgroundColor: '#2e3f41',
+                    border: '1px solid #bcd3d2',
+                    color: '#bcd3d2',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: '18px'
+                  }}
+                >
+                  ROLL FOR EXITS
+                </button>
+
+                {/* Step: Place Exits (for newly placed room) */}
+                <button
+                  disabled={exitsToPlace === 0}
+                  onClick={() => {
+                    // This button is just informational - exits are placed via map clicks
+                  }}
+                  style={{
+                    display: exitsToPlace > 0 ? 'block' : 'none',
+                    width: '100%',
+                    marginTop: '15px',
+                    padding: '12px',
+                    backgroundColor: '#4a5d5e',
+                    border: '1px solid #bcd3d2',
+                    color: '#bcd3d2',
+                    cursor: 'default',
+                    fontFamily: 'inherit',
+                    fontSize: '18px'
+                  }}
+                >
+                  PLACE EXIT ({exitsToPlace} remaining)
+                </button>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 'auto',
+                  height: '240px',
+                  border: '1px solid #2e3f41',
+                  padding: '10px',
+                  fontSize: '14px',
+                  overflowY: 'auto',
+                  backgroundColor: 'rgba(0,0,0,0.3)',
+                  fontFamily: 'monospace',
+                  flexShrink: 0
+                }}
+              >
+                {logs.map((log, i) => (
+                  <div key={i} style={{ marginBottom: '5px', color: i === 0 ? '#fff' : '#888' }}>
+                    {`> ${log}`}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      )}
-    </div>
+
+        {isNewMapModalOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 20
+            }}
+          >
+            <div
+              style={{
+                width: '400px',
+                backgroundColor: '#141d1f',
+                border: '2px solid #bcd3d2',
+                padding: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '20px',
+                color: '#bcd3d2',
+                fontFamily: 'IMFellEnglishSC-Regular'
+              }}
+            >
+              <h2 style={{ margin: 0, textAlign: 'center', fontSize: '32px' }}>Create New Map</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <span>Width (X): {modalWidth}</span>
+                <input type="range" min="26" max="50" value={modalWidth} onChange={(e) => setModalWidth(Number(e.target.value))} style={{ width: '100%', accentColor: '#2e3f41' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <span>Height (Y): {modalHeight}</span>
+                <input type="range" min="26" max="50" value={modalHeight} onChange={(e) => setModalHeight(Number(e.target.value))} style={{ width: '100%', accentColor: '#2e3f41' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
+                <button onClick={() => setIsNewMapModalOpen(false)} style={{ flex: 1, padding: '10px', backgroundColor: 'transparent', border: '1px solid #bcd3d2', color: '#bcd3d2', fontFamily: 'inherit', fontSize: '20px', cursor: 'pointer' }}>CANCEL</button>
+                <button onClick={handleCreateNewMap} style={{ flex: 1, padding: '10px', backgroundColor: '#2e3f41', border: '1px solid #bcd3d2', color: '#bcd3d2', fontFamily: 'inherit', fontSize: '20px', cursor: 'pointer' }}>CREATE</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DiceSettingsWrapper isOpen={showDiceSettings} onClose={() => setShowDiceSettings(false)} />
+        <SettingsSync />
+        <DiceOverlay />
+      </div>
+    </SettingsProvider>
   )
 }
 
