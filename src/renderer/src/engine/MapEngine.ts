@@ -17,6 +17,7 @@ export interface MapLayers {
   wall: Container
   object: Container
   notes: Container
+  overlay: Container
   interaction: Container
 }
 
@@ -31,8 +32,12 @@ export interface MapEngineOptions {
   onExitClicked?: (exitId: string) => void
   onNewRoomPlaced?: (roomId: string, exitId: string) => void
   // Overworld Callbacks
-  onCityPlaced?: (x: number, y: number) => void
+  onTownPlaced?: (x: number, y: number) => void
+  onTownPlaced?: (x: number, y: number) => void
   onTerrainPlaced?: (x: number, y: number) => void
+  onHexClicked?: (x: number, y: number) => void
+  onHexHover?: (x: number, y: number, globalX: number, globalY: number) => void
+  // Validation Callback
   // Validation Callback
   onValidatePlacement?: (x: number, y: number) => boolean
 }
@@ -52,7 +57,7 @@ export class MapEngine {
 
   // Interaction State
   public interactionState = {
-    mode: 'idle' as 'idle' | 'placing_entrance' | 'placing_room' | 'placing_exit' | 'placing_new_room' | 'placing_city' | 'placing_terrain',
+    mode: 'idle' as 'idle' | 'placing_entrance' | 'placing_room' | 'placing_exit' | 'placing_new_room' | 'placing_town' | 'placing_terrain',
     hoveredTile: { x: Number.NaN, y: Number.NaN },
     hoveredRoomId: null as string | null,
     pendingRoomSize: { w: 0, h: 0 },
@@ -89,6 +94,7 @@ export class MapEngine {
       wall: new Container({ label: 'WallLayer' }),
       object: new Container({ label: 'ObjectLayer' }),
       notes: new Container({ label: 'NotesLayer' }),
+      overlay: new Container({ label: 'OverlayLayer' }),
       interaction: new Container({ label: 'InteractionLayer' })
     }
 
@@ -104,6 +110,7 @@ export class MapEngine {
     // this.layers.live.addChild(debugSq)
     this.camera.container.addChild(this.layers.object)
     this.camera.container.addChild(this.layers.notes)
+    this.camera.container.addChild(this.layers.overlay)
     this.camera.container.addChild(this.layers.interaction)
 
     // 3. Initialize Grid System
@@ -160,13 +167,13 @@ export class MapEngine {
       this.gridSystem.draw()
 
         // Debug log once per second
-        if (performance.now() - lastLog > 1000) {
-          console.log('[MapEngine] Ticker Heartbeat', { 
-            mode: this.interactionState.mode,
-            hover: this.interactionState.hoveredTile
-          })
-          lastLog = performance.now()
-        }
+        // if (performance.now() - lastLog > 1000) {
+        //   console.log('[MapEngine] Ticker Heartbeat', { 
+        //     mode: this.interactionState.mode,
+        //     hover: this.interactionState.hoveredTile
+        //   })
+        //   lastLog = performance.now()
+        // }
       }
     }
     this.app.ticker.add(this.tickerCallback)
@@ -189,6 +196,9 @@ export class MapEngine {
       // Get Grid Coords
       const gridCoords = this.gridSystem.getGridCoords(localPos.x, localPos.y)
 
+      // Trigger Hover Callback
+      this.options.onHexHover?.(gridCoords.x, gridCoords.y, globalPos.x, globalPos.y)
+
       // Update State
       this.interactionState.hoveredTile = gridCoords
 
@@ -199,7 +209,17 @@ export class MapEngine {
     }
     target.on('pointermove', this.onPointerMove)
 
-    this.onPointerTap = () => {
+    this.onPointerTap = (e: any) => {
+      // Calculate coords reuse or strict calculation
+      const global = e.global
+      const local = this.camera.container.toLocal(global)
+      const { x, y } = this.gridSystem.getGridCoords(local.x, local.y)
+
+      console.log('[MapEngine] Click Debug:', { mode: this.interactionState.mode, x, y })
+
+      // Generic Click Callback moved to 'idle' state check below
+      // this.options.onHexClicked?.(x, y)
+
       if (this.interactionState.mode === 'placing_entrance') {
         const { x, y } = this.interactionState.hoveredTile
         if (this.dungeon.isValidEntrancePosition(x, y)) {
@@ -228,8 +248,11 @@ export class MapEngine {
           }
         }
       } else if (this.interactionState.mode === 'idle') {
+        // Generic Click Callback (Only in Idle)
+        this.options.onHexClicked?.(x, y)
+
         // Check if clicking an unused exit to initiate new room
-        const { x, y } = this.interactionState.hoveredTile
+        // const { x, y } = this.interactionState.hoveredTile // REMOVED: Caused TDZ. Use event coords from line 213.
         const dungeonState = this.dungeon.getState()
         
         for (const room of dungeonState.rooms) {
@@ -267,10 +290,10 @@ export class MapEngine {
             }
           }
         }
-      } else if (this.interactionState.mode === 'placing_city') {
+      } else if (this.interactionState.mode === 'placing_town') {
         const { x, y } = this.interactionState.hoveredTile
-        if (this.options.onCityPlaced) {
-            this.options.onCityPlaced(x, y)
+        if (this.options.onTownPlaced) {
+            this.options.onTownPlaced(x, y)
         }
         // Mode change is handled by callback/controller
       } else if (this.interactionState.mode === 'placing_terrain') {
@@ -302,6 +325,38 @@ export class MapEngine {
 
     // DEBUG: Expose for DebugToolbar
     ;(window as any).__MAP_ENGINE__ = this
+  }
+
+  /**
+   * Highlights a set of hex coordinates as valid moves.
+   * Clears previous interaction highlights first.
+   */
+  public highlightValidMoves(coords: { x: number, y: number }[]): void {
+    const interaction = this.layers.interaction
+    interaction.removeChildren() // Clear old highlights
+
+    // Only applicable for HexGrid currently
+    if (this.gridSystem instanceof HexGridSystem) {
+        const hexSys = this.gridSystem as HexGridSystem
+        const r = hexSys.config.size
+        const w = Math.sqrt(3) * r
+        const h = 2 * r
+        const vert = h * 0.75
+        const drawR = r - 5 // Match ghost size
+
+        const g = new Graphics()
+        interaction.addChild(g)
+
+        coords.forEach(({ x, y }) => {
+            const { x: cx, y: cy } = hexSys.getPixelCoords(x, y)
+            
+            // Draw faint green glow
+            const poly = hexSys.getHexPoly(cx, cy, drawR)
+            g.poly(poly)
+            g.fill({ color: 0x00FF00, alpha: 0.2 }) // Faint Green
+            g.stroke({ width: 2, color: 0x00FF00, alpha: 0.4 })
+        })
+    }
   }
 
   // Stored Listeners for Cleanup

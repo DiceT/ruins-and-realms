@@ -111,7 +111,8 @@ export class RollController {
                         this.spawnDie('d60', rollId, globalGroupId, 'd66_tens', themeToUse);
                         this.spawnDie('d6', this.nextRollId++, globalGroupId, 'd66_ones', secondaryTheme);
                     } else if (group.type === 'd88') {
-                        this.spawnDie('d80', rollId, globalGroupId, 'd88_tens', themeToUse);
+                        // Use 'd8' for the tens die instead of 'd80' for better consistency/rotation
+                        this.spawnDie('d8', rollId, globalGroupId, 'd88_tens', themeToUse);
                         this.spawnDie('d8', this.nextRollId++, globalGroupId, 'd88_ones', secondaryTheme);
                     } else {
                         // 2d6/2d8 Logic: Usage of Secondary Theme on second die
@@ -327,7 +328,9 @@ export class RollController {
                     const tenDie = dice[i];
                     const oneDie = dice[i + 1];
                     if (tenDie && oneDie) {
-                        const tens = parseInt(String(tenDie.result)) || 10;
+                        // Tens die is now a d8, so result is 1-8. We need to multiply by 10.
+                        const tensRaw = parseInt(String(tenDie.result)) || 1;
+                        const tens = tensRaw * 10;
                         const ones = parseInt(String(oneDie.result)) || 1;
                         const val = tens + ones;
                         total += val;
@@ -360,41 +363,63 @@ export class RollController {
             dice: diceResults
         };
 
-        // --- 2d8 Auto-Reposition Logic ---
-        // If exact 2d8 (2 dice, both d8), move them to designated spots.
-        // Primary (index 0) -> (1, 1)
-        // Secondary (index 1) -> (2, 1)
-        if (this.activeDice.length === 2 && this.activeDice.every(d => d.type === 'd8')) {
-            const primaryDie = this.activeDice[0];
-            const secondaryDie = this.activeDice[1];
-
-            // The Dice Canvas is restricted to the 300px Right Panel.
-            // Therefore, (0,0) is the center of that panel.
-            // Based on user feedback: X is perfect at +/- 1.8. Z adjusted to -11.15.
-            // Camera is Top-Down (Y is up/down world axis, Z is screen vertical)
-
-            const targetX_Left = -1.8;
-            const targetX_Right = 1.8;
-            const targetZ = -11.15;
-            const targetHeight = 1.0; // Rest on floor
-
-            this.repositionDice([
-                {
-                    id: primaryDie.rollId,
-                    position: new THREE.Vector3(targetX_Left, targetHeight, targetZ),
-                    rotation: this.getOptimalRotation(primaryDie)
-                },
-                {
-                    id: secondaryDie.rollId,
-                    position: new THREE.Vector3(targetX_Right, targetHeight, targetZ),
-                    rotation: this.getOptimalRotation(secondaryDie)
-                }
-            ], 750); // 750ms animation
-        }
-
         if (this.onRollComplete) {
             this.onRollComplete(result);
         }
+
+        // Always tidy up dice into the tray
+        this.arrangeDiceInTray();
+    }
+
+    private arrangeDiceInTray() {
+        const diceCount = this.activeDice.length;
+        if (diceCount === 0) return;
+
+        // Tray Configuration (Right Panel, Bottom Area)
+        const trayCenter = new THREE.Vector3(0, 1.0, -11.15); // Z=-11.15 based on previous 2d8 logic
+        const spacing = 3.5; // Space between dice
+
+        const sortedDice = [...this.activeDice].sort((a, b) => a.rollId - b.rollId);
+        
+        const targets: DiePositionRequest[] = [];
+
+        if (diceCount === 1) {
+            // Center single die
+            targets.push({
+                id: sortedDice[0].rollId,
+                position: trayCenter,
+                rotation: this.getOptimalRotation(sortedDice[0])
+            });
+        } else if (diceCount === 2) {
+            // Side by side
+            targets.push({
+                id: sortedDice[0].rollId,
+                position: new THREE.Vector3(trayCenter.x - (spacing / 2), trayCenter.y, trayCenter.z),
+                rotation: this.getOptimalRotation(sortedDice[0])
+            });
+            targets.push({
+                id: sortedDice[1].rollId,
+                position: new THREE.Vector3(trayCenter.x + (spacing / 2), trayCenter.y, trayCenter.z),
+                rotation: this.getOptimalRotation(sortedDice[1])
+            });
+        } else {
+            // 3+ Dice: Grid or Line? 
+            // Let's do a simple line for now, centering them.
+            // Check width available. 
+            // If too many, maybe 2 rows.
+            const totalWidth = (diceCount - 1) * spacing;
+            const startX = trayCenter.x - (totalWidth / 2);
+
+            sortedDice.forEach((die, index) => {
+                targets.push({
+                    id: die.rollId,
+                    position: new THREE.Vector3(startX + (index * spacing), trayCenter.y, trayCenter.z),
+                    rotation: this.getOptimalRotation(die)
+                });
+            });
+        }
+
+        this.repositionDice(targets, 800);
     }
 
     private getOptimalRotation(die: ActiveDie): THREE.Quaternion {
@@ -410,10 +435,7 @@ export class RollController {
         const isD4 = Array.isArray(faceValues[0].value);
 
         if (isD4) {
-            // D4: The result is the value at the peak, which is governed by the face pointing DOWN.
-            // That face contains the 3 values that are NOT the result.
-            // D4 labels are arrays of strings.
-            // We search for the face that does NOT contain the result.
+            // D4 Logic
             targetFace = faceValues.find((fv: any) => !(fv.value as string[]).includes(String(result)));
             
             if (targetFace) {
@@ -422,22 +444,32 @@ export class RollController {
                 return new THREE.Quaternion().setFromUnitVectors(localNormal, targetUp);
             }
         } else {
-            // Standard Dice: Face with result points UP.
+            // Standard Dice
             targetFace = faceValues.find((fv: any) => String(fv.value) === String(result));
             
             if (targetFace) {
                 const localNormal = targetFace.normal;
                 const targetUp = new THREE.Vector3(0, 1, 0); // World Up
-                
-                // Calculate base alignment
-                // Calculate base alignment
                 const q = new THREE.Quaternion().setFromUnitVectors(localNormal, targetUp);
 
                 // Fix D8 Orientation Twist
-                // The text on D8 is rotated differently depending on the face.
-                if (die.type === 'd8') {
+                // Applies to 'd8' and 'd88_ones' (which are effectively d8s)
+                // Also 'd80' (d88_tens) might likely share the D8 geometry if it is octahedral.
+                // Assuming d80 uses same UV/face orientation logic as d8.
+                const isD8Shape = die.type === 'd8' || die.type === 'd88_ones' || die.type === 'd88_tens' || die.type.startsWith('d8');
+                
+                if (isD8Shape) {
                     let angleDeg = 0;
-                    switch (String(die.result)) {
+                    // d80 would have values like 10, 20... handle string matching safely
+                    const val = String(die.result).replace('0', ''); // normalize 10->1 for lookup if d80 matches d8 faces
+                    // Wait, d80 faces: if result is '10', logic above found face with value '10'.
+                    // If d8 twist logic is based on Face Index (geometry), we need to map Value -> Geometry Face -> Twist.
+                    // The switch case below is Value -> Twist.
+                    // If d80 layout matches d8 (face 10 is where face 1 is), then map 10->1, 20->2 works.
+                    
+                    const lookupVal = (die.type === 'd88_tens' || die.type === 'd80') && die.result ? String(die.result).replace(/0$/, '') : String(die.result);
+
+                    switch (lookupVal) {
                         case '1': angleDeg = 315; break;
                         case '2': angleDeg = 135; break;
                         case '3': angleDeg = 225; break;
@@ -459,7 +491,6 @@ export class RollController {
             }
         }
 
-        // Fallback
         return new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0));
     }
 

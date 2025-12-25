@@ -142,7 +142,7 @@ export class HexGridSystem extends BaseGridSystem {
     const { mode, hoveredTile } = this.engine.interactionState
     if (Number.isNaN(hoveredTile.x)) return
 
-    if (mode === 'placing_city' || mode === 'placing_terrain') {
+    if (mode === 'placing_town' || mode === 'placing_terrain') {
         const c = hoveredTile.x
         const row = hoveredTile.y
         
@@ -160,7 +160,7 @@ export class HexGridSystem extends BaseGridSystem {
 
         // Draw filled hex at alpha
         // Color: Valid = CYAN/GREEN, Invalid = RED
-        let color = mode === 'placing_city' ? 0x00FFFF : 0x00FF00
+        let color = mode === 'placing_town' ? 0x00FFFF : 0x00FF00
         if (!isValid) {
             color = 0xFF0000 
         }
@@ -170,7 +170,7 @@ export class HexGridSystem extends BaseGridSystem {
     }
   }
 
-  private getHexPoly(cx: number, cy: number, r: number): number[] {
+  public getHexPoly(cx: number, cy: number, r: number): number[] {
       const points: number[] = []
       const angleOffset = Math.PI / 6
       for (let i = 0; i < 6; i++) {

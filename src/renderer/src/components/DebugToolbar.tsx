@@ -44,7 +44,8 @@ export const DebugToolbar = () => {
       style={{
         position: 'absolute',
         bottom: '1rem',
-        right: '1rem',
+        left: '1rem',
+        right: 'auto',
         backgroundColor: 'rgba(0, 40, 60, 0.9)',
         color: '#0ff',
         fontFamily: 'monospace',

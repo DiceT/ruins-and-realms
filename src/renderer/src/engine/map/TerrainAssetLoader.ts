@@ -1,8 +1,6 @@
 import { Assets, Texture } from 'pixi.js'
 
-export type TerrainType = 'barren' | 'city' | 'fields' | 'forest' | 'grassland' | 'hills' | 'meadow' | 'swamp'
 
-export const TERRAIN_TYPES: TerrainType[] = ['barren', 'city', 'fields', 'forest', 'grassland', 'hills', 'meadow', 'swamp']
 
 export class TerrainAssetLoader {
   private static textures: Record<string, Texture[]> = {}
