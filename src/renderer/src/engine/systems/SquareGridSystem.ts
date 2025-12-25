@@ -52,6 +52,13 @@ export class SquareGridSystem extends BaseGridSystem {
     this.engine.layers.interaction.addChild(this.tooltipText)
   }
 
+  public getGridCoords(x: number, y: number): { x: number; y: number } {
+    const tileSize = this.config.size
+    const tx = Math.floor(x / tileSize)
+    const ty = Math.floor(y / tileSize)
+    return { x: tx, y: ty }
+  }
+
   public draw(): void {
     const dungeonState = this.engine.dungeon.getState()
     const tileSize = this.config.size
@@ -347,5 +354,11 @@ export class SquareGridSystem extends BaseGridSystem {
       color: this.config.gridColor,
       alpha: this.config.gridAlpha
     })
+  }
+  public getPixelCoords(col: number, row: number): { x: number; y: number } {
+    const size = this.config.size
+    const x = col * size + size / 2
+    const y = row * size + size / 2
+    return { x, y }
   }
 }

@@ -44,6 +44,16 @@ export abstract class BaseGridSystem {
   public abstract draw(): void
 
   /**
+   * Converts world coordinates (pixels) to grid coordinates (tile position).
+   */
+  public abstract getGridCoords(x: number, y: number): { x: number; y: number }
+
+  /**
+   * Returns the pixel coordinates (center) for a given grid coordinate.
+   */
+  public abstract getPixelCoords(col: number, row: number): { x: number; y: number }
+
+  /**
    * Common background drawing logic.
    */
   protected drawBackground(startX: number, startY: number, width: number, height: number): void {

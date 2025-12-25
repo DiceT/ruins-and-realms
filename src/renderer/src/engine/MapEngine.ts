@@ -1,4 +1,4 @@
-import { Application, Container, TickerCallback } from 'pixi.js'
+import { Application, Container, TickerCallback, Graphics } from 'pixi.js'
 import { Camera } from './Camera'
 import { DungeonGenerator } from './map/DungeonGenerator'
 import { BaseGridSystem } from './systems/BaseGridSystem'
@@ -30,6 +30,11 @@ export interface MapEngineOptions {
   onExitPlaced?: (x: number, y: number) => void
   onExitClicked?: (exitId: string) => void
   onNewRoomPlaced?: (roomId: string, exitId: string) => void
+  // Overworld Callbacks
+  onCityPlaced?: (x: number, y: number) => void
+  onTerrainPlaced?: (x: number, y: number) => void
+  // Validation Callback
+  onValidatePlacement?: (x: number, y: number) => boolean
 }
 
 /**
@@ -43,12 +48,12 @@ export class MapEngine {
   public gridSystem: BaseGridSystem
   public dungeon: DungeonGenerator
   private tickerCallback: TickerCallback<MapEngine> | null = null
-  private destroyed: boolean = false
+  public destroyed: boolean = false
 
   // Interaction State
   public interactionState = {
-    mode: 'idle' as 'idle' | 'placing_entrance' | 'placing_room' | 'placing_exit' | 'placing_new_room',
-    hoveredTile: { x: -1, y: -1 },
+    mode: 'idle' as 'idle' | 'placing_entrance' | 'placing_room' | 'placing_exit' | 'placing_new_room' | 'placing_city' | 'placing_terrain',
+    hoveredTile: { x: Number.NaN, y: Number.NaN },
     hoveredRoomId: null as string | null,
     pendingRoomSize: { w: 0, h: 0 },
     activeRoomId: null as string | null,
@@ -95,6 +100,8 @@ export class MapEngine {
     this.camera.container.addChild(this.layers.grid)
     this.camera.container.addChild(this.layers.room)
     this.camera.container.addChild(this.layers.wall)
+
+    // this.layers.live.addChild(debugSq)
     this.camera.container.addChild(this.layers.object)
     this.camera.container.addChild(this.layers.notes)
     this.camera.container.addChild(this.layers.interaction)
@@ -107,7 +114,7 @@ export class MapEngine {
     }
 
     // 4. Render Loop
-    // let lastLog = 0
+    let lastLog = 0
     this.tickerCallback = () => {
       if (!this.destroyed) {
         // Track mouse to update tile hover (SAFENED)
@@ -116,10 +123,12 @@ export class MapEngine {
         if (events && events.pointer) {
           const mouse = events.pointer.global
           const worldPos = this.camera.toWorld(mouse.x, mouse.y)
-          const tx = Math.floor(worldPos.x / this.gridSystem.config.size)
-          const ty = Math.floor(worldPos.y / this.gridSystem.config.size)
           
-          this.interactionState.hoveredTile = { x: tx, y: ty }
+          // Use the GridSystem to get accurate coords (Hex or Square)
+          const gridCoords = this.gridSystem.getGridCoords(worldPos.x, worldPos.y)
+          
+          this.interactionState.hoveredTile = gridCoords
+          const { x: tx, y: ty } = gridCoords
           
           // Detect hovered room from tile
           const dungeonState = this.dungeon.getState()
@@ -130,17 +139,34 @@ export class MapEngine {
             this.interactionState.hoveredRoomId = null
           }
         }
+        // this.checkCameraMovement()
+      
+      // LOG INPUT DEBUG
+      if (this.app.ticker.lastTime % 60 === 0) {
+          /*
+         const viewport = this.options.viewport as any
+         const hitArea = viewport.hitArea
+         const worldPos = this.camera.toWorld(this.app.renderer.events.pointer.global.x, this.app.renderer.events.pointer.global.y)
+         console.log('[MapEngine] Input Debug:', {
+           screen: { w: this.app.screen.width, h: this.app.screen.height },
+           viewport: { x: viewport.x, w: hitArea ? hitArea.width : 'N/A' },
+           mouse: { x: this.app.renderer.events.pointer.global.x, y: this.app.renderer.events.pointer.global.y },
+           world: { x: worldPos.x, y: worldPos.y },
+           hovered: { x: this.interactionState.hoveredTile.x, y: this.interactionState.hoveredTile.y }
+         }) 
+         */
+      }
+      
+      this.gridSystem.draw()
 
-        this.gridSystem.draw()
-
-        // Debug log once per second (DISABLED - too noisy)
-        // if (performance.now() - lastLog > 1000) {
-        //   console.log('[MapEngine] Ticker Heartbeat', { 
-        //     mode: this.interactionState.mode,
-        //     hover: this.interactionState.hoveredTile
-        //   })
-        //   lastLog = performance.now()
-        // }
+        // Debug log once per second
+        if (performance.now() - lastLog > 1000) {
+          console.log('[MapEngine] Ticker Heartbeat', { 
+            mode: this.interactionState.mode,
+            hover: this.interactionState.hoveredTile
+          })
+          lastLog = performance.now()
+        }
       }
     }
     this.app.ticker.add(this.tickerCallback)
@@ -150,7 +176,30 @@ export class MapEngine {
     const target = options.viewport || this.app.stage
     target.eventMode = 'static'
     
-    target.on('pointertap', () => {
+
+    this.onPointerMove = (event: any) => {
+      // Get global position
+      const globalPos = event.global
+      
+      // Convert to local (world) coordinates via camera container
+      // The camera container holds the world. Its transform handles zoom/pan.
+      // We need to inverse transform the global point to get Local World Point.
+      const localPos = this.camera.container.toLocal(globalPos)
+
+      // Get Grid Coords
+      const gridCoords = this.gridSystem.getGridCoords(localPos.x, localPos.y)
+
+      // Update State
+      this.interactionState.hoveredTile = gridCoords
+
+      // Optional: Update hoveredRoomId or other state for specific modes
+      if (this.interactionState.mode === 'placing_exit' || this.interactionState.mode === 'idle') {
+         // Logic for finding rooms/exits could go here if needed for hover effects
+      }
+    }
+    target.on('pointermove', this.onPointerMove)
+
+    this.onPointerTap = () => {
       if (this.interactionState.mode === 'placing_entrance') {
         const { x, y } = this.interactionState.hoveredTile
         if (this.dungeon.isValidEntrancePosition(x, y)) {
@@ -208,30 +257,78 @@ export class MapEngine {
             }
           }
         }
+        if (exitId) {
+          const roomId = this.dungeon.placeNewRoom(x, y, w, h, exitId)
+          if (roomId) {
+            this.interactionState.mode = 'idle'
+            this.interactionState.activeExitId = null
+            if (this.options.onNewRoomPlaced) {
+              this.options.onNewRoomPlaced(roomId, exitId)
+            }
+          }
+        }
+      } else if (this.interactionState.mode === 'placing_city') {
+        const { x, y } = this.interactionState.hoveredTile
+        if (this.options.onCityPlaced) {
+            this.options.onCityPlaced(x, y)
+        }
+        // Mode change is handled by callback/controller
+      } else if (this.interactionState.mode === 'placing_terrain') {
+        const { x, y } = this.interactionState.hoveredTile
+        if (this.options.onTerrainPlaced) {
+            this.options.onTerrainPlaced(x, y)
+        }
       }
-    })
+    }
+    target.on('pointertap', this.onPointerTap)
 
     // 6. Initial Center and Fit
     const mapState = this.dungeon.getState()
     const tileSize = this.gridSystem.config.size
 
-    const totalW = mapState.width * tileSize
-    const totalH = mapState.height * tileSize
-
-    this.camera.fitToView(totalW, totalH, 50)
+    if (mapState.rooms.length > 0) {
+      const totalW = mapState.width * tileSize
+      const totalH = mapState.height * tileSize
+      this.camera.fitToView(totalW, totalH, 50)
+    } else {
+      // For empty maps (like Overworld start), center on 0,0 (Top Left of Grid)
+      // We use a small timeout to ensure GameLayout has resized and calculated viewport bounds
+      setTimeout(() => {
+          if (!this.destroyed) {
+            this.camera.centerAt(0, 0)
+          }
+      }, 50)
+    }
 
     // DEBUG: Expose for DebugToolbar
     ;(window as any).__MAP_ENGINE__ = this
   }
 
+  // Stored Listeners for Cleanup
+  private onPointerMove: ((e: any) => void) | null = null
+  private onPointerTap: ((e: any) => void) | null = null
+
   public destroy(): void {
+    this.destroyed = true
+    
     // 1. Stop Render Loop
     if (this.tickerCallback) {
       this.app.ticker.remove(this.tickerCallback)
       this.tickerCallback = null
     }
 
-    // 2. Clean up Camera (remove listeners)
+    // 2. Remove Event Listeners
+    const target = this.options.viewport || this.app.stage
+    if (this.onPointerMove) {
+      target.off('pointermove', this.onPointerMove)
+      this.onPointerMove = null
+    }
+    if (this.onPointerTap) {
+      target.off('pointertap', this.onPointerTap)
+      this.onPointerTap = null
+    }
+
+    // 3. Clean up Camera (remove listeners)
     this.camera.destroy()
 
     // 3. Remove container from parent only if it still exists

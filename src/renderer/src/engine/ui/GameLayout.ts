@@ -107,6 +107,7 @@ export class GameLayout {
    * Snaps everything to current state instantly (no animation).
    */
   public resize(): void {
+    if (!this.app || !this.app.renderer) return
     const { width } = this.app.screen
     const { panelWidth, collapsedWidth } = this.options
 
