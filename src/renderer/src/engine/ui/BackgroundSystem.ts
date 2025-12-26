@@ -28,7 +28,7 @@ export class BackgroundSystem {
 
       this.bgSprite = new Sprite(bgTex)
       this.bgSprite.label = 'MainBackground'
-      
+
       // Respect the visibility state set before loading finished
       this.bgSprite.visible = this.isVisible
 

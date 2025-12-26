@@ -59,7 +59,7 @@ export class HexGridSystem extends BaseGridSystem {
         const offset = r % 2 !== 0 ? w / 2 : 0
         const cx = c * w + offset
         const cy = r * vert
-      this.drawHex(cx, cy, drawR > 0 ? drawR : 1) // Prevent negative radius
+        this.drawHex(cx, cy, drawR > 0 ? drawR : 1) // Prevent negative radius
       }
     }
 
@@ -83,8 +83,8 @@ export class HexGridSystem extends BaseGridSystem {
 
     // 1. Pixel to Axial (Floating Point)
     // https://www.redblobgames.com/grids/hexagons/#pixel-to-hex
-    const q = (Math.sqrt(3) / 3 * x - 1 / 3 * y) / size
-    const r = (2 / 3 * y) / size
+    const q = ((Math.sqrt(3) / 3) * x - (1 / 3) * y) / size
+    const r = ((2 / 3) * y) / size
 
     // 2. Round to nearest Hex (Cube Coordinates)
     return this.hexRound(q, r)
@@ -126,16 +126,16 @@ export class HexGridSystem extends BaseGridSystem {
    * Uses Odd-R offset convention.
    */
   public getPixelCoords(col: number, row: number): { x: number; y: number } {
-      const size = this.config.size
-      const w = Math.sqrt(3) * size
-      const h = 2 * size
-      const vert = h * 0.75
-      
-      const offset = row % 2 !== 0 ? w / 2 : 0
-      const cx = col * w + offset
-      const cy = row * vert
-      
-      return { x: cx, y: cy }
+    const size = this.config.size
+    const w = Math.sqrt(3) * size
+    const h = 2 * size
+    const vert = h * 0.75
+
+    const offset = row % 2 !== 0 ? w / 2 : 0
+    const cx = col * w + offset
+    const cy = row * vert
+
+    return { x: cx, y: cy }
   }
 
   private drawGhost(w: number, vert: number): void {
@@ -143,42 +143,42 @@ export class HexGridSystem extends BaseGridSystem {
     if (Number.isNaN(hoveredTile.x)) return
 
     if (mode === 'placing_town' || mode === 'placing_terrain') {
-        const c = hoveredTile.x
-        const row = hoveredTile.y
-        
-        const offset = row % 2 !== 0 ? w / 2 : 0
-        const cx = c * w + offset
-        const cy = row * vert
-        
-        this.graphics.moveTo(cx, cy) // Just to ensure context
-        
-        // Check validity if callback provided
-        let isValid = true
-        if (this.engine.options.onValidatePlacement) {
-            isValid = this.engine.options.onValidatePlacement(c, row)
-        }
+      const c = hoveredTile.x
+      const row = hoveredTile.y
 
-        // Draw filled hex at alpha
-        // Color: Valid = CYAN/GREEN, Invalid = RED
-        let color = mode === 'placing_town' ? 0x00FFFF : 0x00FF00
-        if (!isValid) {
-            color = 0xFF0000 
-        }
+      const offset = row % 2 !== 0 ? w / 2 : 0
+      const cx = c * w + offset
+      const cy = row * vert
 
-        this.graphics.poly(this.getHexPoly(cx, cy, this.config.size - 5))
-        this.graphics.fill({ color, alpha: 0.5 })
+      this.graphics.moveTo(cx, cy) // Just to ensure context
+
+      // Check validity if callback provided
+      let isValid = true
+      if (this.engine.options.onValidatePlacement) {
+        isValid = this.engine.options.onValidatePlacement(c, row)
+      }
+
+      // Draw filled hex at alpha
+      // Color: Valid = CYAN/GREEN, Invalid = RED
+      let color = mode === 'placing_town' ? 0x00ffff : 0x00ff00
+      if (!isValid) {
+        color = 0xff0000
+      }
+
+      this.graphics.poly(this.getHexPoly(cx, cy, this.config.size - 5))
+      this.graphics.fill({ color, alpha: 0.5 })
     }
   }
 
   public getHexPoly(cx: number, cy: number, r: number): number[] {
-      const points: number[] = []
-      const angleOffset = Math.PI / 6
-      for (let i = 0; i < 6; i++) {
-        const angle = angleOffset + (i * Math.PI) / 3
-        points.push(cx + r * Math.cos(angle))
-        points.push(cy + r * Math.sin(angle))
-      }
-      return points
+    const points: number[] = []
+    const angleOffset = Math.PI / 6
+    for (let i = 0; i < 6; i++) {
+      const angle = angleOffset + (i * Math.PI) / 3
+      points.push(cx + r * Math.cos(angle))
+      points.push(cy + r * Math.sin(angle))
+    }
+    return points
   }
 
   private drawHex(cx: number, cy: number, r: number): void {
@@ -207,7 +207,7 @@ export class HexGridSystem extends BaseGridSystem {
       // Vector from prev -> curr
       const dx1 = curr.x - prev.x
       const dy1 = curr.y - prev.y
-      
+
       // Vector from curr -> next
       const dx2 = next.x - curr.x
       const dy2 = next.y - curr.y

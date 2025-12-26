@@ -20,7 +20,7 @@ export interface RollTable {
   name: string
   description?: string
   summary?: string
-  
+
   // Rolling configuration
   maxRoll: number // e.g. 100 for d100, 88 for d88
   diceNotation?: string // Explicit notation like 'd88', '1d100', '2d6'

@@ -4,53 +4,390 @@
   "maxRoll": 88,
   "diceNotation": "d88",
   "tableData": [
-    { "floor": 11, "ceiling": 12, "result": "Barren", "tag": "BR", "type": "Area", "rank": 1, "folder": "barren" },
-    { "floor": 13, "ceiling": 13, "result": "Burnt Woodland", "tag": "BW", "type": "Area", "rank": 2, "folder": "burnt-woodland" },
-    { "floor": 14, "ceiling": 14, "result": "Clay Flats", "tag": "CF", "type": "Area", "rank": 3, "folder": "clay-flats" },
-    { "floor": 15, "ceiling": 16, "result": "Fields", "tag": "FI", "type": "Area", "rank": 6, "folder": "fields" },
-    { "floor": 17, "ceiling": 17, "result": "Floodplain", "tag": "FP", "type": "Area", "rank": 4 },
-    { "floor": 18, "ceiling": 21, "result": "Grassland", "tag": "GR", "type": "Area", "rank": 2, "folder": "grassland" },
-    { "floor": 22, "ceiling": 22, "result": "Heathland", "tag": "HE", "type": "Area", "rank": 2 },
-    { "floor": 23, "ceiling": 24, "result": "Hills", "tag": "HI", "type": "Area", "rank": 2, "folder": "hills" },
-    { "floor": 25, "ceiling": 25, "result": "Hunting Grounds", "tag": "HG", "type": "Area", "rank": 4 },
-    { "floor": 26, "ceiling": 26, "result": "Lake", "tag": "LA", "type": "Area", "rank": 5 },
-    { "floor": 27, "ceiling": 28, "result": "Marshland", "tag": "MA", "type": "Area", "rank": 2, "folder": "swamp" },
-    { "floor": 31, "ceiling": 32, "result": "Meadow", "tag": "ME", "type": "Area", "rank": 4, "folder": "meadow" },
-    { "floor": 33, "ceiling": 34, "result": "Rocky", "tag": "RK", "type": "Area", "rank": 2, "folder": "rocky" },
-    { "floor": 35, "ceiling": 35, "result": "Salt Flats", "tag": "SF", "type": "Area", "rank": 2 },
-    { "floor": 36, "ceiling": 36, "result": "Shrubland", "tag": "SH", "type": "Area", "rank": 2 },
-    { "floor": 37, "ceiling": 38, "result": "Woodland", "tag": "WO", "type": "Area", "rank": 3, "folder": "woodland" },
-    { "floor": 41, "ceiling": 41, "result": "Abandoned Dwelling", "tag": "AD", "type": "Unique", "rank": 7, "folder": "abandonded-building" },
-    { "floor": 42, "ceiling": 42, "result": "Abandoned Mine", "tag": "AM", "type": "Unique", "rank": 6, "folder": "abandoned-mine" },
-    { "floor": 43, "ceiling": 43, "result": "Abandoned Orchard", "tag": "AO", "type": "Unique", "rank": 5, "folder": "abandoned-orchard" },
-    { "floor": 44, "ceiling": 44, "result": "Woodcutter Camp", "tag": "WC", "type": "Unique", "rank": 4, "folder": "woodcutter-camp" },
-    { "floor": 45, "ceiling": 45, "result": "Ancient Workshop", "tag": "AW", "type": "Unique", "rank": 6, "folder": "ancient-workshop" },
-    { "floor": 46, "ceiling": 46, "result": "Animal Burrows", "tag": "AB", "type": "Unique", "rank": 3, "folder": "animal-burrows" },
-    { "floor": 47, "ceiling": 47, "result": "Bandit Camp", "tag": "BA", "type": "Unique", "rank": "Base", "folder": "bandit-camp" },
-    { "floor": 48, "ceiling": 48, "result": "Barrow", "tag": "BA2", "type": "Unique", "rank": 5, "folder": "barrow" },
-    { "floor": 51, "ceiling": 51, "result": "Building", "tag": "BU", "type": "Unique", "rank": "Base", "folder": "building" },
-    { "floor": 52, "ceiling": 52, "result": "Cave", "tag": "CA", "type": "Unique", "rank": 5, "folder": "cave" },
-    { "floor": 53, "ceiling": 53, "result": "Charred Battlefield", "tag": "CB", "type": "Unique", "rank": 4, "folder": "charred-battlefield" },
+    {
+      "floor": 11,
+      "ceiling": 12,
+      "result": "Barren",
+      "tag": "BR",
+      "type": "Area",
+      "rank": 1,
+      "folder": "barren"
+    },
+    {
+      "floor": 13,
+      "ceiling": 13,
+      "result": "Burnt Woodland",
+      "tag": "BW",
+      "type": "Area",
+      "rank": 2,
+      "folder": "burnt-woodland"
+    },
+    {
+      "floor": 14,
+      "ceiling": 14,
+      "result": "Clay Flats",
+      "tag": "CF",
+      "type": "Area",
+      "rank": 3,
+      "folder": "clay-flats"
+    },
+    {
+      "floor": 15,
+      "ceiling": 16,
+      "result": "Fields",
+      "tag": "FI",
+      "type": "Area",
+      "rank": 6,
+      "folder": "fields"
+    },
+    {
+      "floor": 17,
+      "ceiling": 17,
+      "result": "Floodplain",
+      "tag": "FP",
+      "type": "Area",
+      "rank": 4,
+      "folder": "floodplains"
+    },
+    {
+      "floor": 18,
+      "ceiling": 21,
+      "result": "Grassland",
+      "tag": "GR",
+      "type": "Area",
+      "rank": 2,
+      "folder": "grassland"
+    },
+    {
+      "floor": 22,
+      "ceiling": 22,
+      "result": "Heathland",
+      "tag": "HE",
+      "type": "Area",
+      "rank": 2,
+      "folder": "heathland"
+    },
+    {
+      "floor": 23,
+      "ceiling": 24,
+      "result": "Hills",
+      "tag": "HI",
+      "type": "Area",
+      "rank": 2,
+      "folder": "hills"
+    },
+    {
+      "floor": 25,
+      "ceiling": 25,
+      "result": "Hunting Grounds",
+      "tag": "HG",
+      "type": "Area",
+      "rank": 4,
+      "folder": "hunting-grounds"
+    },
+    {
+      "floor": 26,
+      "ceiling": 26,
+      "result": "Lake",
+      "tag": "LA",
+      "type": "Area",
+      "rank": 5,
+      "folder": "lake"
+    },
+    {
+      "floor": 27,
+      "ceiling": 28,
+      "result": "Marshland",
+      "tag": "MA",
+      "type": "Area",
+      "rank": 2,
+      "folder": "swamp"
+    },
+    {
+      "floor": 31,
+      "ceiling": 32,
+      "result": "Meadow",
+      "tag": "ME",
+      "type": "Area",
+      "rank": 4,
+      "folder": "meadow"
+    },
+    {
+      "floor": 33,
+      "ceiling": 34,
+      "result": "Rocky",
+      "tag": "RK",
+      "type": "Area",
+      "rank": 2,
+      "folder": "rocky"
+    },
+    {
+      "floor": 35,
+      "ceiling": 35,
+      "result": "Salt Flats",
+      "tag": "SF",
+      "type": "Area",
+      "rank": 2,
+      "folder": "salt-flats"
+    },
+    {
+      "floor": 36,
+      "ceiling": 36,
+      "result": "Shrubland",
+      "tag": "SH",
+      "type": "Area",
+      "rank": 2,
+      "folder": "shrubland"
+    },
+    {
+      "floor": 37,
+      "ceiling": 38,
+      "result": "Woodland",
+      "tag": "WO",
+      "type": "Area",
+      "rank": 3,
+      "folder": "woodland"
+    },
+    {
+      "floor": 41,
+      "ceiling": 41,
+      "result": "Abandoned Dwelling",
+      "tag": "AD",
+      "type": "Unique",
+      "rank": 7,
+      "folder": "abandonded-building"
+    },
+    {
+      "floor": 42,
+      "ceiling": 42,
+      "result": "Abandoned Mine",
+      "tag": "AM",
+      "type": "Unique",
+      "rank": 6,
+      "folder": "abandoned-mine"
+    },
+    {
+      "floor": 43,
+      "ceiling": 43,
+      "result": "Abandoned Orchard",
+      "tag": "AO",
+      "type": "Unique",
+      "rank": 5,
+      "folder": "abandoned-orchard"
+    },
+    {
+      "floor": 44,
+      "ceiling": 44,
+      "result": "Woodcutter Camp",
+      "tag": "WC",
+      "type": "Unique",
+      "rank": 4,
+      "folder": "woodcutter-camp"
+    },
+    {
+      "floor": 45,
+      "ceiling": 45,
+      "result": "Ancient Workshop",
+      "tag": "AW",
+      "type": "Unique",
+      "rank": 6,
+      "folder": "ancient-workshop"
+    },
+    {
+      "floor": 46,
+      "ceiling": 46,
+      "result": "Animal Burrows",
+      "tag": "AB",
+      "type": "Unique",
+      "rank": 3,
+      "folder": "animal-burrows"
+    },
+    {
+      "floor": 47,
+      "ceiling": 47,
+      "result": "Bandit Camp",
+      "tag": "BA",
+      "type": "Unique",
+      "rank": "Base",
+      "folder": "bandit-camp"
+    },
+    {
+      "floor": 48,
+      "ceiling": 48,
+      "result": "Barrow",
+      "tag": "BA2",
+      "type": "Unique",
+      "rank": 5,
+      "folder": "barrow"
+    },
+    {
+      "floor": 51,
+      "ceiling": 51,
+      "result": "Building",
+      "tag": "BU",
+      "type": "Unique",
+      "rank": "Base",
+      "folder": "building"
+    },
+    {
+      "floor": 52,
+      "ceiling": 52,
+      "result": "Cave",
+      "tag": "CA",
+      "type": "Unique",
+      "rank": 5,
+      "folder": "cave"
+    },
+    {
+      "floor": 53,
+      "ceiling": 53,
+      "result": "Charred Battlefield",
+      "tag": "CB",
+      "type": "Unique",
+      "rank": 4,
+      "folder": "charred-battlefield"
+    },
     { "floor": 54, "ceiling": 54, "result": "Clay Pit", "tag": "CP", "type": "Unique", "rank": 4 },
     { "floor": 55, "ceiling": 55, "result": "Deep Hole", "tag": "DH", "type": "Unique", "rank": 5 },
     { "floor": 56, "ceiling": 56, "result": "Den", "tag": "DE", "type": "Unique", "rank": 2 },
-    { "floor": 57, "ceiling": 57, "result": "Dungeon Entrance", "tag": "DU", "type": "Unique", "rank": 7, "folder": "dungeon-entrance" },
-    { "floor": 58, "ceiling": 58, "result": "Forgotten Monument", "tag": "FM", "type": "Unique", "rank": 5, "folder": "forgotten-monument" },
-    { "floor": 61, "ceiling": 61, "result": "Forgotten Shrine", "tag": "FS", "type": "Unique", "rank": 4, "folder": "forgotten-shrine" },
-    { "floor": 62, "ceiling": 62, "result": "Fungal Hollow", "tag": "FH", "type": "Unique", "rank": 5 },
-    { "floor": 63, "ceiling": 63, "result": "Iron Outcrop", "tag": "IO", "type": "Unique", "rank": 5 },
-    { "floor": 64, "ceiling": 64, "result": "Old Cemetery", "tag": "OC", "type": "Unique", "rank": 3, "folder": "old-cemetery" },
+    {
+      "floor": 57,
+      "ceiling": 57,
+      "result": "Dungeon Entrance",
+      "tag": "DU",
+      "type": "Unique",
+      "rank": 7,
+      "folder": "dungeon-entrance"
+    },
+    {
+      "floor": 58,
+      "ceiling": 58,
+      "result": "Forgotten Monument",
+      "tag": "FM",
+      "type": "Unique",
+      "rank": 5,
+      "folder": "forgotten-monument"
+    },
+    {
+      "floor": 61,
+      "ceiling": 61,
+      "result": "Forgotten Shrine",
+      "tag": "FS",
+      "type": "Unique",
+      "rank": 4,
+      "folder": "forgotten-shrine"
+    },
+    {
+      "floor": 62,
+      "ceiling": 62,
+      "result": "Fungal Hollow",
+      "tag": "FH",
+      "type": "Unique",
+      "rank": 5
+    },
+    {
+      "floor": 63,
+      "ceiling": 63,
+      "result": "Iron Outcrop",
+      "tag": "IO",
+      "type": "Unique",
+      "rank": 5,
+      "folder": "iron-outcrop"
+    },
+    {
+      "floor": 64,
+      "ceiling": 64,
+      "result": "Old Cemetery",
+      "tag": "OC",
+      "type": "Unique",
+      "rank": 3,
+      "folder": "old-cemetery"
+    },
     { "floor": 65, "ceiling": 65, "result": "Mound", "tag": "MO", "type": "Unique", "rank": 2 },
-    { "floor": 66, "ceiling": 66, "result": "Old Quarry", "tag": "OQ", "type": "Unique", "rank": 5, "folder": "old-quarry" },
-    { "floor": 67, "ceiling": 67, "result": "Old Well", "tag": "OW", "type": "Unique", "rank": 4, "folder": "old-well" },
-    { "floor": 76, "ceiling": 76, "result": "Ancient Tower", "tag": "AT", "type": "Unique", "rank": 4, "folder": "ancient-tower" },
-    { "floor": 77, "ceiling": 77, "result": "Stone Platform", "tag": "SP", "type": "Unique", "rank": 2 },
-    { "floor": 78, "ceiling": 78, "result": "Watchtower", "tag": "WT", "type": "Unique", "rank": 4 },
-    { "floor": 81, "ceiling": 81, "result": "Abandoned Road", "tag": "AR", "type": "String", "rank": 2 },
-    { "floor": 82, "ceiling": 82, "result": "Border Stones", "tag": "BS", "type": "String", "rank": 2 },
-    { "floor": 83, "ceiling": 83, "result": "Broken Causeway", "tag": "BC", "type": "String", "rank": 3 },
-    { "floor": 84, "ceiling": 84, "result": "Low Cliff", "tag": "LC2", "type": "String", "rank": 2 },
-    { "floor": 85, "ceiling": 85, "result": "Overgrown Chasm", "tag": "OC", "type": "String", "rank": 2 },
+    {
+      "floor": 66,
+      "ceiling": 66,
+      "result": "Old Quarry",
+      "tag": "OQ",
+      "type": "Unique",
+      "rank": 5,
+      "folder": "old-quarry"
+    },
+    {
+      "floor": 67,
+      "ceiling": 67,
+      "result": "Old Well",
+      "tag": "OW",
+      "type": "Unique",
+      "rank": 4,
+      "folder": "old-well"
+    },
+    {
+      "floor": 76,
+      "ceiling": 76,
+      "result": "Ancient Tower",
+      "tag": "AT",
+      "type": "Unique",
+      "rank": 4,
+      "folder": "ancient-tower"
+    },
+    {
+      "floor": 77,
+      "ceiling": 77,
+      "result": "Stone Platform",
+      "tag": "SP",
+      "type": "Unique",
+      "rank": 2
+    },
+    {
+      "floor": 78,
+      "ceiling": 78,
+      "result": "Watchtower",
+      "tag": "WT",
+      "type": "Unique",
+      "rank": 4,
+      "folder": "watchtower"
+    },
+    {
+      "floor": 81,
+      "ceiling": 81,
+      "result": "Abandoned Road",
+      "tag": "AR",
+      "type": "String",
+      "rank": 2
+    },
+    {
+      "floor": 82,
+      "ceiling": 82,
+      "result": "Border Stones",
+      "tag": "BS",
+      "type": "String",
+      "rank": 2
+    },
+    {
+      "floor": 83,
+      "ceiling": 83,
+      "result": "Broken Causeway",
+      "tag": "BC",
+      "type": "String",
+      "rank": 3
+    },
+    {
+      "floor": 84,
+      "ceiling": 84,
+      "result": "Low Cliff",
+      "tag": "LC2",
+      "type": "String",
+      "rank": 2
+    },
+    {
+      "floor": 85,
+      "ceiling": 85,
+      "result": "Overgrown Chasm",
+      "tag": "OC",
+      "type": "String",
+      "rank": 2
+    },
     { "floor": 86, "ceiling": 86, "result": "Ravine", "tag": "RA", "type": "String", "rank": 3 },
     { "floor": 87, "ceiling": 87, "result": "River", "tag": "RI", "type": "String", "rank": 5 },
     { "floor": 88, "ceiling": 88, "result": "Stone Wall", "tag": "SW", "type": "String", "rank": 3 }

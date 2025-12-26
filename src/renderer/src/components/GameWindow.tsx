@@ -3,6 +3,8 @@ import { Application, Graphics, Sprite, Assets } from 'pixi.js'
 import { TerrainAssetLoader } from '../engine/map/TerrainAssetLoader'
 import { useAppStore, useAppActions } from '@/stores/useAppStore'
 import { MapEngine } from '../engine/MapEngine'
+import { HexLogic } from '../engine/systems/HexLogic'
+import { OverworldManager } from '../engine/managers/OverworldManager'
 import { GameLayout } from '../engine/ui/GameLayout'
 import { BackgroundSystem } from '../engine/ui/BackgroundSystem'
 import { TableEngine } from '../engine/tables/TableEngine'
@@ -18,7 +20,6 @@ import { SettingsProvider, SettingsSync, diceEngine } from '../integrations/anvi
 import { D8IconPanel } from './D8IconPanel'
 import diceLanding from '../assets/images/ui/dice-landing.png'
 import flairOverlay from '../assets/images/overland-tiles/flair_empty_0.png'
-
 
 interface LandTypeEntry {
   land: string
@@ -79,11 +80,20 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const [isPlacingExit, setIsPlacingExit] = useState(false)
   const [exitCount, setExitCount] = useState(0)
   const [activeExitId, setActiveExitId] = useState<string | null>(null)
-  const [pendingNewRoom, setPendingNewRoom] = useState<{ width: number; height: number; type: string } | null>(null)
+  const [pendingNewRoom, setPendingNewRoom] = useState<{
+    width: number
+    height: number
+    type: string
+  } | null>(null)
   const [pendingRoom, setPendingRoom] = useState<{ width: number; height: number } | null>(null)
   const [newlyPlacedRoomId, setNewlyPlacedRoomId] = useState<string | null>(null)
   const [exitsToPlace, setExitsToPlace] = useState(0)
-  const [, setEligibleWalls] = useState<{ top: boolean; bottom: boolean; left: boolean; right: boolean } | null>(null)
+  const [, setEligibleWalls] = useState<{
+    top: boolean
+    bottom: boolean
+    left: boolean
+    right: boolean
+  } | null>(null)
 
   // Rolling State
   const [isRolling, setIsRolling] = useState(false)
@@ -94,7 +104,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   // Logging State
   const [unClaimedLog, setUnClaimedLog] = useState<Plot[]>([])
   const [isLogModalOpen, setIsLogModalOpen] = useState(false)
-  const activePlotIndexRef = useRef<number>(-1)
 
   const [overworldStep, setOverworldStep] = useState<number>(0) // 0=Start, 1=City Placed/Roll Terrain, 2=Terrain Rolled/Roll Count, 3=Placing
   const [currentTerrain, setCurrentTerrain] = useState<string | null>(null)
@@ -102,24 +111,32 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   // const [currentTerrainRow, setCurrentTerrainRow] = useState<any | null>(null) (Moved to ref to avoid re-renders if only needed in handler)
   // Actually, we use row in handleRollCount, so we need state or ref.
   // Let's use ref to store the row data since it doesn't directly render UI (only logs/logic)
-  const currentTerrainRowRef = useRef<any | null>(null)
+  const currentTerrainRowRef = useRef<Record<string, any> | null>(null)
   const [tilesToPlace, setTilesToPlace] = useState(0)
   const [townPlaced, setTownPlaced] = useState(false)
-  const placedOverworldTiles = useRef<Map<string, string>>(new Map()) // "x,y" -> type
+  // REFACTORED: Manager Ref
+  const overworldManagerRef = useRef<OverworldManager>(new OverworldManager())
 
   // Interactive Exploration State
-  const [tooltip, setTooltip] = useState<{ x: number, y: number, text: string, visible: boolean }>({ x: 0, y: 0, text: '', visible: false })
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string; visible: boolean }>({
+    x: 0,
+    y: 0,
+    text: '',
+    visible: false
+  })
   const validMovesRef = useRef<Set<string>>(new Set())
-  const currentBatchTilesRef = useRef<Set<string>>(new Set())
-
 
   // Ref to track current newlyPlacedRoomId for use in callbacks (avoids stale closure)
   const newlyPlacedRoomIdRef = useRef<string | null>(null)
-  useEffect(() => { newlyPlacedRoomIdRef.current = newlyPlacedRoomId }, [newlyPlacedRoomId])
+  useEffect(() => {
+    newlyPlacedRoomIdRef.current = newlyPlacedRoomId
+  }, [newlyPlacedRoomId])
 
   // Fix: Stale Terrain Ref
   const currentTerrainRef = useRef(currentTerrain)
-  useEffect(() => { currentTerrainRef.current = currentTerrain }, [currentTerrain])
+  useEffect(() => {
+    currentTerrainRef.current = currentTerrain
+  }, [currentTerrain])
 
   // Fix: Stale GameMode and OverworldStep Ref for MapEngine Callbacks
   const gameModeRef = useRef(gameMode)
@@ -129,7 +146,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     overworldStepRef.current = overworldStep
   }, [gameMode, overworldStep])
 
-
   const addLog = (msg: string): void => {
     setLogs((prev) => [msg, ...prev.slice(0, 9)]) // Keep last 10 logs
   }
@@ -138,7 +154,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
    * Initializes the entire Game View (Pixi App, Layout, Backgrounds)
    */
   useEffect(() => {
-    const initGame = async () => {
+    const initGame = async (): Promise<void> => {
       if (!containerRef.current || !pixiContainerRef.current || initializingRef.current) return
       initializingRef.current = true
 
@@ -216,6 +232,168 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       }
     }
   }, [])
+
+  // -- INTERACTION HANDLERS --
+
+  const handleHexHover = useCallback(
+    (x: number, y: number, globalX: number, globalY: number): void => {
+      if (gameModeRef.current !== 'overworld') return
+
+      const key = `${x},${y}`
+
+      // STRICT: Only show "Explore" tooltip if in Step 1
+      if (overworldStepRef.current === 1) {
+        if (validMovesRef.current.has(key)) {
+          setTooltip({ x: globalX, y: globalY, text: 'Explore This Tile', visible: true })
+        } else {
+          setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+        }
+      } else {
+        // If in placement mode, we might want a different tooltip?
+        // For now, just hide the explore tooltip
+        setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+      }
+    },
+    []
+  )
+
+  const handleExploreTile = useCallback(async (x: number, y: number): Promise<void> => {
+    setIsRolling(true)
+    setLogs((prev) => [...prev, `Exploring tile at ${x},${y}...`])
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await TableEngine.rollOnTable(landTable as any)
+      setIsRolling(false)
+
+      const row = result.row
+      const folder = row.folder
+      const hasAssets = folder && TerrainAssetLoader.get(folder).length > 0
+
+      if (!folder || !hasAssets) {
+        addLog(`Explored '${result.result}' but found no assets. Skipping.`)
+        return
+      }
+
+      addLog(`Discovered: ${result.result}`)
+      setCurrentTerrain(folder)
+
+      if (row.type === 'Unique') {
+        // Place IMMEDIATELY
+        currentTerrainRef.current = folder
+
+        if (mapEngineRef.current) {
+          const texture = TerrainAssetLoader.getRandom(folder)
+          if (texture) {
+            const { x: cx, y: cy } = mapEngineRef.current.gridSystem.getPixelCoords(x, y)
+            const sprite = new Sprite(texture)
+            sprite.anchor.set(0.5)
+            sprite.x = cx
+            sprite.y = cy
+            const h = 2 * (mapEngineRef.current.gridSystem.config.size as number)
+            sprite.scale.set(h / texture.height)
+            mapEngineRef.current.layers.live.addChild(sprite)
+
+            // REFACTOR: Use Manager
+            overworldManagerRef.current.registerUniquePlacement(
+              x,
+              y,
+              folder,
+              (row.rank as number) || 0,
+              row.tag
+                ? `${row.tag}${overworldManagerRef.current.currentPlots.length + 1}`
+                : undefined
+            )
+
+            // FLAIR OVERLAY (Unique)
+            const flair = Sprite.from(flairOverlay)
+            flair.anchor.set(0.5)
+            const fh = 2 * (mapEngineRef.current.gridSystem.config.size as number)
+            flair.scale.set(fh / flair.height)
+
+            flair.x = cx
+            flair.y = cy - (mapEngineRef.current.gridSystem.config.size as number) * 0.85 - 15
+
+            mapEngineRef.current.layers.overlay.addChild(flair)
+
+            // Sync Log
+            setUnClaimedLog(overworldManagerRef.current.currentPlots)
+
+            addLog(`Unique terrain placed at ${x},${y}.`)
+
+            // Recalculate neighbors for next turn
+            const allValid = overworldManagerRef.current.getValidMoves()
+            validMovesRef.current = new Set(allValid.map((m) => `${m.x},${m.y}`))
+            mapEngineRef.current.highlightValidMoves(allValid)
+          }
+        }
+      } else {
+        // AREA: Place first tile, then prompt for d8
+        if (mapEngineRef.current) {
+          currentTerrainRef.current = folder
+          currentTerrainRowRef.current = row
+
+          // Place the FIRST tile here and now
+          const texture = TerrainAssetLoader.getRandom(folder)
+          if (texture) {
+            const { x: cx, y: cy } = mapEngineRef.current.gridSystem.getPixelCoords(x, y)
+            const sprite = new Sprite(texture)
+            sprite.anchor.set(0.5)
+            sprite.x = cx
+            sprite.y = cy
+            const h = 2 * (mapEngineRef.current.gridSystem.config.size as number)
+            sprite.scale.set(h / texture.height)
+            mapEngineRef.current.layers.live.addChild(sprite)
+
+            // REFACTOR: Manager Area Start
+            overworldManagerRef.current.createAreaPlot(row.result || 'Area')
+            overworldManagerRef.current.startAreaBatch(row.result || 'Area')
+            overworldManagerRef.current.addTileToBatch(x, y, folder, (row.rank as number) || 0)
+
+            // FLAIR OVERLAY (Area Start)
+            const flair = Sprite.from(flairOverlay)
+            flair.anchor.set(0.5)
+            const fh = 2 * (mapEngineRef.current.gridSystem.config.size as number)
+            flair.scale.set(fh / flair.height)
+
+            flair.x = cx
+            flair.y = cy - (mapEngineRef.current.gridSystem.config.size as number) * 0.85 - 15
+
+            mapEngineRef.current.layers.overlay.addChild(flair)
+
+            // Sync Log
+            setUnClaimedLog(overworldManagerRef.current.currentPlots)
+          }
+        }
+
+        // Prompt d8
+        setOverworldStep(2) // Move to "Roll for Area Size" step
+      }
+    } catch (e) {
+      console.error(e)
+      setIsRolling(false)
+    }
+  }, [])
+
+  const handleHexClick = useCallback(
+    (x: number, y: number): void => {
+      // CRITICAL: Strict Check to prevent "Explore" during "Placement"
+      if (gameModeRef.current !== 'overworld') return
+
+      // If we are in STEP 3 (Placement), this handler should NOT run explore logic.
+      // Placement logic is handled by onTerrainPlaced via MapEngine internal tap.
+      if (overworldStepRef.current !== 1) {
+        return
+      }
+
+      const key = `${x},${y}`
+      if (!validMovesRef.current.has(key)) return
+
+      // Trigger Explore Logic
+      handleExploreTile(x, y)
+    },
+    [handleExploreTile]
+  )
 
   // Handle Map Engine Logic (Show/Hide)
   // Handle Map Engine Logic (Show/Hide & Mode)
@@ -303,7 +481,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
               addLog(`Max Available Space: ${dims.maxW}x${dims.maxH}`)
             }
           },
-          onNewRoomPlaced: (roomId, exitId) => {
+          onNewRoomPlaced: (roomId) => {
             // (Callback uses roomId, exitId)
             if (!mapEngineRef.current) return
 
@@ -322,7 +500,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             if (eligibility.bottom) addLog('  - Bottom wall: Eligible')
             if (eligibility.left) addLog('  - Left wall: Eligible')
             if (eligibility.right) addLog('  - Right wall: Eligible')
-            if (eligibility.connectedWall) addLog(`  - ${eligibility.connectedWall} wall: Connected (Entry)`)
+            if (eligibility.connectedWall)
+              addLog(`  - ${eligibility.connectedWall} wall: Connected (Entry)`)
 
             // Store the new room ID for the exit roll button
             setNewlyPlacedRoomId(roomId)
@@ -355,18 +534,32 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             // Fallback for Town or other modes (though validMovesRef should arguably drive those too)
 
             // If map is empty, any placement is valid (First City)
-            if (placedOverworldTiles.current.size === 0) return true
+            if (overworldManagerRef.current.placedTilesMap.size === 0) return true
 
             // Terrain must verify adjacency
             const isOdd = y % 2 !== 0
             const neighbors = isOdd
-              ? [[0, -1], [1, -1], [-1, 0], [1, 0], [0, 1], [1, 1]]
-              : [[-1, -1], [0, -1], [-1, 0], [1, 0], [-1, 1], [0, 1]]
+              ? [
+                  [0, -1],
+                  [1, -1],
+                  [-1, 0],
+                  [1, 0],
+                  [0, 1],
+                  [1, 1]
+                ]
+              : [
+                  [-1, -1],
+                  [0, -1],
+                  [-1, 0],
+                  [1, 0],
+                  [-1, 1],
+                  [0, 1]
+                ]
 
             // Check if any neighbor is occupied
             let hasNeighbor = false
             for (const [dx, dy] of neighbors) {
-              if (placedOverworldTiles.current.has(`${x + dx},${y + dy}`)) {
+              if (overworldManagerRef.current.placedTilesMap.has(`${x + dx},${y + dy}`)) {
                 hasNeighbor = true
                 break
               }
@@ -375,14 +568,12 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             if (!hasNeighbor) return false
 
             // Check overlap
-            if (placedOverworldTiles.current.has(`${x},${y}`)) return false
+            if (overworldManagerRef.current.placedTilesMap.has(`${x},${y}`)) return false
 
             return true
           },
 
-
           onTownPlaced: (x, y) => {
-
             if (!mapEngineRef.current) return
 
             // 1. Calculate Hex Center
@@ -409,13 +600,13 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
               const r = mapEngineRef.current.gridSystem.config.size - 5
               const points: number[] = []
               for (let i = 0; i < 6; i++) {
-                const angle = (Math.PI / 6) + (i * Math.PI) / 3
+                const angle = Math.PI / 6 + (i * Math.PI) / 3
                 points.push(cx + r * Math.cos(angle))
                 points.push(cy + r * Math.sin(angle))
               }
               g.poly(points)
-              g.fill({ color: 0x00FFFF, alpha: 0.9 })
-              g.stroke({ width: 2, color: 0xFFFFFF })
+              g.fill({ color: 0x00ffff, alpha: 0.9 })
+              g.stroke({ width: 2, color: 0xffffff })
               mapEngineRef.current.layers.live.addChild(g)
             }
 
@@ -427,52 +618,31 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
             flair.x = cx
             // Move to top of hex (shift up by radius/size) + 15px adjustment
-            flair.y = cy - (mapEngineRef.current.gridSystem.config.size * 0.85) - 15
+            flair.y = cy - mapEngineRef.current.gridSystem.config.size * 0.85 - 15
 
             mapEngineRef.current.layers.overlay.addChild(flair)
 
             // 3. Update State
-            placedOverworldTiles.current.set(`${x},${y}`, 'town')
+            // 3. Update State via Manager
+            overworldManagerRef.current.registerTownPlacement(x, y)
             setTownPlaced(true)
             setOverworldStep(1)
 
-            setUnClaimedLog(prev => {
-              const townPlot: Plot = {
-                plotTag: `TWN${prev.length + 1}`,
-                landType: 'Town',
-                size: 1,
-                rank: 0,
-                rankModifier: 0,
-                ownerAndDetails: 'N/A',
-                landTypeList: [
-                  {
-                    land: 'Town',
-                    rank: 0,
-                    coordX: x,
-                    coordY: y
-                  }
-                ]
-              }
-              console.log('Adding Town to UnClaimed Log:', townPlot)
-              return [...prev, townPlot]
-            })
-
+            setUnClaimedLog(overworldManagerRef.current.currentPlots)
 
             mapEngineRef.current.interactionState.mode = 'idle'
             addLog(`Town placed at ${x}, ${y}.`)
 
-            // 4. Highlight Valid Moves (Neighbors of Town)
-            const neighbors = getValidNeighbors(x, y, placedOverworldTiles.current)
+            // 4. Highlight Valid Moves: Manager knows best
+            const neighbors = overworldManagerRef.current.getValidMoves()
             mapEngineRef.current.highlightValidMoves(neighbors)
 
             // Fix: Update validMovesRef so hover/click works!
-            validMovesRef.current = new Set(neighbors.map(m => `${m.x},${m.y}`))
-
+            validMovesRef.current = new Set(neighbors.map((m) => `${m.x},${m.y}`))
           },
 
           onTerrainPlaced: (x, y) => {
-            // Validation is now handled by onValidatePlacement (Ghost Color)
-            // But we double check here to prevent placement
+            // Validation (Ghost Color handled elsewhere, but double check)
             const isValid = mapEngineRef.current?.options.onValidatePlacement?.(x, y) ?? true
             if (!isValid) {
               addLog(`Invalid placement!`)
@@ -495,70 +665,74 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
               sprite.scale.set(scale)
 
               mapEngineRef.current.layers.live.addChild(sprite)
-              placedOverworldTiles.current.set(`${x},${y}`, type)
-              currentBatchTilesRef.current.add(`${x},${y}`)
 
-              // PLOT LOGGING: Append to Active Plot (Area)
-              // Only if we have a valid active index (which we should for Area placement)
-              if (activePlotIndexRef.current >= 0) {
-                setUnClaimedLog(prev => {
-                  const newLog = [...prev]
-                  // SAFETY: Deep copy the specific plot we are modifying to avoid strict-mode double-mutation issues
-                  const oldPlot = newLog[activePlotIndexRef.current]
-                  if (oldPlot) {
-                    const updatedPlot = {
-                      ...oldPlot,
-                      landTypeList: [...oldPlot.landTypeList, {
-                        land: oldPlot.landType,
-                        rank: currentTerrainRowRef.current?.rank || 0,
-                        coordX: x,
-                        coordY: y
-                      }]
-                    }
-                    updatedPlot.size = updatedPlot.landTypeList.length
-                    newLog[activePlotIndexRef.current] = updatedPlot
-                  }
-                  return newLog
-                })
-              }
+              // REFACTORED: Manager Update
+              const rank = currentTerrainRowRef.current?.rank || 0
+              overworldManagerRef.current.addTileToBatch(x, y, type, rank)
 
-              // 3. Highlight Valid Moves: Neighbors of CURRENT BATCH if placing area
-              // Or global valid if done?
-              // The logic here is tricky. onTerrainPlaced is called after click.
-              // If we are still in "Placing" mode (Step 3), we decrement tilesToPlace.
+              // Sync UI Log
+              setUnClaimedLog(overworldManagerRef.current.currentPlots)
 
-              setTilesToPlace(prev => {
+              // 3. Logic: Decrement Tiles
+              setTilesToPlace((prev) => {
                 const newVal = prev - 1
+
+                // CHECK FOR AREA SEED (Transition to Roll Count)
+                const isUnique = currentTerrainRowRef.current?.type === 'Unique'
+                const batchSize = overworldManagerRef.current.currentBatch.size
+
                 if (newVal <= 0) {
+                  if (!isUnique && batchSize === 1) {
+                    // We just placed the first tile of an Area.
+                    // Transition to Roll Count.
+                    addLog('First tile placed. Rolling for area size...')
+                    setOverworldStep(2)
+                    // Do NOT reset idle mode, we want to stay engaged?
+                    // Actually, we usually roll automatically?
+                    // setOverworldStep(2) maps to UI showing "Roll D8" button?
+                    // Or we auto-roll?
+                    // UI usually has a button for rolling.
+                    if (mapEngineRef.current) mapEngineRef.current.interactionState.mode = 'idle'
+                    return 0
+                  }
+
+                  // Batch Complete (Unique OR Area finished)
                   setOverworldStep(1) // Back to Explore
-                  activePlotIndexRef.current = -1 // Reset active plot
+                  overworldManagerRef.current.finishBatch()
+
                   if (mapEngineRef.current) {
                     mapEngineRef.current.interactionState.mode = 'idle'
-                    // Recalculate global valid moves for next explore step
-                    const allValid = getAllValidMoves(placedOverworldTiles.current)
-                    validMovesRef.current = new Set(allValid.map(m => `${m.x},${m.y}`))
+                    // Recalculate global valid moves
+                    const allValid = overworldManagerRef.current.getValidMoves()
+                    validMovesRef.current = new Set(allValid.map((m) => `${m.x},${m.y}`))
                     mapEngineRef.current.highlightValidMoves(allValid)
                   }
                   addLog('Batch complete. Ready to explore.')
                   return 0
                 }
 
-                // If we still have tiles, we need to update valid moves to be adjacent to CURRENT BATCH
+                // If we still have tiles, update Valid Moves (Batch Adjacency)
                 if (mapEngineRef.current) {
-                  const batchalid = getValidBatchMoves(currentBatchTilesRef.current, placedOverworldTiles.current)
-                  if (batchalid.length === 0) {
-                    addLog("No more space for this terrain! Ending batch early.")
+                  // We need 'getValidBatchMoves' exposed or handled by Manager.
+                  // For now, use HexLogic with Manager's data.
+                  const batchMoves = HexLogic.getValidBatchMoves(
+                    overworldManagerRef.current.currentBatch,
+                    overworldManagerRef.current.placedTilesMap
+                  )
+
+                  if (batchMoves.length === 0) {
+                    addLog('No more space! Ending batch early.')
                     setOverworldStep(1)
+                    overworldManagerRef.current.finishBatch()
                     mapEngineRef.current.interactionState.mode = 'idle'
-                    // calc global valid
-                    const allValid = getAllValidMoves(placedOverworldTiles.current)
-                    validMovesRef.current = new Set(allValid.map(m => `${m.x},${m.y}`))
+                    const allValid = overworldManagerRef.current.getValidMoves()
+                    validMovesRef.current = new Set(allValid.map((m) => `${m.x},${m.y}`))
                     mapEngineRef.current.highlightValidMoves(allValid)
                     return 0
                   }
-                  mapEngineRef.current.highlightValidMoves(batchalid)
-                  // Update validMovesRef for click validation
-                  validMovesRef.current = new Set(batchalid.map(m => `${m.x},${m.y}`))
+
+                  mapEngineRef.current.highlightValidMoves(batchMoves)
+                  validMovesRef.current = new Set(batchMoves.map((m) => `${m.x},${m.y}`))
                 }
 
                 return newVal
@@ -578,7 +752,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           }
         }, 100)
       }
-
     } else {
       bg?.setVisible(true)
       if (mapEngineRef.current) {
@@ -586,7 +759,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         mapEngineRef.current = null
       }
     }
-  }, [showMap, mapConfig, isReady, gameMode]) // ADDED gameMode to dependencies
+  }, [showMap, mapConfig, isReady, gameMode, handleHexClick, handleHexHover]) // ADDED dependencies
 
   // FIX: Sync Overworld Step to MapEngine Mode
   // This ensures that if we are in Step 1 (Explore), the engine is definitely in 'idle'
@@ -617,7 +790,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       addLog('3 Exits placed. Finalizing Starter Room (Dead zones).')
       if (mapEngineRef.current) {
         const rooms = mapEngineRef.current.dungeon.getState().rooms
-        const starter = rooms.find(r => r.type === 'start')
+        const starter = rooms.find((r) => r.type === 'start')
         if (starter) {
           mapEngineRef.current.dungeon.finalizeStarterRoom(starter.id)
         }
@@ -632,7 +805,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     setIsNewMapModalOpen(false)
     setGameMode('dungeon') // Explicitly set dungeon mode
 
-    // UI Resets happen in useEffect now, but setting config triggers re-render/effect maybe? 
+    // UI Resets happen in useEffect now, but setting config triggers re-render/effect maybe?
     // Actually showMap toggle triggers effect.
     // If showMap is already true, we need to trigger effect.
     // Setting mapConfig is a dependency!
@@ -644,199 +817,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
     if (!showMap) {
       toggleMap()
-    }
-  }
-
-  // -- INTERACTION HANDLERS --
-
-  const handleHexHover = (x: number, y: number, globalX: number, globalY: number): void => {
-    if (gameModeRef.current !== 'overworld') return
-
-    const key = `${x},${y}`
-
-    // STRICT: Only show "Explore" tooltip if in Step 1
-    if (overworldStepRef.current === 1) {
-      if (validMovesRef.current.has(key)) {
-        setTooltip({ x: globalX, y: globalY, text: 'Explore This Tile', visible: true })
-      } else {
-        setTooltip(prev => prev.visible ? { ...prev, visible: false } : prev)
-      }
-    } else {
-      // If in placement mode, we might want a different tooltip?
-      // For now, just hide the explore tooltip
-      setTooltip(prev => prev.visible ? { ...prev, visible: false } : prev)
-    }
-  }
-
-  const handleHexClick = (x: number, y: number): void => {
-    // CRITICAL: Strict Check to prevent "Explore" during "Placement"
-    if (gameModeRef.current !== 'overworld') return
-
-    // If we are in STEP 3 (Placement), this handler should NOT run explore logic.
-    // Placement logic is handled by onTerrainPlaced via MapEngine internal tap.
-    if (overworldStepRef.current !== 1) {
-      // If we are in Step 3, maybe we are trying to place but validation failed?
-      // In any case, DO NOT TRIGGER EXPLORE.
-      return
-    }
-
-    const key = `${x},${y}`
-    if (!validMovesRef.current.has(key)) return
-
-    // Trigger Explore Logic
-    handleExploreTile(x, y)
-  }
-
-  const handleExploreTile = async (x: number, y: number): Promise<void> => {
-    setIsRolling(true)
-    setLogs((prev) => [...prev, `Exploring tile at ${x},${y}...`])
-
-    try {
-      const result = await TableEngine.rollOnTable(landTable as any)
-      setIsRolling(false)
-
-      const row = result.row
-      const folder = row.folder
-      const hasAssets = folder && TerrainAssetLoader.get(folder).length > 0
-
-      if (!folder || !hasAssets) {
-        addLog(`Explored '${result.result}' but found no assets. Skipping.`)
-        return
-      }
-
-      addLog(`Discovered: ${result.result}`)
-      setCurrentTerrain(folder)
-
-      if (row.type === 'Unique') {
-        // Place IMMEDIATELY
-        // We need to temporarily set the terrain ref so that logic knows what to place?
-        // Actually we can just call place logic directly if we extract it, 
-        // BUT for now let's reuse onTerrainPlaced but we need to trick the state or call logic manually.
-        // Easier: Just manually place it since we have x,y and type.
-
-        currentTerrainRef.current = folder
-
-        // We need to render it. Reuse the logic from onTerrainPlaced partially?
-        // Or just call mapEngineRef.current?.options.onTerrainPlaced?.(x, y) if we handle "placing immediate"
-
-        // Let's manually do the placement to ensure "immediate" feel without mode switching
-        if (mapEngineRef.current) {
-          const texture = TerrainAssetLoader.getRandom(folder)
-          if (texture) {
-            const { x: cx, y: cy } = mapEngineRef.current.gridSystem.getPixelCoords(x, y)
-            // Simple placement logic duplicate for now to ensure robustness
-            const sprite = new Sprite(texture)
-            sprite.anchor.set(0.5)
-            sprite.x = cx
-            sprite.y = cy
-            const h = 2 * mapEngineRef.current.gridSystem.config.size
-            sprite.scale.set(h / texture.height)
-            mapEngineRef.current.layers.live.addChild(sprite)
-            placedOverworldTiles.current.set(`${x},${y}`, folder)
-
-            // FLAIR OVERLAY (Unique)
-            const flair = Sprite.from(flairOverlay)
-            flair.anchor.set(0.5)
-            const fh = 2 * mapEngineRef.current.gridSystem.config.size
-            flair.scale.set(fh / flair.height)
-
-            flair.x = cx
-            flair.y = cy - (mapEngineRef.current.gridSystem.config.size * 0.85) - 15
-
-            mapEngineRef.current.layers.overlay.addChild(flair)
-
-            // LOGGING: Unique Plot
-            setUnClaimedLog(prev => {
-              const uniquePlot: Plot = {
-                plotTag: `${row.tag || 'UNI'}${prev.length + 1}`,
-                landType: row.result || 'Unique',
-                size: 1,
-                rank: row.rank || 0,
-                rankModifier: 0,
-                ownerAndDetails: 'N/A',
-                landTypeList: [{
-                  land: row.result || 'Unique',
-                  rank: row.rank || 0,
-                  coordX: x,
-                  coordY: y
-                }]
-              }
-              return [...prev, uniquePlot]
-            })
-
-            addLog(`Unique terrain placed at ${x},${y}.`)
-
-            // Recalculate neighbors for next turn
-            const allValid = getAllValidMoves(placedOverworldTiles.current)
-            validMovesRef.current = new Set(allValid.map(m => `${m.x},${m.y}`))
-            mapEngineRef.current.highlightValidMoves(allValid)
-          }
-        }
-      } else {
-        // AREA: Place first tile, then prompt for d8
-        if (mapEngineRef.current) {
-          currentTerrainRef.current = folder
-          currentTerrainRowRef.current = row
-
-          // Place the FIRST tile here and now
-          const texture = TerrainAssetLoader.getRandom(folder)
-          if (texture) {
-            const { x: cx, y: cy } = mapEngineRef.current.gridSystem.getPixelCoords(x, y)
-            const sprite = new Sprite(texture)
-            sprite.anchor.set(0.5)
-            sprite.x = cx
-            sprite.y = cy
-            const h = 2 * mapEngineRef.current.gridSystem.config.size
-            sprite.scale.set(h / texture.height)
-            mapEngineRef.current.layers.live.addChild(sprite)
-
-            placedOverworldTiles.current.set(`${x},${y}`, folder)
-
-            // FLAIR OVERLAY (Area Start)
-            const flair = Sprite.from(flairOverlay)
-            flair.anchor.set(0.5)
-            const fh = 2 * mapEngineRef.current.gridSystem.config.size
-            flair.scale.set(fh / flair.height)
-
-            flair.x = cx
-            flair.y = cy - (mapEngineRef.current.gridSystem.config.size * 0.85) - 15
-
-            mapEngineRef.current.layers.overlay.addChild(flair)
-
-            // PLOT LOGGING: Init Area Plot
-            setUnClaimedLog(prev => {
-              const areaPlot: Plot = {
-                plotTag: `${row.tag || 'ARE'}${prev.length + 1}`,
-                landType: row.result || 'Area',
-                size: 1, // Start with 1 (this first tile)
-                rank: row.rank || 0,
-                rankModifier: 0,
-                ownerAndDetails: 'N/A',
-                landTypeList: [{
-                  land: row.result || 'Area',
-                  rank: row.rank || 0,
-                  coordX: x,
-                  coordY: y
-                }]
-              }
-              const newLog = [...prev, areaPlot]
-              activePlotIndexRef.current = newLog.length - 1
-              return newLog
-            })
-          }
-
-          // Clear batch and add first tile
-          currentBatchTilesRef.current.clear()
-          currentBatchTilesRef.current.add(`${x},${y}`)
-        }
-
-        // Prompt d8
-        setOverworldStep(2) // Move to "Roll for Area Size" step
-      }
-
-    } catch (e) {
-      console.error(e)
-      setIsRolling(false)
     }
   }
 
@@ -854,121 +834,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     }
   }
 
-  const handleRollTerrain = async (): Promise<void> => {
-    setIsRolling(true)
-    setLogs((prev) => [...prev, 'Rolling for Terrain (d88)...'])
-
-    try {
-      // Use TableEngine to roll on land table
-      // We cast landTable to any because JSON import might not strictly match the interface in IDE context 
-      // without strict JSON imports, but it fits the shape.
-      const result = await TableEngine.rollOnTable(landTable as any)
-      setIsRolling(false)
-
-      const row = result.row
-      // Use mapped folder if available, otherwise fallback or handle special types
-      const type = row.folder || 'fields'
-
-      setCurrentTerrain(type)
-      setLogs((prev) => [...prev, `Rolled ${result.roll}: ${result.result}`])
-
-      // Check for assets
-      const folder = row.folder
-      // row.folder is possibly empty for String types.
-      const hasAssets = folder && TerrainAssetLoader.get(folder).length > 0
-
-      if (!folder || !hasAssets) {
-        // Stop and inform user
-        addLog(`'${result.result}' has no assets. Please roll again.`)
-        return
-      }
-
-      setCurrentTerrain(folder)
-
-      // Auto-skip logic for Unique terrain
-      // Unique implies 1 tile, skip rolling count
-      if (row.type === 'Unique') {
-        currentTerrainRowRef.current = row
-        setTilesToPlace(1)
-        setOverworldStep(3)
-        setLogs((prev) => [...prev, `Unique Terrain: Setting count to 1.`])
-
-        // LOGGING: Unique Plot
-        const uniquePlot: Plot = {
-          plotTag: `UNI${unClaimedLog.length + 1}`, // Placeholder tag logic
-          landType: row.result || 'Unique',
-          size: 1,
-          rank: 0, // Default 0
-          rankModifier: 0,
-          ownerAndDetails: 'N/A',
-          landTypeList: [{
-            land: row.result || 'Unique',
-            rank: 0,
-            coordX: x,
-            coordY: y
-          }]
-        }
-        setUnClaimedLog(prev => [...prev, uniquePlot])
-
-        if (mapEngineRef.current) {
-          mapEngineRef.current.interactionState.mode = 'placing_terrain'
-          const allValid = getAllValidMoves(placedOverworldTiles.current)
-          mapEngineRef.current.highlightValidMoves(allValid)
-        }
-      } else {
-        // Area Logic: 
-        currentBatchTilesRef.current.clear()
-
-        if (mapEngineRef.current) {
-          const texture = TerrainAssetLoader.getRandom(folder)
-          if (texture) {
-            // ... (sprite placement code omitted for brevity) ...
-            const { x: cx, y: cy } = mapEngineRef.current.gridSystem.getPixelCoords(x, y)
-            const sprite = new Sprite(texture)
-            sprite.anchor.set(0.5)
-            sprite.x = cx
-            sprite.y = cy
-            const h = 2 * mapEngineRef.current.gridSystem.config.size
-            sprite.scale.set(h / texture.height)
-            mapEngineRef.current.layers.live.addChild(sprite)
-
-            placedOverworldTiles.current.set(`${x},${y}`, folder)
-            currentBatchTilesRef.current.add(`${x},${y}`)
-
-            // LOGGING: Start Area Plot
-            const areaPlot: Plot = {
-              plotTag: `ARE${unClaimedLog.length + 1}`,
-              landType: row.result || 'Area',
-              size: 1, // Start with 1
-              rank: 0,
-              rankModifier: 0,
-              ownerAndDetails: 'N/A',
-              landTypeList: [{
-                land: row.result || 'Area',
-                rank: 0,
-                coordX: x,
-                coordY: y
-              }]
-            }
-
-            setUnClaimedLog(prev => {
-              activePlotIndexRef.current = prev.length
-              return [...prev, areaPlot]
-            })
-          }
-        }
-
-        currentTerrainRowRef.current = row
-        setOverworldStep(2) // Go to Roll Count
-      }
-
-    } catch (e) {
-      console.error(e)
-      setIsRolling(false)
-      addLog('Error rolling terrain.')
-    }
-  }
-
   /* handleRollCount is now only used for Area terrain if Unique is skipped */
   const handleRollCount = async (): Promise<void> => {
     setIsRolling(true)
@@ -979,7 +844,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       setIsRolling(false)
 
       // Area Logic: Min 2
-      let count = result.total
+      const count = result.total
       // if (currentTerrainRowRef.current?.type === 'Area') {
       //   count = Math.max(count, 2)
       // }
@@ -995,27 +860,37 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         mapEngineRef.current.interactionState.mode = 'placing_terrain'
 
         // Determine Valid Moves for THIS step
-        let validNextMoves: { x: number, y: number }[] = []
+        let validNextMoves: { x: number; y: number }[] = []
 
-        if (currentBatchTilesRef.current.size === 0) {
-          // Case A: First tile of Area -> Can place anywhere valid globally
-          validNextMoves = getAllValidMoves(placedOverworldTiles.current)
+        const batchSize = overworldManagerRef.current.currentBatch.size
+        // Logic: if batch has started (size >= 1 for Area start?), use batch moves.
+        // Wait, if we are rolling count, we ALREADY placed the first tile (Seed).
+        // So batchSize should be >= 1.
+
+        if (batchSize === 0) {
+          // Should not happen if we placed seed? But safe fallback:
+          validNextMoves = overworldManagerRef.current.getValidMoves()
         } else {
-          // Case B: Subsequent tiles -> Must be adjacent to the CURRENT BATCH
-          validNextMoves = getValidBatchMoves(currentBatchTilesRef.current, placedOverworldTiles.current)
+          // Use Batch Logic
+          validNextMoves = HexLogic.getValidBatchMoves(
+            overworldManagerRef.current.currentBatch,
+            overworldManagerRef.current.placedTilesMap
+          )
         }
 
         // Highlight AND Update Ref for interaction validation
         mapEngineRef.current.highlightValidMoves(validNextMoves)
-        validMovesRef.current = new Set(validNextMoves.map(m => `${m.x},${m.y}`))
+        validMovesRef.current = new Set(validNextMoves.map((m) => `${m.x},${m.y}`))
 
         if (validNextMoves.length === 0) {
           addLog('No valid adjacent spots for area placement! Ending batch.')
           setOverworldStep(1)
           mapEngineRef.current.interactionState.mode = 'idle'
+          overworldManagerRef.current.finishBatch()
+
           // Revert to global valid
-          const allValid = getAllValidMoves(placedOverworldTiles.current)
-          validMovesRef.current = new Set(allValid.map(m => `${m.x},${m.y}`))
+          const allValid = overworldManagerRef.current.getValidMoves()
+          validMovesRef.current = new Set(allValid.map((m) => `${m.x},${m.y}`))
           mapEngineRef.current.highlightValidMoves(allValid)
         }
       }
@@ -1025,7 +900,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     }
   }
 
-  // Define new map creation callback (for New Dungeon) 
+  // Define new map creation callback (for New Dungeon)
   // THIS WAS handleCreateOverworld. Now simplified.
   const handleCreateOverworld = useCallback(() => {
     // Just update state. useEffect handles the rest.
@@ -1046,7 +921,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       // toggleMap off/on? Or just rely on setCityPlaced/etc resetting UI?
       // Actually, if gameMode doesn't change, effect won't run.
       // We can add a timestamp/ID to mapConfig or similar to force reload.
-      setMapConfig(prev => ({ ...prev, id: Date.now() }))
+      setMapConfig((prev) => ({ ...prev, id: Date.now() }))
     }
   }, [showMap, toggleMap])
 
@@ -1056,7 +931,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         ref={containerRef}
         style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}
       >
-
         <div ref={pixiContainerRef} style={{ width: '100%', height: '100%' }} />
 
         {/* HTML Overlay UI */}
@@ -1225,8 +1099,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             EXIT
           </div>
 
-
-
           <D8IconPanel />
 
           {/* --- Right Panel --- */}
@@ -1247,8 +1119,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
               backgroundColor: 'rgba(20, 29, 31, 0.8)'
             }}
           >
-
-
             {/* Dice Landing Image - ALWAYS VISIBLE */}
             <img
               src={diceLanding}
@@ -1268,36 +1138,67 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             {gameMode === 'dungeon' && (
               <>
                 {/* Content Wrapper with Padding */}
-                <div style={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  padding: '24px',
-                  overflowY: 'auto', // Enable scrolling
-                  minHeight: 0 // Crucial for flex nested scrolling
-                }}>
-                  <h2 style={{
-                    fontSize: '28px',
-                    borderBottom: '1px solid #bcd3d2',
-                    margin: '0 0 20px 0',
-                    paddingBottom: '10px',
-                    textAlign: 'center',
-                    flexShrink: 0
-                  }}>
+                <div
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    padding: '24px',
+                    overflowY: 'auto', // Enable scrolling
+                    minHeight: 0 // Crucial for flex nested scrolling
+                  }}
+                >
+                  <h2
+                    style={{
+                      fontSize: '28px',
+                      borderBottom: '1px solid #bcd3d2',
+                      margin: '0 0 20px 0',
+                      paddingBottom: '10px',
+                      textAlign: 'center',
+                      flexShrink: 0
+                    }}
+                  >
                     Dungeon Blueprint
                   </h2>
 
                   <div style={{ flexShrink: 0 }}>
-                    <div style={{ fontSize: '20px', color: currentStep === 1 ? '#fff' : '#666', textAlign: 'center' }}>
+                    <div
+                      style={{
+                        fontSize: '20px',
+                        color: currentStep === 1 ? '#fff' : '#666',
+                        textAlign: 'center'
+                      }}
+                    >
                       Step 1: Place Entrance
                     </div>
-                    <div style={{ fontSize: '20px', color: currentStep === 2 ? '#fff' : '#666', textAlign: 'center', marginTop: '10px' }}>
+                    <div
+                      style={{
+                        fontSize: '20px',
+                        color: currentStep === 2 ? '#fff' : '#666',
+                        textAlign: 'center',
+                        marginTop: '10px'
+                      }}
+                    >
                       Step 2: Roll Room Size
                     </div>
-                    <div style={{ fontSize: '20px', color: currentStep === 3 ? '#fff' : '#666', textAlign: 'center', marginTop: '10px' }}>
+                    <div
+                      style={{
+                        fontSize: '20px',
+                        color: currentStep === 3 ? '#fff' : '#666',
+                        textAlign: 'center',
+                        marginTop: '10px'
+                      }}
+                    >
                       Step 3: Place Room
                     </div>
-                    <div style={{ fontSize: '20px', color: currentStep === 4 ? '#fff' : '#666', textAlign: 'center', marginTop: '10px' }}>
+                    <div
+                      style={{
+                        fontSize: '20px',
+                        color: currentStep === 4 ? '#fff' : '#666',
+                        textAlign: 'center',
+                        marginTop: '10px'
+                      }}
+                    >
                       Step 4: Exits ({exitCount}/3)
                     </div>
 
@@ -1335,7 +1236,9 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                           try {
                             const result = await mapEngineRef.current.dungeon.rollStartingRoomSize()
                             setPendingRoom(result)
-                            addLog(`Rolled ${result.original[0]} (X) & ${result.original[1]} (Y) -> Size: ${result.width}x${result.height}`)
+                            addLog(
+                              `Rolled ${result.original[0]} (X) & ${result.original[1]} (Y) -> Size: ${result.width}x${result.height}`
+                            )
                             setCurrentStep(3)
                           } catch (err) {
                             console.error(err)
@@ -1366,7 +1269,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                       disabled={isPlacingRoom || currentStep !== 3 || !pendingRoom}
                       onClick={() => {
                         if (mapEngineRef.current && pendingRoom) {
-                          mapEngineRef.current.interactionState.pendingRoomSize = { w: pendingRoom.width, h: pendingRoom.height }
+                          mapEngineRef.current.interactionState.pendingRoomSize = {
+                            w: pendingRoom.width,
+                            h: pendingRoom.height
+                          }
                           mapEngineRef.current.interactionState.mode = 'placing_room'
                           setIsPlacingRoom(true)
                           addLog('Click grid to place room.')
@@ -1395,7 +1301,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                         if (mapEngineRef.current) {
                           // Find starter room ID
                           const rooms = mapEngineRef.current.dungeon.getState().rooms
-                          const starter = rooms.find(r => r.type === 'start')
+                          const starter = rooms.find((r) => r.type === 'start')
                           if (starter) {
                             mapEngineRef.current.interactionState.activeRoomId = starter.id
                             mapEngineRef.current.interactionState.mode = 'placing_exit'
@@ -1432,7 +1338,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                           setIsRolling(true)
                           try {
                             // Roll the room size
-                            const result = await mapEngineRef.current.dungeon.rollNewRoomAttributes(activeExitId)
+                            const result =
+                              await mapEngineRef.current.dungeon.rollNewRoomAttributes(activeExitId)
 
                             // Display all roll logs
                             result.rolls.forEach((log) => addLog(log))
@@ -1458,7 +1365,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                             }
 
                             // Store pending room with (possibly clamped) dimensions
-                            setPendingNewRoom({ width: finalWidth, height: finalHeight, type: result.type })
+                            setPendingNewRoom({
+                              width: finalWidth,
+                              height: finalHeight,
+                              type: result.type
+                            })
                           } catch (err) {
                             console.error(err)
                             addLog('Error rolling room attributes.')
@@ -1468,7 +1379,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                         } else {
                           // Switch to placing mode
                           mapEngineRef.current.interactionState.mode = 'placing_new_room'
-                          mapEngineRef.current.interactionState.pendingRoomSize = { w: pendingNewRoom.width, h: pendingNewRoom.height }
+                          mapEngineRef.current.interactionState.pendingRoomSize = {
+                            w: pendingNewRoom.width,
+                            h: pendingNewRoom.height
+                          }
                           mapEngineRef.current.interactionState.activeExitId = activeExitId
                           addLog('Click to place the new room.')
                         }
@@ -1514,7 +1428,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                               setLogs([]) // Clear logs
                             } else {
                               // 1+ exits - prepare for placing exits
-                              const eligibility = mapEngineRef.current.dungeon.calculateEligibleWalls(newlyPlacedRoomId)
+                              const eligibility =
+                                mapEngineRef.current.dungeon.calculateEligibleWalls(
+                                  newlyPlacedRoomId
+                                )
 
                               // Cap exit count to number of eligible walls
                               const actualExits = Math.min(result.exitCount, eligibility.count)
@@ -1528,12 +1445,20 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                                 setLogs([]) // Clear logs
                               } else {
                                 if (actualExits < result.exitCount) {
-                                  addLog(`Capped to ${actualExits} (only ${eligibility.count} wall(s) eligible)`)
+                                  addLog(
+                                    `Capped to ${actualExits} (only ${eligibility.count} wall(s) eligible)`
+                                  )
                                 }
                                 setExitsToPlace(actualExits)
-                                setEligibleWalls({ top: eligibility.top, bottom: eligibility.bottom, left: eligibility.left, right: eligibility.right })
+                                setEligibleWalls({
+                                  top: eligibility.top,
+                                  bottom: eligibility.bottom,
+                                  left: eligibility.left,
+                                  right: eligibility.right
+                                })
                                 mapEngineRef.current.interactionState.mode = 'placing_exit'
-                                mapEngineRef.current.interactionState.activeRoomId = newlyPlacedRoomId
+                                mapEngineRef.current.interactionState.activeRoomId =
+                                  newlyPlacedRoomId
                                 addLog(`Click on eligible walls to place ${actualExits} exit(s).`)
                               }
                             }
@@ -1598,7 +1523,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                     }}
                   >
                     {logs.map((log, i) => (
-                      <div key={i} style={{ marginBottom: '5px', color: i === 0 ? '#fff' : '#888' }}>
+                      <div
+                        key={i}
+                        style={{ marginBottom: '5px', color: i === 0 ? '#fff' : '#888' }}
+                      >
                         {`> ${log}`}
                       </div>
                     ))}
@@ -1606,7 +1534,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                 </div>
               </>
             )}
-
 
             {/* --- OVERWORLD UI --- */}
             {gameMode === 'overworld' && (
@@ -1634,11 +1561,16 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                   }}
                 >
                   {/* DYNAMIC HEADER */}
-                  {(!townPlaced || overworldStep === 1) && "EXPLORE"}
-                  {townPlaced && overworldStep === 3 && "AREA PLACEMENT"}
-                  {townPlaced && overworldStep === 2 && "ROLLING..."}
+                  {(!townPlaced || overworldStep === 1) && 'EXPLORE'}
+                  {townPlaced && overworldStep === 3 && 'AREA PLACEMENT'}
+                  {townPlaced && overworldStep === 2 && 'ROLLING...'}
                   {/* Fallback */}
-                  {!((!townPlaced || overworldStep === 1) || (townPlaced && overworldStep === 3) || (townPlaced && overworldStep === 2)) && "OVERWORLD COMMAND"}
+                  {!(
+                    !townPlaced ||
+                    overworldStep === 1 ||
+                    (townPlaced && overworldStep === 3) ||
+                    (townPlaced && overworldStep === 2)
+                  ) && 'OVERWORLD COMMAND'}
                 </h2>
 
                 {/* STEP 0: PLACE CITY */}
@@ -1700,7 +1632,14 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
                 {/* STEP 3: PLACING */}
                 {townPlaced && overworldStep === 3 && (
-                  <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}
+                  >
                     <div style={{ fontSize: '24px', color: '#fff' }}>
                       Placing: {currentTerrain?.toUpperCase()}
                     </div>
@@ -1753,7 +1692,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                 </div>
               </div>
             )}
-
           </div>
         </div>
 
@@ -1788,15 +1726,57 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
               <h2 style={{ margin: 0, textAlign: 'center', fontSize: '32px' }}>Create New Map</h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <span>Width (X): {modalWidth}</span>
-                <input type="range" min="26" max="50" value={modalWidth} onChange={(e) => setModalWidth(Number(e.target.value))} style={{ width: '100%', accentColor: '#2e3f41' }} />
+                <input
+                  type="range"
+                  min="26"
+                  max="50"
+                  value={modalWidth}
+                  onChange={(e) => setModalWidth(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: '#2e3f41' }}
+                />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <span>Height (Y): {modalHeight}</span>
-                <input type="range" min="26" max="50" value={modalHeight} onChange={(e) => setModalHeight(Number(e.target.value))} style={{ width: '100%', accentColor: '#2e3f41' }} />
+                <input
+                  type="range"
+                  min="26"
+                  max="50"
+                  value={modalHeight}
+                  onChange={(e) => setModalHeight(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: '#2e3f41' }}
+                />
               </div>
               <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
-                <button onClick={() => setIsNewMapModalOpen(false)} style={{ flex: 1, padding: '10px', backgroundColor: 'transparent', border: '1px solid #bcd3d2', color: '#bcd3d2', fontFamily: 'inherit', fontSize: '20px', cursor: 'pointer' }}>CANCEL</button>
-                <button onClick={handleCreateNewMap} style={{ flex: 1, padding: '10px', backgroundColor: '#2e3f41', border: '1px solid #bcd3d2', color: '#bcd3d2', fontFamily: 'inherit', fontSize: '20px', cursor: 'pointer' }}>CREATE</button>
+                <button
+                  onClick={() => setIsNewMapModalOpen(false)}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid #bcd3d2',
+                    color: '#bcd3d2',
+                    fontFamily: 'inherit',
+                    fontSize: '20px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handleCreateNewMap}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    backgroundColor: '#2e3f41',
+                    border: '1px solid #bcd3d2',
+                    color: '#bcd3d2',
+                    fontFamily: 'inherit',
+                    fontSize: '20px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  CREATE
+                </button>
               </div>
             </div>
           </div>
@@ -1808,54 +1788,59 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
         {/* Tooltip */}
         {tooltip.visible && (
-          <div style={{
-            position: 'fixed',
-            left: tooltip.x + 15,
-            top: tooltip.y + 15,
-            backgroundColor: 'rgba(0,0,0,0.8)',
-            color: '#fff',
-            padding: '5px 10px',
-            borderRadius: '4px',
-            pointerEvents: 'none',
-            zIndex: 9999,
-            fontSize: '14px'
-          }}>
+          <div
+            style={{
+              position: 'fixed',
+              left: tooltip.x + 15,
+              top: tooltip.y + 15,
+              backgroundColor: 'rgba(0,0,0,0.8)',
+              color: '#fff',
+              padding: '5px 10px',
+              borderRadius: '4px',
+              pointerEvents: 'none',
+              zIndex: 9999,
+              fontSize: '14px'
+            }}
+          >
             {tooltip.text}
           </div>
         )}
 
         {/* VIEW LOG BUTTON */}
 
-
-
-
         {/* UNCLAIMED LOG MODAL */}
         {isLogModalOpen && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0,0,0,0.85)',
-            zIndex: 2000,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center'
-          }}>
-            <div style={{
-              width: '80%',
-              height: '80%',
-              backgroundColor: '#1a2628',
-              border: '2px solid #bcd3d2',
-              padding: '20px',
-              overflow: 'auto',
-              color: '#bcd3d2',
-              fontFamily: 'inherit',
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              backgroundColor: 'rgba(0,0,0,0.85)',
+              zIndex: 2000,
               display: 'flex',
-              flexDirection: 'column'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+              justifyContent: 'center',
+              alignItems: 'center'
+            }}
+          >
+            <div
+              style={{
+                width: '80%',
+                height: '80%',
+                backgroundColor: '#1a2628',
+                border: '2px solid #bcd3d2',
+                padding: '20px',
+                overflow: 'auto',
+                color: '#bcd3d2',
+                fontFamily: 'inherit',
+                display: 'flex',
+                flexDirection: 'column'
+              }}
+            >
+              <div
+                style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}
+              >
                 <h2 style={{ margin: 0, fontSize: '24px' }}>UNCLAIMED LAND LOG</h2>
                 <button
                   onClick={() => setIsLogModalOpen(false)}
@@ -1892,13 +1877,18 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                       <td style={{ padding: '10px' }}>{plot.rank}</td>
                       <td style={{ padding: '10px' }}>{plot.rankModifier}</td>
                       <td style={{ padding: '10px' }}>
-                        {plot.landTypeList[0] ? `${plot.landTypeList[0].coordX}, ${plot.landTypeList[0].coordY}` : 'N/A'}
+                        {plot.landTypeList[0]
+                          ? `${plot.landTypeList[0].coordX}, ${plot.landTypeList[0].coordY}`
+                          : 'N/A'}
                       </td>
                     </tr>
                   ))}
                   {unClaimedLog.length === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+                      <td
+                        colSpan={6}
+                        style={{ padding: '20px', textAlign: 'center', color: '#666' }}
+                      >
                         No unclaimed land logged yet.
                       </td>
                     </tr>
@@ -1909,7 +1899,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           </div>
         )}
       </div>
-    </SettingsProvider >
+    </SettingsProvider>
   )
 }
 
@@ -1921,65 +1911,4 @@ async function buildUI(app: Application, layout: GameLayout): Promise<void> {
 }
 
 // --- Helper Functions for Hex Neighbors ---
-function getNeighbors(x: number, y: number): { x: number; y: number }[] {
-  const isOdd = y % 2 !== 0
-  const offsets = isOdd
-    ? [[0, -1], [1, -1], [-1, 0], [1, 0], [0, 1], [1, 1]]
-    : [[-1, -1], [0, -1], [-1, 0], [1, 0], [-1, 1], [0, 1]]
-
-  return offsets.map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
-}
-
-function getValidNeighbors(x: number, y: number, placed: Map<string, string>): { x: number; y: number }[] {
-  const neighbors = getNeighbors(x, y)
-  return neighbors.filter(n => !placed.has(`${n.x},${n.y}`))
-}
-
-function getAllValidMoves(placed: Map<string, string>): { x: number; y: number }[] {
-  const uniqueMoves = new Set<string>()
-  const result: { x: number; y: number }[] = []
-
-  for (const key of placed.keys()) {
-    const [xStr, yStr] = key.split(',')
-    const x = parseInt(xStr)
-    const y = parseInt(yStr)
-
-    const neighbors = getNeighbors(x, y)
-    for (const n of neighbors) {
-      const k = `${n.x},${n.y}`
-      if (!placed.has(k) && !uniqueMoves.has(k)) {
-        uniqueMoves.add(k)
-        result.push(n)
-      }
-    }
-  }
-  return result
-}
-
-function getValidBatchMoves(currentBatch: Set<string>, placed: Map<string, string>): { x: number; y: number }[] {
-  const uniqueMoves = new Set<string>()
-  const result: { x: number; y: number }[] = []
-
-  // Valid moves must be neighbors of ANY tile in the current batch
-  for (const key of currentBatch) {
-    const [xStr, yStr] = key.split(',')
-    const x = parseInt(xStr)
-    const y = parseInt(yStr)
-
-    const neighbors = getNeighbors(x, y)
-    for (const n of neighbors) {
-      const k = `${n.x},${n.y}`
-
-      // Must NOT be placed already
-      if (placed.has(k)) continue
-
-      // Must not be added already
-      if (uniqueMoves.has(k)) continue
-
-      uniqueMoves.add(k)
-      result.push(n)
-    }
-  }
-  return result
-}
-
+// MOVED TO engine/systems/HexLogic.ts

@@ -41,7 +41,7 @@ export class SquareGridSystem extends BaseGridSystem {
     // Tooltip background and text
     this.tooltipBg = new Graphics()
     this.engine.layers.interaction.addChild(this.tooltipBg)
-    
+
     const tooltipStyle = new TextStyle({
       fontFamily: 'serif',
       fontSize: 14,
@@ -120,7 +120,7 @@ export class SquareGridSystem extends BaseGridSystem {
               break
             }
           }
-          
+
           if (isExit && !isUsedExit) {
             // Unused exit: green #6cb456
             this.activeGraphics.rect(wx, wy, tileSize, tileSize).fill(0x6cb456)
@@ -152,14 +152,31 @@ export class SquareGridSystem extends BaseGridSystem {
         // Check 4 neighbors
         const neighbors = [
           { nx: x, ny: y - 1, x1: wx, y1: wy, x2: wx + tileSize, y2: wy, edge: 'top' }, // top
-          { nx: x, ny: y + 1, x1: wx, y1: wy + tileSize, x2: wx + tileSize, y2: wy + tileSize, edge: 'bottom' }, // bottom
+          {
+            nx: x,
+            ny: y + 1,
+            x1: wx,
+            y1: wy + tileSize,
+            x2: wx + tileSize,
+            y2: wy + tileSize,
+            edge: 'bottom'
+          }, // bottom
           { nx: x - 1, ny: y, x1: wx, y1: wy, x2: wx, y2: wy + tileSize, edge: 'left' }, // left
-          { nx: x + 1, ny: y, x1: wx + tileSize, y1: wy, x2: wx + tileSize, y2: wy + tileSize, edge: 'right' } // right
+          {
+            nx: x + 1,
+            ny: y,
+            x1: wx + tileSize,
+            y1: wy,
+            x2: wx + tileSize,
+            y2: wy + tileSize,
+            edge: 'right'
+          } // right
         ]
 
         for (const n of neighbors) {
-          if (n.ny < 0 || n.ny >= dungeonState.height || n.nx < 0 || n.nx >= dungeonState.width) continue
-          
+          if (n.ny < 0 || n.ny >= dungeonState.height || n.nx < 0 || n.nx >= dungeonState.width)
+            continue
+
           const neighborTile = dungeonState.tiles[n.ny][n.nx]
           if (neighborTile.type === 'dead') {
             // Rule: "The only exception is the ENTRANCE" (dungeon entrance tile on bottom)
@@ -178,46 +195,50 @@ export class SquareGridSystem extends BaseGridSystem {
     if (mode === 'placing_entrance' && hoveredTile.x !== -1) {
       const isValid = this.engine.dungeon.isValidEntrancePosition(hoveredTile.x, hoveredTile.y)
       const color = isValid ? 0x00ff00 : 0xff0000 // Green vs Red
-      
+
       const wx = hoveredTile.x * tileSize
       const wy = hoveredTile.y * tileSize
-      
+
       this.interactionGraphics.rect(wx, wy, tileSize, tileSize).fill({ color, alpha: 0.5 })
     } else if (mode === 'placing_room' && hoveredTile.x !== -1) {
       const { w, h } = pendingRoomSize
       // Check validation
       const isValidBounds = this.engine.dungeon.canPlaceRoom(hoveredTile.x, hoveredTile.y, w, h)
-      
+
       const entrance = this.engine.dungeon.getState().entrance
-      const touchesEntranceRow = (hoveredTile.y + h === entrance.y)
-      const spansEntrance = (entrance.x >= hoveredTile.x && entrance.x < hoveredTile.x + w)
-      
+      const touchesEntranceRow = hoveredTile.y + h === entrance.y
+      const spansEntrance = entrance.x >= hoveredTile.x && entrance.x < hoveredTile.x + w
+
       const trulyValid = isValidBounds && touchesEntranceRow && spansEntrance
       const color = trulyValid ? 0x00ff00 : 0xff0000
 
       const wx = hoveredTile.x * tileSize
       const wy = hoveredTile.y * tileSize
-      
+
       this.interactionGraphics.rect(wx, wy, w * tileSize, h * tileSize).fill({ color, alpha: 0.5 })
     } else if (mode === 'placing_exit' && hoveredTile.x !== -1) {
       const activeRoomId = this.engine.interactionState.activeRoomId
       if (activeRoomId) {
-         const isValid = this.engine.dungeon.isValidExitPosition(hoveredTile.x, hoveredTile.y, activeRoomId)
-         const color = isValid ? 0x00ff00 : 0xff0000
+        const isValid = this.engine.dungeon.isValidExitPosition(
+          hoveredTile.x,
+          hoveredTile.y,
+          activeRoomId
+        )
+        const color = isValid ? 0x00ff00 : 0xff0000
 
-         const wx = hoveredTile.x * tileSize
-         const wy = hoveredTile.y * tileSize
-         
-         this.interactionGraphics.rect(wx, wy, tileSize, tileSize).fill({ color, alpha: 0.5 })
+        const wx = hoveredTile.x * tileSize
+        const wy = hoveredTile.y * tileSize
+
+        this.interactionGraphics.rect(wx, wy, tileSize, tileSize).fill({ color, alpha: 0.5 })
       }
     } else if (mode === 'placing_new_room' && hoveredTile.x !== -1) {
       // New room placement hologram anchored to exit
       const { w, h } = this.engine.interactionState.pendingRoomSize
       const activeExitId = this.engine.interactionState.activeExitId
-      
+
       const wx = hoveredTile.x * tileSize
       const wy = hoveredTile.y * tileSize
-      
+
       // Simple validation: check if all tiles in the rectangle are void
       let isValid = true
       for (let dx = 0; dx < w && isValid; dx++) {
@@ -232,13 +253,13 @@ export class SquareGridSystem extends BaseGridSystem {
           }
         }
       }
-      
+
       // Also check room must touch the exit tile
       if (activeExitId && isValid) {
         let touchesExit = false
         let exitX = -1
         let exitY = -1
-        
+
         // Find the exit by ID
         for (const room of dungeonState.rooms) {
           const exit = room.exits.find((e) => e.id === activeExitId)
@@ -248,7 +269,7 @@ export class SquareGridSystem extends BaseGridSystem {
             break
           }
         }
-        
+
         if (exitX !== -1) {
           // Check if any tile of the proposed room is adjacent to or overlaps the exit
           for (let dx = 0; dx < w && !touchesExit; dx++) {
@@ -266,7 +287,7 @@ export class SquareGridSystem extends BaseGridSystem {
         }
         if (!touchesExit) isValid = false
       }
-      
+
       const color = isValid ? 0x00ff00 : 0xff0000
       this.interactionGraphics.rect(wx, wy, w * tileSize, h * tileSize).fill({ color, alpha: 0.5 })
     }
@@ -281,7 +302,7 @@ export class SquareGridSystem extends BaseGridSystem {
     if (mode === 'idle' && hoveredTile.x >= 0 && hoveredTile.y >= 0) {
       // Check for special single tiles first (Entrance/Exit)
       const tile = dungeonState.tiles[hoveredTile.y]?.[hoveredTile.x]
-      
+
       let highlightType: 'entrance' | 'exit' | 'room' | null = null
       let tooltipLabel = ''
 
@@ -297,13 +318,13 @@ export class SquareGridSystem extends BaseGridSystem {
         const hoveredRoom = dungeonState.rooms.find((r) => r.id === hoveredRoomId)
         if (hoveredRoom) {
           const classificationLabels: Record<string, string> = {
-            'entrance': 'Dungeon Entrance',
-            'starter': 'Starter Room',
-            'corridor': 'Corridor',
-            'small': 'Small Room',
-            'medium': 'Medium Room',
-            'large': 'Large Room',
-            'exit': 'Exit'
+            entrance: 'Dungeon Entrance',
+            starter: 'Starter Room',
+            corridor: 'Corridor',
+            small: 'Small Room',
+            medium: 'Medium Room',
+            large: 'Large Room',
+            exit: 'Exit'
           }
           tooltipLabel = classificationLabels[hoveredRoom.classification] || 'Room'
         }
@@ -316,34 +337,39 @@ export class SquareGridSystem extends BaseGridSystem {
         const wy = hoveredTile.y * tileSize
 
         if (highlightType === 'room' && hoveredRoomId) {
-           const hoveredRoom = dungeonState.rooms.find((r) => r.id === hoveredRoomId)
-           if (hoveredRoom) {
-              for (let ry = 0; ry < hoveredRoom.height; ry++) {
-                for (let rx = 0; rx < hoveredRoom.width; rx++) {
-                  const rwx = (hoveredRoom.x + rx) * tileSize
-                  const rwy = (hoveredRoom.y + ry) * tileSize
-                  this.hoverHighlight.rect(rwx, rwy, tileSize, tileSize).fill({ color: highlightColor, alpha: 0.75 })
-                }
+          const hoveredRoom = dungeonState.rooms.find((r) => r.id === hoveredRoomId)
+          if (hoveredRoom) {
+            for (let ry = 0; ry < hoveredRoom.height; ry++) {
+              for (let rx = 0; rx < hoveredRoom.width; rx++) {
+                const rwx = (hoveredRoom.x + rx) * tileSize
+                const rwy = (hoveredRoom.y + ry) * tileSize
+                this.hoverHighlight
+                  .rect(rwx, rwy, tileSize, tileSize)
+                  .fill({ color: highlightColor, alpha: 0.75 })
               }
-           }
+            }
+          }
         } else {
           // Single tile highlight for Entrance/Exit
-          this.hoverHighlight.rect(wx, wy, tileSize, tileSize).fill({ color: highlightColor, alpha: 0.75 })
+          this.hoverHighlight
+            .rect(wx, wy, tileSize, tileSize)
+            .fill({ color: highlightColor, alpha: 0.75 })
         }
 
         // Draw Tooltip
         this.tooltipText.text = tooltipLabel
-        
+
         // Position tooltip above the hovered tile
         const tooltipX = wx
         const tooltipY = wy - 30
 
         const textWidth = this.tooltipText.width + 16
         const textHeight = this.tooltipText.height + 8
-        this.tooltipBg.roundRect(tooltipX - 8, tooltipY - 4, textWidth, textHeight, 4)
+        this.tooltipBg
+          .roundRect(tooltipX - 8, tooltipY - 4, textWidth, textHeight, 4)
           .fill({ color: 0x2e3f41, alpha: 0.95 })
           .stroke({ width: 1, color: 0xbcd3d2 })
-        
+
         this.tooltipText.x = tooltipX
         this.tooltipText.y = tooltipY
       }

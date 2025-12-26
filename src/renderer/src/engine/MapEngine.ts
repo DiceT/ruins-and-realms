@@ -33,7 +33,6 @@ export interface MapEngineOptions {
   onNewRoomPlaced?: (roomId: string, exitId: string) => void
   // Overworld Callbacks
   onTownPlaced?: (x: number, y: number) => void
-  onTownPlaced?: (x: number, y: number) => void
   onTerrainPlaced?: (x: number, y: number) => void
   onHexClicked?: (x: number, y: number) => void
   onHexHover?: (x: number, y: number, globalX: number, globalY: number) => void
@@ -57,7 +56,14 @@ export class MapEngine {
 
   // Interaction State
   public interactionState = {
-    mode: 'idle' as 'idle' | 'placing_entrance' | 'placing_room' | 'placing_exit' | 'placing_new_room' | 'placing_town' | 'placing_terrain',
+    mode: 'idle' as
+      | 'idle'
+      | 'placing_entrance'
+      | 'placing_room'
+      | 'placing_exit'
+      | 'placing_new_room'
+      | 'placing_town'
+      | 'placing_terrain',
     hoveredTile: { x: Number.NaN, y: Number.NaN },
     hoveredRoomId: null as string | null,
     pendingRoomSize: { w: 0, h: 0 },
@@ -121,7 +127,7 @@ export class MapEngine {
     }
 
     // 4. Render Loop
-    let lastLog = 0
+
     this.tickerCallback = () => {
       if (!this.destroyed) {
         // Track mouse to update tile hover (SAFENED)
@@ -130,13 +136,13 @@ export class MapEngine {
         if (events && events.pointer) {
           const mouse = events.pointer.global
           const worldPos = this.camera.toWorld(mouse.x, mouse.y)
-          
+
           // Use the GridSystem to get accurate coords (Hex or Square)
           const gridCoords = this.gridSystem.getGridCoords(worldPos.x, worldPos.y)
-          
+
           this.interactionState.hoveredTile = gridCoords
           const { x: tx, y: ty } = gridCoords
-          
+
           // Detect hovered room from tile
           const dungeonState = this.dungeon.getState()
           const tile = dungeonState.tiles[ty]?.[tx]
@@ -147,9 +153,9 @@ export class MapEngine {
           }
         }
         // this.checkCameraMovement()
-      
-      // LOG INPUT DEBUG
-      if (this.app.ticker.lastTime % 60 === 0) {
+
+        // LOG INPUT DEBUG
+        if (this.app.ticker.lastTime % 60 === 0) {
           /*
          const viewport = this.options.viewport as any
          const hitArea = viewport.hitArea
@@ -162,13 +168,13 @@ export class MapEngine {
            hovered: { x: this.interactionState.hoveredTile.x, y: this.interactionState.hoveredTile.y }
          }) 
          */
-      }
-      
-      this.gridSystem.draw()
+        }
+
+        this.gridSystem.draw()
 
         // Debug log once per second
         // if (performance.now() - lastLog > 1000) {
-        //   console.log('[MapEngine] Ticker Heartbeat', { 
+        //   console.log('[MapEngine] Ticker Heartbeat', {
         //     mode: this.interactionState.mode,
         //     hover: this.interactionState.hoveredTile
         //   })
@@ -182,12 +188,11 @@ export class MapEngine {
     this.options = options
     const target = options.viewport || this.app.stage
     target.eventMode = 'static'
-    
 
     this.onPointerMove = (event: any) => {
       // Get global position
       const globalPos = event.global
-      
+
       // Convert to local (world) coordinates via camera container
       // The camera container holds the world. Its transform handles zoom/pan.
       // We need to inverse transform the global point to get Local World Point.
@@ -204,7 +209,7 @@ export class MapEngine {
 
       // Optional: Update hoveredRoomId or other state for specific modes
       if (this.interactionState.mode === 'placing_exit' || this.interactionState.mode === 'idle') {
-         // Logic for finding rooms/exits could go here if needed for hover effects
+        // Logic for finding rooms/exits could go here if needed for hover effects
       }
     }
     target.on('pointermove', this.onPointerMove)
@@ -254,7 +259,7 @@ export class MapEngine {
         // Check if clicking an unused exit to initiate new room
         // const { x, y } = this.interactionState.hoveredTile // REMOVED: Caused TDZ. Use event coords from line 213.
         const dungeonState = this.dungeon.getState()
-        
+
         for (const room of dungeonState.rooms) {
           const exit = room.exits.find((e) => e.x === x && e.y === y)
           if (exit && !exit.connectedRoomId) {
@@ -293,13 +298,13 @@ export class MapEngine {
       } else if (this.interactionState.mode === 'placing_town') {
         const { x, y } = this.interactionState.hoveredTile
         if (this.options.onTownPlaced) {
-            this.options.onTownPlaced(x, y)
+          this.options.onTownPlaced(x, y)
         }
         // Mode change is handled by callback/controller
       } else if (this.interactionState.mode === 'placing_terrain') {
         const { x, y } = this.interactionState.hoveredTile
         if (this.options.onTerrainPlaced) {
-            this.options.onTerrainPlaced(x, y)
+          this.options.onTerrainPlaced(x, y)
         }
       }
     }
@@ -317,9 +322,9 @@ export class MapEngine {
       // For empty maps (like Overworld start), center on 0,0 (Top Left of Grid)
       // We use a small timeout to ensure GameLayout has resized and calculated viewport bounds
       setTimeout(() => {
-          if (!this.destroyed) {
-            this.camera.centerAt(0, 0)
-          }
+        if (!this.destroyed) {
+          this.camera.centerAt(0, 0)
+        }
       }, 50)
     }
 
@@ -331,31 +336,31 @@ export class MapEngine {
    * Highlights a set of hex coordinates as valid moves.
    * Clears previous interaction highlights first.
    */
-  public highlightValidMoves(coords: { x: number, y: number }[]): void {
+  public highlightValidMoves(coords: { x: number; y: number }[]): void {
     const interaction = this.layers.interaction
     interaction.removeChildren() // Clear old highlights
 
     // Only applicable for HexGrid currently
     if (this.gridSystem instanceof HexGridSystem) {
-        const hexSys = this.gridSystem as HexGridSystem
-        const r = hexSys.config.size
-        const w = Math.sqrt(3) * r
-        const h = 2 * r
-        const vert = h * 0.75
-        const drawR = r - 5 // Match ghost size
+      const hexSys = this.gridSystem as HexGridSystem
+      const r = hexSys.config.size
 
-        const g = new Graphics()
-        interaction.addChild(g)
+      const h = 2 * r
 
-        coords.forEach(({ x, y }) => {
-            const { x: cx, y: cy } = hexSys.getPixelCoords(x, y)
-            
-            // Draw faint green glow
-            const poly = hexSys.getHexPoly(cx, cy, drawR)
-            g.poly(poly)
-            g.fill({ color: 0x00FF00, alpha: 0.2 }) // Faint Green
-            g.stroke({ width: 2, color: 0x00FF00, alpha: 0.4 })
-        })
+      const drawR = r - 5 // Match ghost size
+
+      const g = new Graphics()
+      interaction.addChild(g)
+
+      coords.forEach(({ x, y }) => {
+        const { x: cx, y: cy } = hexSys.getPixelCoords(x, y)
+
+        // Draw faint green glow
+        const poly = hexSys.getHexPoly(cx, cy, drawR)
+        g.poly(poly)
+        g.fill({ color: 0x00ff00, alpha: 0.2 }) // Faint Green
+        g.stroke({ width: 2, color: 0x00ff00, alpha: 0.4 })
+      })
     }
   }
 
@@ -365,7 +370,7 @@ export class MapEngine {
 
   public destroy(): void {
     this.destroyed = true
-    
+
     // 1. Stop Render Loop
     if (this.tickerCallback) {
       this.app.ticker.remove(this.tickerCallback)

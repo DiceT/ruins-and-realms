@@ -1,5 +1,5 @@
 export const LiquidShader = {
-    vertexShader: `
+  vertexShader: `
         varying vec2 vUv;
         varying vec3 vNormal;
         varying vec3 vPosition;
@@ -11,7 +11,7 @@ export const LiquidShader = {
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
     `,
-    fragmentShader: `
+  fragmentShader: `
         uniform float time;
         uniform vec3 baseColor;
         uniform vec3 liquidColor;
@@ -126,4 +126,4 @@ export const LiquidShader = {
             gl_FragColor = vec4(finalColor, 1.0);
         }
     `
-};
+}

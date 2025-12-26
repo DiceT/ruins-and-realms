@@ -1,14 +1,14 @@
 export type TileType = 'dead' | 'live' | 'active'
 
 // Room classification - calculated at placement time for encounters
-export type RoomClassification = 
-  | 'entrance'     // The dungeon entrance tile
-  | 'starter'      // The initial room
-  | 'corridor'     // Width=1 OR Height=1
-  | 'small'        // Not corridor, area ≤ 6
-  | 'medium'       // Not corridor, area 7-31
-  | 'large'        // Area ≥ 32
-  | 'exit'         // Exit tile
+export type RoomClassification =
+  | 'entrance' // The dungeon entrance tile
+  | 'starter' // The initial room
+  | 'corridor' // Width=1 OR Height=1
+  | 'small' // Not corridor, area ≤ 6
+  | 'medium' // Not corridor, area 7-31
+  | 'large' // Area ≥ 32
+  | 'exit' // Exit tile
 
 export interface Tile {
   x: number

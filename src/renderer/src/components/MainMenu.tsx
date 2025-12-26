@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import React, { useRef, useEffect, useCallback } from 'react'
 import { useAppActions } from '@/stores/useAppStore'
 import mainMenuBackground from '@/assets/images/backgrounds/main-menu-background.png'
 import logoLarge from '@/assets/images/backgrounds/logo-large.png'
@@ -84,7 +84,7 @@ interface ImageButtonProps {
   style?: React.CSSProperties
 }
 
-const ImageButton = ({ src, alt, onClick, style }: ImageButtonProps) => {
+const ImageButton = ({ src, alt, onClick, style }: ImageButtonProps): React.ReactElement => {
   return (
     <button
       onClick={onClick}
@@ -119,7 +119,7 @@ const ImageButton = ({ src, alt, onClick, style }: ImageButtonProps) => {
 }
 
 // Social icons row - overlay effect with ember hover
-const SocialIconsRow = () => {
+const SocialIconsRow = (): React.ReactElement => {
   return (
     <div
       style={{
@@ -173,7 +173,7 @@ const SocialIconsRow = () => {
 }
 
 // Hex button grid component
-const HexButtonGrid = () => {
+const HexButtonGrid = (): React.ReactElement => {
   const hexSize = '30%'
 
   return (
@@ -243,7 +243,7 @@ const ROWS = 2
 const GAP = 20
 const PADDING = 20
 
-export const MainMenu = () => {
+export const MainMenu = (): React.ReactElement => {
   const { setGamePhase } = useAppActions()
   const cardsContainerRef = useRef<HTMLDivElement>(null)
   const pixiContainerRef = useRef<HTMLDivElement>(null)
@@ -273,15 +273,35 @@ export const MainMenu = () => {
     return { cardSize, startX, startY, containerWidth, containerHeight }
   }, [])
 
-  // Initialize PixiJS application
+  // Initialize PixiJS application and handle resizing
   useEffect(() => {
-    if (!pixiContainerRef.current || appRef.current) return
+    if (!pixiContainerRef.current || !cardsContainerRef.current) return
 
-    const initPixi = async () => {
+    let resizeObserver: ResizeObserver | null = null
+    let resizeTimeout: NodeJS.Timeout
+    // eslint-disable-next-line prefer-const
+    let pollingInterval: NodeJS.Timeout | undefined
+    let initialized = false
+
+    const initPixi = async (): Promise<void> => {
+      // Prevent multiple initializations or initializing if already exists (unless we want to re-init)
+      if (appRef.current) {
+        appRef.current.destroy(true, { children: true })
+        appRef.current = null
+      }
+
       const layout = calculateLayout()
-      if (!layout) return
+      if (!layout || layout.containerWidth === 0 || layout.containerHeight === 0) {
+        console.warn('[MainMenu] Container has 0 dimensions, waiting for resize...')
+        return
+      }
 
       const { cardSize, startX, startY, containerWidth, containerHeight } = layout
+      console.log('[MainMenu] Initializing with dimensions:', containerWidth, containerHeight)
+
+      // Stop polling once we have valid dimensions
+      if (pollingInterval) clearInterval(pollingInterval)
+      initialized = true
 
       const app = new Application()
       await app.init({
@@ -292,7 +312,11 @@ export const MainMenu = () => {
         resolution: 1
       })
 
-      if (pixiContainerRef.current && !appRef.current) {
+      if (pixiContainerRef.current) {
+        // Clear previous canvas if any
+        while (pixiContainerRef.current.firstChild) {
+          pixiContainerRef.current.removeChild(pixiContainerRef.current.firstChild)
+        }
         pixiContainerRef.current.appendChild(app.canvas)
         appRef.current = app
 
@@ -303,10 +327,15 @@ export const MainMenu = () => {
           const artTextures = await Promise.all(adventureCards.map((src) => Assets.load(src)))
           const glassTextures = await Promise.all(crackedGlasses.map((src) => Assets.load(src)))
 
+          // Check if app was destroyed (e.g. component unmounted) during asset loading
+          if (!app.renderer) return
+
           // Load the custom font
           const fontFace = new FontFace('IMFellEnglishSC', `url(${imFellFont})`)
           await fontFace.load()
-          document.fonts.add(fontFace)
+          if (document.fonts) {
+            document.fonts.add(fontFace)
+          }
 
           const numCards = Math.min(6, adventureCards.length + 1) // +1 for the first card
 
@@ -322,6 +351,7 @@ export const MainMenu = () => {
             cardContainer.eventMode = 'static'
             cardContainer.cursor = 'pointer'
 
+            // Pivot for scaling effect
             cardContainer.pivot.set(cardSize / 2, cardSize / 2)
             cardContainer.x = x + cardSize / 2
             cardContainer.y = y + cardSize / 2
@@ -336,12 +366,14 @@ export const MainMenu = () => {
               targetScale = 1.0
             })
 
-            app.ticker.add(() => {
-              if (Math.abs(currentScale - targetScale) > 0.001) {
-                currentScale += (targetScale - currentScale) * 0.15
-                cardContainer.scale.set(currentScale)
-              }
-            })
+            if (app.ticker) {
+              app.ticker.add(() => {
+                if (Math.abs(currentScale - targetScale) > 0.001) {
+                  currentScale += (targetScale - currentScale) * 0.15
+                  cardContainer.scale.set(currentScale)
+                }
+              })
+            }
 
             app.stage.addChild(cardContainer)
 
@@ -442,7 +474,7 @@ export const MainMenu = () => {
           console.log('[MainMenu] Rendered', numCards, 'cards')
 
           // Modal helper function
-          function showModal(app: Application, width: number, height: number) {
+          function showModal(app: Application, width: number, height: number): void {
             // Create overlay container
             const modalOverlay = new Container()
             modalOverlay.eventMode = 'static'
@@ -524,15 +556,50 @@ export const MainMenu = () => {
       }
     }
 
+    // Set up ResizeObserver for responsive updates
+    resizeObserver = new ResizeObserver((entries) => {
+      clearTimeout(resizeTimeout)
+      resizeTimeout = setTimeout(() => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+            initPixi()
+          }
+        }
+      }, 200)
+    })
+
+    resizeObserver.observe(cardsContainerRef.current)
+
+    // INITIALIZATION STRATEGY:
+    // 1. Try immediate init
     initPixi()
 
+    // 2. Poll for dimensions (Fallback for Electron)
+    // Check every 100ms for 3 seconds to ensure we catch the window when it becomes visible/sized
+    const pollStartTime = Date.now()
+    pollingInterval = setInterval(() => {
+      if (initialized) {
+        clearInterval(pollingInterval)
+        return
+      }
+      if (Date.now() - pollStartTime > 3000) {
+        clearInterval(pollingInterval)
+        return
+      }
+      // Retry init
+      initPixi()
+    }, 100)
+
     return () => {
+      if (resizeObserver) resizeObserver.disconnect()
+      clearTimeout(resizeTimeout)
+      clearInterval(pollingInterval)
       if (appRef.current) {
         appRef.current.destroy(true, { children: true })
         appRef.current = null
       }
     }
-  }, [calculateLayout]) // Re-run when layout changes
+  }, [calculateLayout, setGamePhase]) // Re-run when layout changes
 
   // Show game window if game started
   return (

@@ -24,7 +24,7 @@ export class DungeonGenerator {
     let parentRoom: Room | null = null
 
     for (const r of this.rooms) {
-      const e = r.exits.find(ex => ex.id === exitId)
+      const e = r.exits.find((ex) => ex.id === exitId)
       if (e) {
         exit = e
         parentRoom = r
@@ -35,10 +35,11 @@ export class DungeonGenerator {
     if (!exit || !parentRoom) return { maxW: 0, maxH: 0 }
 
     const { x: ex, y: ey, direction } = exit
-    
+
     // Check primary depth (how far out we can go)
     let maxDepth = 0
-    let dx = 0, dy = 0
+    let dx = 0,
+      dy = 0
 
     if (direction === 'top') dy = -1
     if (direction === 'bottom') dy = 1
@@ -49,7 +50,7 @@ export class DungeonGenerator {
     const isValid = (tx: number, ty: number) => {
       // Bounds check (including map border where x<2 etc which are dead)
       if (tx < 2 || ty < 2 || tx >= this.width - 2 || ty >= this.height - 2) return false
-      
+
       const t = this.tiles[ty][tx]
       // We can build on 'live' (empty) or 'dead' (buffer).
       // We CANNOT build on 'active' (existing room/wall).
@@ -60,7 +61,7 @@ export class DungeonGenerator {
     // Start adjacent to exit
     let cx = ex + dx
     let cy = ey + dy
-    
+
     while (cx >= 0 && cy >= 0 && cx < this.width && cy < this.height) {
       if (!isValid(cx, cy)) break
       maxDepth++
@@ -69,18 +70,21 @@ export class DungeonGenerator {
     }
 
     // Check secondary width (perpendicular to extension)
-    let pdx = 0, pdy = 0 // Perpendicular delta
-    if (dx !== 0) { // Moving Horizontally -> Scan Vertically
-       pdy = 1 
-    } else { // Moving Vertically -> Scan Horizontally
-       pdx = 1
+    let pdx = 0,
+      pdy = 0 // Perpendicular delta
+    if (dx !== 0) {
+      // Moving Horizontally -> Scan Vertically
+      pdy = 1
+    } else {
+      // Moving Vertically -> Scan Horizontally
+      pdx = 1
     }
 
     // Scan Positive Perpendicular
     let maxPerpPos = 0
     let px = ex + dx + pdx
     let py = ey + dy + pdy
-    
+
     const startX = ex + dx
     const startY = ey + dy
 
@@ -88,10 +92,10 @@ export class DungeonGenerator {
     px = startX + pdx
     py = startY + pdy
     while (px >= 0 && py >= 0 && px < this.width && py < this.height) {
-       if (!isValid(px, py)) break
-       maxPerpPos++
-       px += pdx
-       py += pdy
+      if (!isValid(px, py)) break
+      maxPerpPos++
+      px += pdx
+      py += pdy
     }
 
     // Scan Negative
@@ -99,10 +103,10 @@ export class DungeonGenerator {
     px = startX - pdx
     py = startY - pdy
     while (px >= 0 && py >= 0 && px < this.width && py < this.height) {
-       if (!isValid(px, py)) break
-       maxPerpNeg++
-       px -= pdx
-       py -= pdy
+      if (!isValid(px, py)) break
+      maxPerpNeg++
+      px -= pdx
+      py -= pdy
     }
 
     const maxSecondary = 1 + maxPerpPos + maxPerpNeg
@@ -114,33 +118,33 @@ export class DungeonGenerator {
     }
   }
 
-  public async rollNewRoomAttributes(exitId: string): Promise<{ 
-     width: number, 
-     height: number, 
-     type: 'Corridor' | 'Small' | 'Medium' | 'Large',
-     rolls: string[],
-     maxW: number,
-     maxH: number
+  public async rollNewRoomAttributes(exitId: string): Promise<{
+    width: number
+    height: number
+    type: 'Corridor' | 'Small' | 'Medium' | 'Large'
+    rolls: string[]
+    maxW: number
+    maxH: number
   }> {
     const { maxW, maxH } = this.calculateMaxDimensions(exitId)
     const logs: string[] = []
 
     // Roll 2d8 for initial dimensions via Dice Engine
     const result = await diceEngine.roll('2d8')
-    
+
     // Parse individual dice values
     // We expect 2 dice in the breakdown
     // If something fails, default to 1 (safe fallback)
     let w = 1
     let h = 1
-    
+
     if (result.breakdown && result.breakdown.length >= 2) {
-       w = result.breakdown[0].value
-       h = result.breakdown[1].value
+      w = result.breakdown[0].value
+      h = result.breakdown[1].value
     } else {
-       // Fallback logic if breakdown fails
-       w = Math.floor(result.total / 2) || 1
-       h = (result.total - w) || 1
+      // Fallback logic if breakdown fails
+      w = Math.floor(result.total / 2) || 1
+      h = result.total - w || 1
     }
 
     logs.push(`Rolled 2d8: ${w} x ${h}`)
@@ -148,14 +152,14 @@ export class DungeonGenerator {
     // Check Doubles
     if (w === h) {
       logs.push(`Doubles! Rolling bonus 2d8...`)
-      
+
       const bonusResult = await diceEngine.roll('2d8')
-      
+
       let w2 = 1
       let h2 = 1
       if (bonusResult.breakdown && bonusResult.breakdown.length >= 2) {
-         w2 = bonusResult.breakdown[0].value
-         h2 = bonusResult.breakdown[1].value
+        w2 = bonusResult.breakdown[0].value
+        h2 = bonusResult.breakdown[1].value
       }
 
       logs.push(`Bonus Result: +${w2} (W), +${h2} (H)`)
@@ -169,7 +173,7 @@ export class DungeonGenerator {
     const finalH = Math.min(h, maxH)
 
     if (finalW !== w || finalH !== h) {
-       logs.push(`Clamped to available space: ${finalW} x ${finalH} (Max: ${maxW}x${maxH})`)
+      logs.push(`Clamped to available space: ${finalW} x ${finalH} (Max: ${maxW}x${maxH})`)
     }
 
     // Classify
@@ -259,21 +263,25 @@ export class DungeonGenerator {
    * Part 3: Rolling for Starting Room
    * Returns the dimensions for the starting room based on 2d6 roll
    */
-  public async rollStartingRoomSize(): Promise<{ width: number; height: number; original: [number, number] }> {
+  public async rollStartingRoomSize(): Promise<{
+    width: number
+    height: number
+    original: [number, number]
+  }> {
     // 1. Roll 2 dice using Dice Engine
     const result = await diceEngine.roll('2d8')
-    
+
     let d1 = 1
     let d2 = 1
 
     if (result.breakdown && result.breakdown.length >= 2) {
-       d1 = result.breakdown[0].value
-       d2 = result.breakdown[1].value
+      d1 = result.breakdown[0].value
+      d2 = result.breakdown[1].value
     } else {
-       d1 = Math.floor(result.total / 2) || 1
-       d2 = (result.total - d1) || 1
+      d1 = Math.floor(result.total / 2) || 1
+      d2 = result.total - d1 || 1
     }
-    
+
     let w = d1
     let h = d2
 
@@ -284,17 +292,27 @@ export class DungeonGenerator {
     if (h === 1) h = 2
 
     // Rule 81: Area constraints (6 <= area <= 12)
-    let area = w * h
+    const area = w * h
 
     if (area < 6) {
-        // Force to 6 squares (2x3 or 3x2)
-        // Try to respect the dominant dimension
-        if (w >= h) { w = 3; h = 2 }
-        else { w = 2; h = 3 }
+      // Force to 6 squares (2x3 or 3x2)
+      // Try to respect the dominant dimension
+      if (w >= h) {
+        w = 3
+        h = 2
+      } else {
+        w = 2
+        h = 3
+      }
     } else if (area > 12) {
-        // Force to 12 squares (4x3 or 3x4)
-        if (w >= h) { w = 4; h = 3 }
-        else { w = 3; h = 4 }
+      // Force to 12 squares (4x3 or 3x4)
+      if (w >= h) {
+        w = 4
+        h = 3
+      } else {
+        w = 3
+        h = 4
+      }
     }
 
     return { width: w, height: h, original: [d1, d2] }
@@ -315,7 +333,7 @@ export class DungeonGenerator {
       for (let rx = 0; rx < w; rx++) {
         const tx = x + rx
         const ty = y + ry
-        
+
         // Map Border Check (strictly enforced)
         if (tx < 2 || ty < 2 || tx >= this.width - 2 || ty >= this.height - 2) return false
 
@@ -332,13 +350,19 @@ export class DungeonGenerator {
    * Calculates the maximum room size that can actually fit from an exit.
    * Tests progressively smaller sizes until one fits.
    */
-  public getAvailableSpaceFromExit(exitId: string): { maxWidth: number; maxHeight: number; direction: string } | null {
+  public getAvailableSpaceFromExit(
+    exitId: string
+  ): { maxWidth: number; maxHeight: number; direction: string } | null {
     // Find the exit
     let exit: Exit | null = null
     let parentRoom: Room | null = null
     for (const room of this.rooms) {
       const e = room.exits.find((ex) => ex.id === exitId)
-      if (e) { exit = e; parentRoom = room; break }
+      if (e) {
+        exit = e
+        parentRoom = room
+        break
+      }
     }
     if (!exit || !parentRoom) return null
 
@@ -346,11 +370,11 @@ export class DungeonGenerator {
 
     // Determine the anchor point for room placement based on exit direction
     // This is where the room's edge connects to the exit
-    
+
     // Test progressively smaller rectangles to find what actually fits
     // Start with max 12x12 (reasonable max) and shrink until something fits
     const MAX_SIZE = 12
-    
+
     let bestWidth = 0
     let bestHeight = 0
     let bestArea = 0
@@ -359,20 +383,21 @@ export class DungeonGenerator {
       for (let h = 1; h <= MAX_SIZE; h++) {
         // Calculate where this room would be placed relative to exit
         let roomX: number, roomY: number
-        
+
         if (direction === 'top') {
           // Room placed above exit, exit connects to bottom of room
           roomX = ex - Math.floor(w / 2) // Center on exit
           roomY = ey - h
         } else if (direction === 'bottom') {
-          // Room placed below exit, exit connects to top of room  
+          // Room placed below exit, exit connects to top of room
           roomX = ex - Math.floor(w / 2)
           roomY = ey + 1
         } else if (direction === 'left') {
           // Room placed left of exit
           roomX = ex - w
           roomY = ey - Math.floor(h / 2)
-        } else { // right
+        } else {
+          // right
           // Room placed right of exit
           roomX = ex + 1
           roomY = ey - Math.floor(h / 2)
@@ -390,7 +415,9 @@ export class DungeonGenerator {
       }
     }
 
-    console.log(`[getAvailableSpaceFromExit] Exit ${exitId} (${direction}): max ${bestWidth}x${bestHeight}`)
+    console.log(
+      `[getAvailableSpaceFromExit] Exit ${exitId} (${direction}): max ${bestWidth}x${bestHeight}`
+    )
     return { maxWidth: bestWidth, maxHeight: bestHeight, direction }
   }
 
@@ -399,8 +426,8 @@ export class DungeonGenerator {
    * Compares areas of possible orientations and returns the largest fitting room.
    */
   public clampRoomToAvailableSpace(
-    width: number, 
-    height: number, 
+    width: number,
+    height: number,
     exitId: string
   ): { width: number; height: number; clamped: boolean; reason?: string } {
     const available = this.getAvailableSpaceFromExit(exitId)
@@ -409,12 +436,12 @@ export class DungeonGenerator {
     }
 
     const { maxWidth, maxHeight } = available
-    
+
     // Check if original fits as-is
     if (width <= maxWidth && height <= maxHeight) {
       return { width, height, clamped: false }
     }
-    
+
     // Check if rotated version fits
     if (height <= maxWidth && width <= maxHeight) {
       console.log(`[clampRoomToAvailableSpace] Rotated ${width}x${height} to ${height}x${width}`)
@@ -432,11 +459,25 @@ export class DungeonGenerator {
     const area2 = clampedW2 * clampedH2
 
     if (area1 >= area2) {
-      console.log(`[clampRoomToAvailableSpace] Clamped ${width}x${height} to ${clampedW1}x${clampedH1} (area: ${area1})`)
-      return { width: clampedW1, height: clampedH1, clamped: true, reason: `Clamped to ${clampedW1}x${clampedH1} (max available)` }
+      console.log(
+        `[clampRoomToAvailableSpace] Clamped ${width}x${height} to ${clampedW1}x${clampedH1} (area: ${area1})`
+      )
+      return {
+        width: clampedW1,
+        height: clampedH1,
+        clamped: true,
+        reason: `Clamped to ${clampedW1}x${clampedH1} (max available)`
+      }
     } else {
-      console.log(`[clampRoomToAvailableSpace] Clamped ${width}x${height} to ${clampedW2}x${clampedH2} (area: ${area2})`)
-      return { width: clampedW2, height: clampedH2, clamped: true, reason: `Clamped to ${clampedW2}x${clampedH2} (max available)` }
+      console.log(
+        `[clampRoomToAvailableSpace] Clamped ${width}x${height} to ${clampedW2}x${clampedH2} (area: ${area2})`
+      )
+      return {
+        width: clampedW2,
+        height: clampedH2,
+        clamped: true,
+        reason: `Clamped to ${clampedW2}x${clampedH2} (max available)`
+      }
     }
   }
 
@@ -469,12 +510,15 @@ export class DungeonGenerator {
 
     const newRoom: Room = {
       id: roomId,
-      x, y, width: w, height: h,
+      x,
+      y,
+      width: w,
+      height: h,
       exits: [],
       type,
       classification
     }
-    
+
     this.rooms.push(newRoom)
 
     // Update tiles
@@ -482,7 +526,7 @@ export class DungeonGenerator {
       for (let rx = 0; rx < w; rx++) {
         const tx = x + rx
         const ty = y + ry
-        
+
         // Mark as floor
         this.tiles[ty][tx].type = 'active'
         this.tiles[ty][tx].roomId = roomId
@@ -524,7 +568,9 @@ export class DungeonGenerator {
   public placeNewRoom(x: number, y: number, w: number, h: number, exitId: string): string | null {
     // Validate placement using standardized logic (allows overwriting dead zones)
     if (!this.canPlaceRoom(x, y, w, h)) {
-      console.warn(`[placeNewRoom] Failed to place room at ${x},${y} (${w}x${h}) - Collision or OOB`)
+      console.warn(
+        `[placeNewRoom] Failed to place room at ${x},${y} (${w}x${h}) - Collision or OOB`
+      )
       return null
     }
 
@@ -547,7 +593,9 @@ export class DungeonGenerator {
     // Connect the exit to this room
     exit.connectedRoomId = newRoom.id
 
-    console.log(`[DungeonGenerator] Placed New Room at ${x},${y} (${w}x${h}), connected to exit ${exitId}`)
+    console.log(
+      `[DungeonGenerator] Placed New Room at ${x},${y} (${w}x${h}), connected to exit ${exitId}`
+    )
     return newRoom.id
   }
 
@@ -556,7 +604,7 @@ export class DungeonGenerator {
    * A wall is NOT eligible if ANY tile on it is exactly 2 spaces from a dead tile.
    * Returns an object with the eligibility of each wall and count.
    */
-  public calculateEligibleWalls(roomId: string): { 
+  public calculateEligibleWalls(roomId: string): {
     top: boolean
     bottom: boolean
     left: boolean
@@ -565,7 +613,8 @@ export class DungeonGenerator {
     connectedWall: string | null
   } {
     const room = this.rooms.find((r) => r.id === roomId)
-    if (!room) return { top: false, bottom: false, left: false, right: false, count: 0, connectedWall: null }
+    if (!room)
+      return { top: false, bottom: false, left: false, right: false, count: 0, connectedWall: null }
 
     const { x, y, width: w, height: h } = room
 
@@ -589,8 +638,8 @@ export class DungeonGenerator {
     // Helper to check if an exit position is valid for a wall
     // Checks BOTH: exit tile (1 away) is live AND tile beyond (2 away) is also live
     const isExitPositionValid = (
-      exitX: number, 
-      exitY: number, 
+      exitX: number,
+      exitY: number,
       direction: 'top' | 'bottom' | 'left' | 'right'
     ): boolean => {
       // Check exit tile (1 away from wall)
@@ -675,12 +724,21 @@ export class DungeonGenerator {
 
     const count = [topEligible, bottomEligible, leftEligible, rightEligible].filter(Boolean).length
 
-    console.log(`[calculateEligibleWalls] Room ${roomId.substring(0,8)} at ${x},${y} (${w}x${h})`)
+    console.log(`[calculateEligibleWalls] Room ${roomId.substring(0, 8)} at ${x},${y} (${w}x${h})`)
     console.log(`  Connected wall: ${connectedWall}`)
-    console.log(`  Top: ${topEligible}, Bottom: ${bottomEligible}, Left: ${leftEligible}, Right: ${rightEligible}`)
+    console.log(
+      `  Top: ${topEligible}, Bottom: ${bottomEligible}, Left: ${leftEligible}, Right: ${rightEligible}`
+    )
     console.log(`  Total eligible: ${count}`)
 
-    return { top: topEligible, bottom: bottomEligible, left: leftEligible, right: rightEligible, count, connectedWall }
+    return {
+      top: topEligible,
+      bottom: bottomEligible,
+      left: leftEligible,
+      right: rightEligible,
+      count,
+      connectedWall
+    }
   }
 
   /**
@@ -723,7 +781,7 @@ export class DungeonGenerator {
         }
       }
     }
-    
+
     // Bottom row (y+h)
     for (let rx = -1; rx <= w; rx++) {
       const tx = x + rx
@@ -734,7 +792,7 @@ export class DungeonGenerator {
         }
       }
     }
-    
+
     // Left column (x-1)
     for (let ry = 0; ry < h; ry++) {
       const tx = x - 1
@@ -745,7 +803,7 @@ export class DungeonGenerator {
         }
       }
     }
-    
+
     // Right column (x+w)
     for (let ry = 0; ry < h; ry++) {
       const tx = x + w
@@ -783,7 +841,7 @@ export class DungeonGenerator {
           { nx: x, ny: y - 1 }, // top
           { nx: x, ny: y + 1 }, // bottom
           { nx: x - 1, ny: y }, // left
-          { nx: x + 1, ny: y }  // right
+          { nx: x + 1, ny: y } // right
         ]
 
         let hasLiveNeighbor = false
@@ -818,7 +876,7 @@ export class DungeonGenerator {
       console.log(`[isValidExitPosition] Out of bounds: ${x},${y}`)
       return false
     }
-    
+
     const tile = this.tiles[y][x]
     if (tile.type !== 'live') {
       console.log(`[isValidExitPosition] Tile at ${x},${y} is '${tile.type}', not 'live'`)
@@ -827,7 +885,7 @@ export class DungeonGenerator {
 
     // Identify wall/direction based on adjacency
     let direction: 'top' | 'bottom' | 'left' | 'right' | null = null
-    
+
     if (x >= room.x && x < room.x + room.width) {
       if (y === room.y - 1) direction = 'top'
       if (y === room.y + room.height) direction = 'bottom'
@@ -857,9 +915,14 @@ export class DungeonGenerator {
           if (exit.connectedRoomId === roomId) {
             // This exit connects to our room - block the opposite wall
             // If exit is on parent's right, our entry is on our left, etc.
-            const entryWall = exit.direction === 'top' ? 'bottom' :
-                             exit.direction === 'bottom' ? 'top' :
-                             exit.direction === 'left' ? 'right' : 'left'
+            const entryWall =
+              exit.direction === 'top'
+                ? 'bottom'
+                : exit.direction === 'bottom'
+                  ? 'top'
+                  : exit.direction === 'left'
+                    ? 'right'
+                    : 'left'
             if (direction === entryWall) return false
           }
         }
@@ -872,7 +935,7 @@ export class DungeonGenerator {
   public addExit(x: number, y: number, roomId: string): boolean {
     if (!this.isValidExitPosition(x, y, roomId)) return false
 
-    const room = this.rooms.find(r => r.id === roomId)
+    const room = this.rooms.find((r) => r.id === roomId)
     if (!room) return false
 
     let direction: 'top' | 'bottom' | 'left' | 'right' = 'top'
@@ -885,32 +948,33 @@ export class DungeonGenerator {
     // Update Room
     room.exits.push({
       id: `exit_${Date.now()}`,
-      x, y,
+      x,
+      y,
       direction,
       parentRoomId: roomId
     })
 
     // Update Tile
     // Mark exit tiles as 'active' (not entrance - that's only for the dungeon entrance)
-    this.tiles[y][x].type = 'active' 
-    this.tiles[y][x].isExit = true 
-    
+    this.tiles[y][x].type = 'active'
+    this.tiles[y][x].isExit = true
+
     console.log(`[DungeonGenerator] Added Exit at ${x},${y} on ${direction} wall`)
     return true
   }
 
   public finalizeStarterRoom(roomId: string): void {
-     const room = this.rooms.find(r => r.id === roomId)
-     if (!room) return
+    const room = this.rooms.find((r) => r.id === roomId)
+    if (!room) return
 
-     const { x, y, width: w, height: h } = room
+    const { x, y, width: w, height: h } = room
 
-     // Rule 105: 1-tile buffer
-     for (let ty = y - 1; ty <= y + h; ty++) {
+    // Rule 105: 1-tile buffer
+    for (let ty = y - 1; ty <= y + h; ty++) {
       for (let tx = x - 1; tx <= x + w; tx++) {
         // Skip tiles inside the room itself
         if (tx >= x && tx < x + w && ty >= y && ty < y + h) continue
-        
+
         // Skip out of bounds
         if (tx < 0 || ty < 0 || tx >= this.width || ty >= this.height) continue
 
@@ -919,37 +983,37 @@ export class DungeonGenerator {
         // The exits themselves are inside the room (on the edge).
         // The DEAD SPACE blocks expansion EXCEPT where exits are?
         // Usually dead space surrounds the room to define its shape in the void.
-        
+
         // If I make neighbors of exits 'dead', then we can't expand.
         // But "draw dead spaces" usually means "fill the void around the generated room with dead tiles".
         // AND we probably want to reserve space for corridors from exits?
-        
+
         // Let's just blindly apply DEAD to the ring for now.
         // BUT we must NOT overwrite the ACTUAL Dungeon Entrance which is at (x?, y+h?).
         // My previous logic prevented overwriting non-void.
-        
+
         // New logic:
         // Neighbor of an EXIT should probably NOT be dead? Or maybe it SHOULD, and the corridor generation handling punches through 'dead'?
         // "Dead zones" usually mean "no room can be here".
         // If we want to attach a room later, we need to replace 'dead' with 'corridor' or 'active'.
-        
+
         // User said: "when 3 Exits are place, THEN YOU DRAW THE DEAD SPACES."
         // So I will just mark them 'dead' if they are 'live'.
-        
+
         const tile = this.tiles[ty][tx]
         if (tile.type === 'live') {
-           // Ensure we don't block the dungeon entrance path?
-           // The dungeon entrance is at tile.type == 'active'.
-           // The tile BELOW the room is the entrance.
-           // entrance is at (entrance.x, entrance.y).
-           // If ty === entrance.y && tx === entrance.x, it's type 'active', so check below passes.
-           
-           // What about the tiles adjacent to exits?
-           // If we mark them dead, can we build from them?
-           // Standard dungeon generation often treats 'dead' as 'wall'.
-           // Maybe we should leave the tile directly OUTSIDE the exit as void?
-           // For now, I will follow the instruction literally: Draw Dead Spaces.
-           this.tiles[ty][tx].type = 'dead'
+          // Ensure we don't block the dungeon entrance path?
+          // The dungeon entrance is at tile.type == 'active'.
+          // The tile BELOW the room is the entrance.
+          // entrance is at (entrance.x, entrance.y).
+          // If ty === entrance.y && tx === entrance.x, it's type 'active', so check below passes.
+
+          // What about the tiles adjacent to exits?
+          // If we mark them dead, can we build from them?
+          // Standard dungeon generation often treats 'dead' as 'wall'.
+          // Maybe we should leave the tile directly OUTSIDE the exit as void?
+          // For now, I will follow the instruction literally: Draw Dead Spaces.
+          this.tiles[ty][tx].type = 'dead'
         }
       }
     }
