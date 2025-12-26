@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useCallback } from 'react'
-import { useAppActions } from '@/stores/useAppStore'
+import React, { useRef } from 'react'
+import { useAppActions, useAppStore } from '@/stores/useAppStore'
 import mainMenuBackground from '@/assets/images/backgrounds/main-menu-background.png'
 import logoLarge from '@/assets/images/backgrounds/logo-large.png'
 import buttonMissions from '@/assets/images/ui/button-missions.png'
@@ -15,42 +15,6 @@ import iconContact from '@/assets/images/ui/icon-contact-us.png'
 import iconWebsite from '@/assets/images/ui/icon-website.png'
 import artNewAdventure from '@/assets/images/ui/art-default-new-adventure.png'
 import glassNewAdventure from '@/assets/images/ui/glass-new-adventure.png'
-import stoneDialogTexture from '@/assets/images/ui/nine-slices/stone-02.png'
-import imFellFont from '@/assets/fonts/IMFellEnglishSC-Regular.ttf'
-import {
-  Application,
-  Sprite,
-  Container,
-  Assets,
-  RenderTexture,
-  Graphics,
-  Text,
-  TextStyle,
-  NineSliceSprite
-} from 'pixi.js'
-import { DivideBlendFilter } from '../engine/filters/DivideBlendFilter'
-
-// Dynamically import all images from folders using Vite's import.meta.glob
-const adventureCardModules = import.meta.glob('@/assets/images/ui/adventure-cards/*.png', {
-  eager: true,
-  import: 'default'
-}) as Record<string, string>
-const crackedGlassModules = import.meta.glob('@/assets/images/ui/cracked-glass/*.png', {
-  eager: true,
-  import: 'default'
-}) as Record<string, string>
-
-// Extract the URLs from the modules
-const adventureCards = Object.values(adventureCardModules)
-const crackedGlasses = Object.values(crackedGlassModules)
-
-console.log(
-  '[MainMenu] Loaded',
-  adventureCards.length,
-  'adventure cards and',
-  crackedGlasses.length,
-  'cracked glass textures'
-)
 
 // Menu button configuration
 const menuButtons = [
@@ -172,9 +136,15 @@ const SocialIconsRow = (): React.ReactElement => {
   )
 }
 
+import { SettingsModal } from './SettingsModal'
+import { PixiAdventureCard } from './PixiAdventureCard'
+
+// ... (existing imports)
+
 // Hex button grid component
 const HexButtonGrid = (): React.ReactElement => {
   const hexSize = '30%'
+  const { openModal } = useAppActions()
 
   return (
     <div
@@ -199,6 +169,7 @@ const HexButtonGrid = (): React.ReactElement => {
           src={hexButtonsTopRow[0].src}
           alt={hexButtonsTopRow[0].alt}
           style={{ width: hexSize, marginLeft: '32px' }}
+          onClick={() => openModal('settings')}
         />
         <ImageButton
           src={hexButtonsTopRow[1].src}
@@ -231,377 +202,61 @@ const HexButtonGrid = (): React.ReactElement => {
           src={hexButtonsBottomRow[2].src}
           alt={hexButtonsBottomRow[2].alt}
           style={{ width: hexSize }}
+          onClick={() => window.close()}
         />
       </div>
     </div>
   )
 }
 
-// Layout constants
-const CARDS_PER_ROW = 4
-const ROWS = 2
-const GAP = 20
-const PADDING = 20
+// ... (Layout constants)
+import { AssetLoader } from '../engine/assets/AssetLoader'
+
+// ... (existing helper components)
 
 export const MainMenu = (): React.ReactElement => {
-  const { setGamePhase } = useAppActions()
+  const { setGamePhase, closeModal, setShowMap } = useAppActions()
+  const activeModal = useAppStore((state) => state.activeModal)
+
   const cardsContainerRef = useRef<HTMLDivElement>(null)
-  const pixiContainerRef = useRef<HTMLDivElement>(null)
-  const appRef = useRef<Application | null>(null)
 
-  // Calculate optimal card size based on container dimensions
-  const calculateLayout = useCallback(() => {
-    if (!cardsContainerRef.current) return null
+  // State for card configurations
+  // Initialize with null or empty to defer random selection to client-side effect
+  // This avoids hydration mismatches and keeps render pure
+  const [cardConfigs, setCardConfigs] = React.useState<Array<{ artSrc: string; glassSrc: string; isFirst: boolean }>>([])
 
-    const containerWidth = cardsContainerRef.current.clientWidth
-    const containerHeight = cardsContainerRef.current.clientHeight
+  React.useEffect(() => {
+    const allArt = AssetLoader.getAdventureCards()
+    const allGlass = AssetLoader.getCrackedGlasses()
 
-    const widthForCards = containerWidth - 2 * PADDING - (CARDS_PER_ROW - 1) * GAP
-    const maxWidthBasedSize = Math.floor(widthForCards / CARDS_PER_ROW)
+    // Helper to get random item
+    const getRandom = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)]
 
-    const heightForCards = containerHeight - 2 * PADDING - (ROWS - 1) * GAP
-    const maxHeightBasedSize = Math.floor(heightForCards / ROWS)
+    // We need 6 cards total
+    const configs = Array.from({ length: 6 }).map((_, i) => {
+      const isFirst = i === 0
 
-    const cardSize = Math.floor(Math.min(maxWidthBasedSize, maxHeightBasedSize) * 0.9)
-
-    const gridWidth = CARDS_PER_ROW * cardSize + (CARDS_PER_ROW - 1) * GAP
-    const gridHeight = ROWS * cardSize + (ROWS - 1) * GAP
-
-    const startX = Math.floor((containerWidth - gridWidth) / 2)
-    const startY = Math.floor((containerHeight - gridHeight) / 2)
-
-    return { cardSize, startX, startY, containerWidth, containerHeight }
-  }, [])
-
-  // Initialize PixiJS application and handle resizing
-  useEffect(() => {
-    if (!pixiContainerRef.current || !cardsContainerRef.current) return
-
-    let resizeObserver: ResizeObserver | null = null
-    let resizeTimeout: NodeJS.Timeout
-    // eslint-disable-next-line prefer-const
-    let pollingInterval: NodeJS.Timeout | undefined
-    let initialized = false
-
-    const initPixi = async (): Promise<void> => {
-      // Prevent multiple initializations or initializing if already exists (unless we want to re-init)
-      if (appRef.current) {
-        appRef.current.destroy(true, { children: true })
-        appRef.current = null
-      }
-
-      const layout = calculateLayout()
-      if (!layout || layout.containerWidth === 0 || layout.containerHeight === 0) {
-        console.warn('[MainMenu] Container has 0 dimensions, waiting for resize...')
-        return
-      }
-
-      const { cardSize, startX, startY, containerWidth, containerHeight } = layout
-      console.log('[MainMenu] Initializing with dimensions:', containerWidth, containerHeight)
-
-      // Stop polling once we have valid dimensions
-      if (pollingInterval) clearInterval(pollingInterval)
-      initialized = true
-
-      const app = new Application()
-      await app.init({
-        width: containerWidth,
-        height: containerHeight,
-        backgroundAlpha: 0,
-        preference: 'webgl',
-        resolution: 1
-      })
-
-      if (pixiContainerRef.current) {
-        // Clear previous canvas if any
-        while (pixiContainerRef.current.firstChild) {
-          pixiContainerRef.current.removeChild(pixiContainerRef.current.firstChild)
-        }
-        pixiContainerRef.current.appendChild(app.canvas)
-        appRef.current = app
-
-        try {
-          // Load the first card assets separately
-          const firstCardArt = await Assets.load(artNewAdventure)
-          const firstCardGlass = await Assets.load(glassNewAdventure)
-          const artTextures = await Promise.all(adventureCards.map((src) => Assets.load(src)))
-          const glassTextures = await Promise.all(crackedGlasses.map((src) => Assets.load(src)))
-
-          // Check if app was destroyed (e.g. component unmounted) during asset loading
-          if (!app.renderer) return
-
-          // Load the custom font
-          const fontFace = new FontFace('IMFellEnglishSC', `url(${imFellFont})`)
-          await fontFace.load()
-          if (document.fonts) {
-            document.fonts.add(fontFace)
-          }
-
-          const numCards = Math.min(6, adventureCards.length + 1) // +1 for the first card
-
-          for (let i = 0; i < numCards; i++) {
-            const row = Math.floor(i / CARDS_PER_ROW)
-            const col = i % CARDS_PER_ROW
-            const x = startX + col * (cardSize + GAP)
-            const y = startY + row * (cardSize + GAP)
-
-            const cardContainer = new Container()
-            cardContainer.x = x
-            cardContainer.y = y
-            cardContainer.eventMode = 'static'
-            cardContainer.cursor = 'pointer'
-
-            // Pivot for scaling effect
-            cardContainer.pivot.set(cardSize / 2, cardSize / 2)
-            cardContainer.x = x + cardSize / 2
-            cardContainer.y = y + cardSize / 2
-
-            let targetScale = 1.0
-            let currentScale = 1.0
-
-            cardContainer.on('pointerover', () => {
-              targetScale = 1.05
-            })
-            cardContainer.on('pointerout', () => {
-              targetScale = 1.0
-            })
-
-            if (app.ticker) {
-              app.ticker.add(() => {
-                if (Math.abs(currentScale - targetScale) > 0.001) {
-                  currentScale += (targetScale - currentScale) * 0.15
-                  cardContainer.scale.set(currentScale)
-                }
-              })
-            }
-
-            app.stage.addChild(cardContainer)
-
-            // First card uses the new adventure art, others use random
-            const artTexture =
-              i === 0 ? firstCardArt : artTextures[Math.floor(Math.random() * artTextures.length)]
-            const artSprite = new Sprite(artTexture)
-            artSprite.width = cardSize
-            artSprite.height = cardSize
-            cardContainer.addChild(artSprite)
-
-            // First card uses specific glass, others use random
-            const glassTexture =
-              i === 0
-                ? firstCardGlass
-                : glassTextures[Math.floor(Math.random() * glassTextures.length)]
-            const glassSprite = new Sprite(glassTexture)
-            glassSprite.width = cardSize
-            glassSprite.height = cardSize
-
-            const scaledGlassTexture = RenderTexture.create({
-              width: cardSize,
-              height: cardSize,
-              resolution: 1
-            })
-            app.renderer.render({ container: glassSprite, target: scaledGlassTexture, clear: true })
-
-            const divideFilter = new DivideBlendFilter(scaledGlassTexture)
-            artSprite.filters = [divideFilter]
-
-            // Add text to first card only
-            if (i === 0) {
-              const textStyle = new TextStyle({
-                fontFamily: 'IMFellEnglishSC',
-                fontSize: Math.floor(cardSize * 0.08),
-                fill: '#d4af37', // Gold color
-                align: 'center',
-                dropShadow: {
-                  color: '#000000',
-                  blur: 4,
-                  angle: Math.PI / 4,
-                  distance: 2
-                },
-                wordWrap: true,
-                wordWrapWidth: cardSize * 0.9
-              })
-              const cardText = new Text({ text: 'A New\nAdventure\nAwaits...', style: textStyle })
-              cardText.anchor.set(0.5, 0.5) // Center both horizontally and vertically
-              cardText.x = cardSize / 2
-              cardText.y = cardSize / 2 // Center of card
-              cardContainer.addChild(cardText)
-            }
-
-            // Second card - test text with left alignment
-            if (i === 1) {
-              const textStyle = new TextStyle({
-                fontFamily: 'IMFellEnglishSC',
-                fontSize: Math.floor(cardSize * 0.08),
-                fill: '#d4af37', // Gold color
-                align: 'left',
-                dropShadow: {
-                  color: '#000000',
-                  blur: 4,
-                  angle: Math.PI / 4,
-                  distance: 2
-                },
-                wordWrap: true,
-                wordWrapWidth: cardSize * 0.9
-              })
-              const cardText = new Text({
-                text: 'The story of...\nImmozen Vast\nApprentice\nGovernor',
-                style: textStyle
-              })
-              cardText.anchor.set(0, 0.5) // Left aligned, vertically centered
-              cardText.x = cardSize * 0.1 // 10% margin from left
-              cardText.y = cardSize / 2 // Center of card vertically
-              cardText.alpha = 0.75 // 75% opacity
-              cardContainer.addChild(cardText)
-            }
-
-            const border = new Graphics()
-            border.rect(0, 0, cardSize, cardSize)
-            border.stroke({ width: 4, color: 0x000000 })
-            cardContainer.addChild(border)
-
-            // Click handler - first card shows modal, others navigate to game
-            if (i === 0) {
-              cardContainer.on('pointertap', () => {
-                showModal(app, containerWidth, containerHeight)
-              })
-            } else {
-              cardContainer.on('pointertap', () => {
-                setGamePhase('adventure')
-              })
-            }
-          }
-
-          console.log('[MainMenu] Rendered', numCards, 'cards')
-
-          // Modal helper function
-          function showModal(app: Application, width: number, height: number): void {
-            // Create overlay container
-            const modalOverlay = new Container()
-            modalOverlay.eventMode = 'static'
-            app.stage.addChild(modalOverlay)
-
-            // Semi-transparent background
-            const dimmer = new Graphics()
-            dimmer.rect(0, 0, width, height)
-            dimmer.fill({ color: 0x000000, alpha: 0.6 })
-            dimmer.eventMode = 'static'
-            dimmer.cursor = 'pointer'
-            modalOverlay.addChild(dimmer)
-
-            // Close on background click
-            dimmer.on('pointertap', () => {
-              app.stage.removeChild(modalOverlay)
-              modalOverlay.destroy({ children: true })
-            })
-
-            // Load and create 9-slice dialog
-            Assets.load(stoneDialogTexture).then((dialogTexture) => {
-              const dialog = new NineSliceSprite({
-                texture: dialogTexture,
-                leftWidth: 72,
-                topHeight: 180,
-                rightWidth: 72,
-                bottomHeight: 142
-              })
-
-              // Size and center the modal
-              dialog.width = Math.min(800, width * 0.7)
-              dialog.height = Math.min(600, height * 0.7)
-              dialog.x = (width - dialog.width) / 2
-              dialog.y = (height - dialog.height) / 2
-              dialog.eventMode = 'static' // Prevent click-through to dimmer
-              modalOverlay.addChild(dialog)
-
-              // Add title text
-              const titleStyle = new TextStyle({
-                fontFamily: 'IMFellEnglishSC',
-                fontSize: 32,
-                fill: '#d4af37',
-                align: 'center',
-                dropShadow: {
-                  color: '#000000',
-                  blur: 4,
-                  angle: Math.PI / 4,
-                  distance: 2
-                }
-              })
-              const title = new Text({ text: 'Start a New Adventure', style: titleStyle })
-              title.anchor.set(0.5, 0.5)
-              title.x = dialog.width / 2
-              title.y = 180 / 2 // Centered in header (topHeight: 180)
-              dialog.addChild(title)
-
-              // Add sample body text
-              const bodyStyle = new TextStyle({
-                fontFamily: 'IMFellEnglishSC',
-                fontSize: 20,
-                fill: '#cccccc',
-                align: 'center',
-                wordWrap: true,
-                wordWrapWidth: dialog.width - 400
-              })
-              const body = new Text({
-                text: 'Begin your journey into the unknown.\nCreate a new hero and forge your destiny.',
-                style: bodyStyle
-              })
-              body.anchor.set(0.5, 0)
-              body.x = dialog.width / 2
-              body.y = 300
-              dialog.addChild(body)
-            })
-          }
-        } catch (err) {
-          console.error('[MainMenu] Error:', err)
+      // First card is ALWAYS the special new adventure art
+      // Used with its specific glass overlay
+      if (isFirst) {
+        return {
+          artSrc: artNewAdventure,
+          glassSrc: glassNewAdventure,
+          isFirst: true
         }
       }
-    }
 
-    // Set up ResizeObserver for responsive updates
-    resizeObserver = new ResizeObserver((entries) => {
-      clearTimeout(resizeTimeout)
-      resizeTimeout = setTimeout(() => {
-        for (const entry of entries) {
-          if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
-            initPixi()
-          }
-        }
-      }, 200)
+      // Others are random
+      return {
+        artSrc: getRandom(allArt),
+        glassSrc: getRandom(allGlass),
+        isFirst: false
+      }
     })
 
-    resizeObserver.observe(cardsContainerRef.current)
+    setCardConfigs(configs)
+  }, [])
 
-    // INITIALIZATION STRATEGY:
-    // 1. Try immediate init
-    initPixi()
-
-    // 2. Poll for dimensions (Fallback for Electron)
-    // Check every 100ms for 3 seconds to ensure we catch the window when it becomes visible/sized
-    const pollStartTime = Date.now()
-    pollingInterval = setInterval(() => {
-      if (initialized) {
-        clearInterval(pollingInterval)
-        return
-      }
-      if (Date.now() - pollStartTime > 3000) {
-        clearInterval(pollingInterval)
-        return
-      }
-      // Retry init
-      initPixi()
-    }, 100)
-
-    return () => {
-      if (resizeObserver) resizeObserver.disconnect()
-      clearTimeout(resizeTimeout)
-      clearInterval(pollingInterval)
-      if (appRef.current) {
-        appRef.current.destroy(true, { children: true })
-        appRef.current = null
-      }
-    }
-  }, [calculateLayout, setGamePhase]) // Re-run when layout changes
-
-  // Show game window if game started
   return (
     <div
       style={{
@@ -621,16 +276,29 @@ export const MainMenu = (): React.ReactElement => {
           width: '78%',
           height: '100%',
           position: 'relative',
-          paddingLeft: '10px'
+          paddingLeft: '40px',
+          paddingTop: '40px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignContent: 'center',
+          gap: '20px',
+          justifyContent: 'center' // Centering the grid
         }}
       >
-        <div
-          ref={pixiContainerRef}
-          style={{
-            position: 'absolute',
-            inset: 0
-          }}
-        />
+        {cardConfigs.map((config, i) => (
+          <PixiAdventureCard
+            key={i}
+            size={300}
+            artSrc={config.artSrc}
+            glassSrc={config.glassSrc}
+            onClick={() => {
+              console.log('Card clicked:', i, config.isFirst ? '(New Adventure)' : '(Generic)')
+              setShowMap(false)
+              setGamePhase('adventure')
+            }}
+          />
+        ))}
+
       </div>
 
       {/* Right side - Menu Buttons (22%) */}
@@ -670,6 +338,9 @@ export const MainMenu = (): React.ReactElement => {
         {/* Hex button grid at bottom */}
         <HexButtonGrid />
       </div>
+
+      {/* Modals */}
+      {activeModal === 'settings' && <SettingsModal onClose={closeModal} />}
     </div>
   )
 }

@@ -1,45 +1,22 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef } from 'react'
 import { Application, Sprite, Container, Assets, RenderTexture } from 'pixi.js'
 import { DivideBlendFilter } from '../engine/filters/DivideBlendFilter'
 
-// Import art defaults
-import artDefault01 from '@/assets/images/ui/art-default-01.png'
-import artDefault02 from '@/assets/images/ui/art-default-02.png'
-import artDefault03 from '@/assets/images/ui/art-default-03.png'
-import artDefault04 from '@/assets/images/ui/art-default-04.png'
-import artDefault05 from '@/assets/images/ui/art-default-05.png'
-import artDefault06 from '@/assets/images/ui/art-default-06.png'
-
-// Import cracked glass overlays
-import crackedGlass01 from '@/assets/images/ui/cracked-glass-overlay-01.png'
-import crackedGlass02 from '@/assets/images/ui/cracked-glass-overlay-02.png'
-import crackedGlass03 from '@/assets/images/ui/cracked-glass-overlay-03.png'
-import crackedGlass04 from '@/assets/images/ui/cracked-glass-overlay-04.png'
-
-const artDefaults = [
-  artDefault01,
-  artDefault02,
-  artDefault03,
-  artDefault04,
-  artDefault05,
-  artDefault06
-]
-const crackedGlasses = [crackedGlass01, crackedGlass02, crackedGlass03, crackedGlass04]
-
-const pickRandom = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]
-
 interface PixiAdventureCardProps {
-  index: number
   size: number
+  artSrc: string
+  glassSrc: string
+  onClick?: () => void
 }
 
-export const PixiAdventureCard = ({ index, size }: PixiAdventureCardProps) => {
+export const PixiAdventureCard = ({
+  size,
+  artSrc,
+  glassSrc,
+  onClick
+}: PixiAdventureCardProps): React.ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const appRef = useRef<Application | null>(null)
-
-  // Select images once based on index
-  const artImage = useMemo(() => artDefaults[index % artDefaults.length], [index])
-  const glassImage = useMemo(() => pickRandom(crackedGlasses), [])
 
   useEffect(() => {
     if (!containerRef.current || appRef.current) return
@@ -60,22 +37,8 @@ export const PixiAdventureCard = ({ index, size }: PixiAdventureCardProps) => {
 
         try {
           // Load textures
-          const artTexture = await Assets.load(artImage)
-          const glassTexture = await Assets.load(glassImage)
-
-          console.log('[PixiAdventureCard] Card size:', size)
-          console.log(
-            '[PixiAdventureCard] Glass texture size:',
-            glassTexture.width,
-            'x',
-            glassTexture.height
-          )
-          console.log(
-            '[PixiAdventureCard] Art texture size:',
-            artTexture.width,
-            'x',
-            artTexture.height
-          )
+          const artTexture = await Assets.load(artSrc)
+          const glassTexture = await Assets.load(glassSrc)
 
           // Create a RenderTexture at the card size for the glass
           // This ensures the glass texture matches the card dimensions
@@ -96,13 +59,6 @@ export const PixiAdventureCard = ({ index, size }: PixiAdventureCardProps) => {
             clear: true
           })
 
-          console.log(
-            '[PixiAdventureCard] Scaled glass texture size:',
-            scaledGlassTexture.width,
-            'x',
-            scaledGlassTexture.height
-          )
-
           // Create container for the card
           const cardContainer = new Container()
           app.stage.addChild(cardContainer)
@@ -117,7 +73,6 @@ export const PixiAdventureCard = ({ index, size }: PixiAdventureCardProps) => {
           const divideFilter = new DivideBlendFilter(scaledGlassTexture)
           artSprite.filters = [divideFilter]
 
-          console.log('[PixiAdventureCard] Rendered card', index, 'with divide filter')
         } catch (err) {
           console.error('[PixiAdventureCard] Error loading textures:', err)
         }
@@ -132,11 +87,13 @@ export const PixiAdventureCard = ({ index, size }: PixiAdventureCardProps) => {
         appRef.current = null
       }
     }
-  }, [artImage, glassImage, size, index])
+  }, [artSrc, glassSrc, size])
 
   return (
     <div
       ref={containerRef}
+      role="button"
+      onClick={onClick}
       style={{
         width: size,
         height: size,
