@@ -1,4 +1,4 @@
-export type TileType = 'dead' | 'live' | 'active'
+export type TileType = 'dead' | 'live' | 'active' | 'wall' | 'door'
 
 // Room classification - calculated at placement time for encounters
 export type RoomClassification =
@@ -15,6 +15,7 @@ export interface Tile {
   y: number
   type: TileType
   roomId?: string // ID of the room this tile belongs to
+  corridorId?: string // ID of the corridor this tile belongs to
   isEntrance?: boolean // True if this is the dungeon entrance tile
   isExit?: boolean // True if this is an exit tile
   debugColor?: number // Visual aid

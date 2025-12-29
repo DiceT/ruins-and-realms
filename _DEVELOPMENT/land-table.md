@@ -65,36 +65,4 @@
 | 87   | River                   | RI  | String | 5    |
 | 88   | Stone Wall              | SW  | String | 3    |
 
-NANA BANANA PROMPT
 
-TERRAIN TYPE = Meadow
-COLOR THEME = Lime Green
-PERCENTAGE = 50%
-
-Create 8 hand-painted fantasy hex tiles (point-side up) depicting [[TERRAIN TYPE]].
-
-USE THE PROVIDED IMAGE(S) AS A VISUAL REFERENCE. Continue the established style exactly.
-
-Use a [[COLOR THEME]] as the background wash for this set.
-
-Background:
-Traditional watercolor on textured cold-press paper with visible paper grain, uneven pigment pooling, soft washes, and slight color bleeding. Fill the entire hex with watercolor texture.
-
-Foreground:
-Ink illustration only. VERY thick, hand-drawn black linework with imperfect, organic edges. 
-No clean vectors. No color used in the ink work. Avoid details.
-Pan the camera way back to show the terrain on the near horizon starting from the bottom of the hex.
-Foreground elements should not extend above [[PERCENTAGE]] of the tile’s vertical height.
-
-Composition:
-Top-down tabletop map tiles, centered composition, isolated on a white background.
-Natural, muted earth tones with subtle variation between tiles.
-
-Borders:
-Thick, hand-drawn black hex borders with visible variation and irregularity.
-
-Style:
-Vintage fantasy cartography aesthetic. Storybook map illustration. Old-school tabletop RPG feel. Highly tactile, human-made, imperfect, and painterly.
-
-Constraints:
-No text. No labels. No UI elements. No symbols outside the hex.

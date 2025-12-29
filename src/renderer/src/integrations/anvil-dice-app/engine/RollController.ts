@@ -484,7 +484,8 @@ export class RollController {
         if (isD8Shape) {
           let angleDeg = 0
           // d80 would have values like 10, 20... handle string matching safely
-          const val = String(die.result).replace('0', '') // normalize 10->1 for lookup if d80 matches d8 faces
+          // d80 would have values like 10, 20... handle string matching safely
+          // val was unused: String(die.result).replace('0', '')
           // Wait, d80 faces: if result is '10', logic above found face with value '10'.
           // If d8 twist logic is based on Face Index (geometry), we need to map Value -> Geometry Face -> Twist.
           // The switch case below is Value -> Twist.

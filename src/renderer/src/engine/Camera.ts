@@ -15,7 +15,7 @@ export class Camera {
   private isDragging: boolean = false
   private lastData: Point | null = null
   private options: CameraOptions = {
-    minZoom: 0.5,
+    minZoom: 0.25,
     maxZoom: 2.5,
     panLimit: 10000
   }

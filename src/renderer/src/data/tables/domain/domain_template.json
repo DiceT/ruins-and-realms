@@ -1,0 +1,74 @@
+{
+  "id": "",
+  "name": "",
+  "synonyms": [],
+  "description": "",
+
+  "mapSize": [
+    {
+      "floor": 1,
+      "ceiling": 1,
+      "result": ""
+    }
+  ],
+
+  "roomSize": [
+    {
+      "floor": 1,
+      "ceiling": 1,
+      "result": ""
+    }
+  ],
+
+  "exits": [
+    {
+      "floor": 1,
+      "ceiling": 1,
+      "result": ""
+    }
+  ],
+
+  "prompts": [
+    {
+      "floor": 1,
+      "ceiling": 1,
+      "result": {
+        "title": "",
+        "body": ""
+      }
+    }
+  ],
+
+  "corridor": [
+    {
+      "floor": 1,
+      "ceiling": 1,
+      "result": {
+        "title": "",
+        "body": ""
+      }
+    }
+  ],
+
+  "rooms": [
+    {
+      "floor": 1,
+      "ceiling": 1,
+      "result": {
+        "roomType": "",
+        "description": "",
+        "encounter": "",
+        "exits": "",
+        "unique": false
+      }
+    }
+  ],
+
+  "bestiary": [
+    {
+      "id": "",
+      "name": "",
+      "tags": []
+    }
+  ]
+}

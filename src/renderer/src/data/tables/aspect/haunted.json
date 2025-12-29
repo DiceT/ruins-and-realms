@@ -1,0 +1,189 @@
+{
+  "id": "aspect:haunted",
+  "name": "Haunted",
+  "synonyms": ["Ghostly", "Spectral", "Unearthly"],
+  "description": "A lingering, haunted presence clings to the [DOMAIN], smearing purpose into memory and dread.",
+  "special": "Aspect overwrites room legibility when dominant.",
+  "prompts": [
+    {
+      "floor": 1,
+      "ceiling": 1,
+      "result": { "title": "Haunted Primer", "body": "Haunted silence hangs over the [DOMAIN]." }
+    },
+    {
+      "floor": 2,
+      "ceiling": 2,
+      "result": { "title": "Haunted Primer", "body": "Haunted echoes ripple through the [DOMAIN] corridors." }
+    },
+    {
+      "floor": 3,
+      "ceiling": 3,
+      "result": { "title": "Haunted Primer", "body": "Haunted air clings to every threshold in the [DOMAIN]." }
+    },
+    {
+      "floor": 4,
+      "ceiling": 4,
+      "result": { "title": "Haunted Primer", "body": "Haunted shadows pool in the [DOMAIN] corners." }
+    },
+    {
+      "floor": 5,
+      "ceiling": 5,
+      "result": { "title": "Haunted Primer", "body": "Haunted stillness makes the [DOMAIN] feel watched." }
+    },
+    {
+      "floor": 6,
+      "ceiling": 6,
+      "result": { "title": "Haunted Primer", "body": "Haunted whispers haunt the [DOMAIN] walls and ceilings." }
+    },
+    {
+      "floor": 7,
+      "ceiling": 7,
+      "result": { "title": "Haunted Primer", "body": "Haunted chill rides the [DOMAIN] drafts." }
+    },
+    {
+      "floor": 8,
+      "ceiling": 8,
+      "result": { "title": "Haunted Primer", "body": "Haunted memory stains the [DOMAIN] rooms beyond recognition." }
+    }
+  ],
+  "corridor": [
+    {
+      "floor": 1,
+      "ceiling": 1,
+      "result": { "title": "Corridor Pressure", "body": "A [ASPECT] unease settles in along the [DOMAIN] passage." }
+    },
+    {
+      "floor": 2,
+      "ceiling": 2,
+      "result": { "title": "Corridor Residue", "body": "[ASPECT] traces cling to the [DOMAIN] corridor walls, brushed smooth in places." }
+    },
+    {
+      "floor": 3,
+      "ceiling": 3,
+      "result": { "title": "Corridor Distortion", "body": "The [DOMAIN] corridor feels subtly wrong, bent by [ASPECT] influence." }
+    },
+    {
+      "floor": 4,
+      "ceiling": 4,
+      "result": { "title": "Corridor Chill", "body": "A [ASPECT] chill lingers here, sharper than in nearby [DOMAIN] rooms." }
+    },
+    {
+      "floor": 5,
+      "ceiling": 5,
+      "result": { "title": "Corridor Silence", "body": "[ASPECT] quiet thickens in the [DOMAIN] corridor, swallowing small sounds." }
+    },
+    {
+      "floor": 6,
+      "ceiling": 6,
+      "result": { "title": "Corridor Avoidance", "body": "Dust lies undisturbed in this [DOMAIN] passage, avoided for [ASPECT] reasons." }
+    },
+    {
+      "floor": 7,
+      "ceiling": 7,
+      "result": { "title": "Corridor Echo", "body": "Footsteps carry too far along the [DOMAIN] corridor, made [ASPECT] by the air." }
+    },
+    {
+      "floor": 8,
+      "ceiling": 8,
+      "result": { "title": "Corridor Afterimage", "body": "A [ASPECT] impression lingers in the [DOMAIN] passage, like movement that never finished." }
+    }
+  ],
+  "rooms": [
+    {
+      "floor": 11,
+      "ceiling": 14,
+      "result": {
+        "roomType": "Haunted Threshold",
+        "description": "A [DOMAIN] passage feels wrong-footed; haunted air turns distance into doubt.",
+        "encounter": "None.",
+        "exits": "Narrow Archway",
+        "unique": false
+      }
+    },
+    {
+      "floor": 15,
+      "ceiling": 18,
+      "result": {
+        "roomType": "Whispered Chamber",
+        "description": "Haunted murmurs stitch through the [DOMAIN] stone, souring any sense of purpose.",
+        "encounter": "[MONSTER]",
+        "exits": "Splintered Door",
+        "unique": false
+      }
+    },
+    {
+      "floor": 21,
+      "ceiling": 24,
+      "result": {
+        "roomType": "Echo Loop",
+        "description": "Haunted sounds repeat out of order; the [DOMAIN] feels briefly familiar, then not at all.",
+        "encounter": "None.",
+        "exits": "Broken Stair",
+        "unique": false
+      }
+    },
+    {
+      "floor": 25,
+      "ceiling": 28,
+      "result": {
+        "roomType": "Cold Stain",
+        "description": "A [DOMAIN] space sits under a haunted chill; the air is heavy, the corners crowded with absence.",
+        "encounter": "[MONSTER]",
+        "exits": "Cracked Archway",
+        "unique": false
+      }
+    },
+    {
+      "floor": 31,
+      "ceiling": 34,
+      "result": {
+        "roomType": "Unseen Witness",
+        "description": "Haunted stillness dominates this [DOMAIN] room; movement feels recorded rather than observed.",
+        "encounter": "None.",
+        "exits": "Curtained Opening",
+        "unique": false
+      }
+    },
+    {
+      "floor": 35,
+      "ceiling": 38,
+      "result": {
+        "roomType": "Presence-Swollen Space",
+        "description": "A [DOMAIN] chamber reads only as haunted space; whatever it once was is no longer apparent.",
+        "encounter": "[MONSTER]",
+        "exits": "Half-Sunk Door",
+        "unique": false
+      }
+    },
+    {
+      "floor": 41,
+      "ceiling": 44,
+      "result": {
+        "roomType": "Memory Fray",
+        "description": "Haunted impressions cling to the [DOMAIN] surfaces; details feel borrowed from other rooms.",
+        "encounter": "Roll on [L1G].",
+        "exits": "Stone Archway",
+        "unique": false
+      }
+    },
+    {
+      "floor": 45,
+      "ceiling": 48,
+      "result": {
+        "roomType": "The Listening Dark",
+        "description": "A haunted hush fills this [DOMAIN] chamber; the dark feels attentive, as if waiting its turn.",
+        "encounter": "[MONSTER]",
+        "exits": "Collapsed Passage",
+        "unique": true
+      }
+    }
+  ],
+  "bestiary": [
+    { "id": "restless_spirit", "name": "Restless Spirit", "tags": ["undead", "incorporeal", "haunted"] },
+    { "id": "bound_echo", "name": "Bound Echo", "tags": ["undead", "memory", "haunted"] },
+    { "id": "vengeful_revenant", "name": "Vengeful Revenant", "tags": ["undead", "wrath", "haunted"] },
+    { "id": "mourning_apparition", "name": "Mourning Apparition", "tags": ["undead", "sorrow", "haunted"] },
+    { "id": "poltergeist", "name": "Poltergeist", "tags": ["undead", "telekinesis", "haunted"] },
+    { "id": "possessed_remains", "name": "Possessed Remains", "tags": ["undead", "corporeal", "haunted"] }
+  ]
+}

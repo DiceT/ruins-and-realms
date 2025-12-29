@@ -1,0 +1,174 @@
+{
+  "id": "domain:castle",
+  "name": "Castle",
+  "synonyms": ["Fortress", "Keep", "Stronghold"],
+  "description": "A fortified stronghold of stone, iron, and authority, its intended order now filtered through the [ASPECT] presence.",
+  "mapSize": [
+    { "floor": 1, "ceiling": 22, "result": "16 x 32" },
+    { "floor": 23, "ceiling": 44, "result": "20 x 20" },
+    { "floor": 45, "ceiling": 66, "result": "24 x 24" },
+    { "floor": 67, "ceiling": 88, "result": "24 x 32" }
+  ],
+  "roomSize": [
+    { "floor": 1, "ceiling": 22, "result": "min: 2, max: 8" },
+    { "floor": 23, "ceiling": 44, "result": "min: 1, max: 6" },
+    { "floor": 45, "ceiling": 66, "result": "min: 3, max: 6" },
+    { "floor": 67, "ceiling": 88, "result": "min: 2, max: 10" }
+  ],
+  "exits": [
+    { "floor": 1, "ceiling": 22, "result": "1" },
+    { "floor": 23, "ceiling": 66, "result": "2" },
+    { "floor": 67, "ceiling": 84, "result": "3" },
+    { "floor": 85, "ceiling": 88, "result": "4" }
+  ],
+  "prompts": [
+    { "floor": 1, "ceiling": 1, "result": { "title": "Domain Prompt", "body": "The [ASPECT] battlements overlook a silent yard." } },
+    { "floor": 2, "ceiling": 2, "result": { "title": "Domain Prompt", "body": "[ASPECT] corridors wind through thick stone walls." } },
+    { "floor": 3, "ceiling": 3, "result": { "title": "Domain Prompt", "body": "A [ASPECT] gatehouse frames the approach with iron and shadow." } },
+    { "floor": 4, "ceiling": 4, "result": { "title": "Domain Prompt", "body": "The keep’s [ASPECT] halls still suggest rank and rule." } },
+    { "floor": 5, "ceiling": 5, "result": { "title": "Domain Prompt", "body": "A [ASPECT] great hall stands ready for no court at all." } },
+    { "floor": 6, "ceiling": 6, "result": { "title": "Domain Prompt", "body": "[ASPECT] stonework turns familiar defenses into uneasy shelter." } },
+    { "floor": 7, "ceiling": 7, "result": { "title": "Domain Prompt", "body": "The [ASPECT] parapets and towers feel watchful, even unmanned." } },
+    { "floor": 8, "ceiling": 8, "result": { "title": "Domain Prompt", "body": "A [ASPECT] stronghold endures, but its order no longer holds." } }
+  ],
+  "corridor": [
+    {
+      "floor": 1,
+      "ceiling": 1,
+      "result": { "title": "Corridor Trace", "body": "The [DOMAIN] corridor narrows where stonework was reinforced for control." }
+    },
+    {
+      "floor": 2,
+      "ceiling": 2,
+      "result": { "title": "Corridor Wear", "body": "Uneven wear marks show how the [DOMAIN] was meant to be traversed." }
+    },
+    {
+      "floor": 3,
+      "ceiling": 3,
+      "result": { "title": "Corridor Design", "body": "Sightlines along this [DOMAIN] passage favor defense over comfort." }
+    },
+    {
+      "floor": 4,
+      "ceiling": 4,
+      "result": { "title": "Corridor Junction", "body": "This stretch of the [DOMAIN] subtly guides movement toward a central space." }
+    },
+    {
+      "floor": 5,
+      "ceiling": 5,
+      "result": { "title": "Corridor Constraint", "body": "The ceiling height drops, enforcing the [DOMAIN]’s intended hierarchy." }
+    },
+    {
+      "floor": 6,
+      "ceiling": 6,
+      "result": { "title": "Corridor Maintenance", "body": "Repairs here suggest the [DOMAIN] once saw frequent, disciplined use." }
+    },
+    {
+      "floor": 7,
+      "ceiling": 7,
+      "result": { "title": "Corridor Transition", "body": "Materials shift subtly, marking a functional boundary within the [DOMAIN]." }
+    },
+    {
+      "floor": 8,
+      "ceiling": 8,
+      "result": { "title": "Corridor Purpose", "body": "This [DOMAIN] passage exists solely to move people quickly and quietly." }
+    }
+  ],
+  "rooms": [
+    {
+      "floor": 51,
+      "ceiling": 55,
+      "result": {
+        "roomType": "Gatehouse",
+        "description": "A [ASPECT] gatehouse narrows the passage, framed by iron bands and worn grooves.",
+        "encounter": "None.",
+        "exits": "Portcullis Passage",
+        "unique": true
+      }
+    },
+    {
+      "floor": 56,
+      "ceiling": 60,
+      "result": {
+        "roomType": "Courtyard",
+        "description": "[ASPECT] air hangs over an open yard of trampled stone and scattered debris.",
+        "encounter": "Roll on [L1G].",
+        "exits": "Archway",
+        "unique": false
+      }
+    },
+    {
+      "floor": 61,
+      "ceiling": 65,
+      "result": {
+        "roomType": "Great Hall",
+        "description": "A long chamber meant for banners and feasts, now defined by [ASPECT] silence and empty space.",
+        "encounter": "None.",
+        "exits": "Heavy Double Doors",
+        "unique": false
+      }
+    },
+    {
+      "floor": 66,
+      "ceiling": 70,
+      "result": {
+        "roomType": "Barracks",
+        "description": "Bunks and racks line the walls; the room remains legible, but [ASPECT] signs cling to every surface.",
+        "encounter": "[MONSTER]",
+        "exits": "Reinforced Door",
+        "unique": false
+      }
+    },
+    {
+      "floor": 71,
+      "ceiling": 75,
+      "result": {
+        "roomType": "Armory",
+        "description": "[ASPECT] shadows gather between weapon stands and empty hooks, as if the steel was taken in a hurry.",
+        "encounter": "None.",
+        "exits": "Barred Door",
+        "unique": false
+      }
+    },
+    {
+      "floor": 76,
+      "ceiling": 80,
+      "result": {
+        "roomType": "Stair Tower",
+        "description": "A tight spiral climbs through [ASPECT] stonework, the steps worn into a shallow groove.",
+        "encounter": "None.",
+        "exits": "Spiral Stair",
+        "unique": false
+      }
+    },
+    {
+      "floor": 81,
+      "ceiling": 84,
+      "result": {
+        "roomType": "Dungeon Cells",
+        "description": "Iron bars and locked doors remain, their purpose clear despite the [ASPECT] atmosphere pressing close.",
+        "encounter": "[MONSTER]",
+        "exits": "Narrow Corridor",
+        "unique": false
+      }
+    },
+    {
+      "floor": 85,
+      "ceiling": 88,
+      "result": {
+        "roomType": "Chapel Nook",
+        "description": "A small shrine space built into the castle’s stone, now marked by [ASPECT] traces and uneasy quiet.",
+        "encounter": "None.",
+        "exits": "Curtained Arch",
+        "unique": false
+      }
+    }
+  ],
+  "bestiary": [
+    { "id": "rats", "name": "Rats", "tags": ["vermin", "swarm"] },
+    { "id": "bats", "name": "Bats", "tags": ["vermin", "swarm"] },
+    { "id": "spiders", "name": "Spiders", "tags": ["vermin"] },
+    { "id": "gargoyle", "name": "Gargoyle", "tags": ["construct", "stone"] },
+    { "id": "animated_armor", "name": "Animated Armor", "tags": ["construct", "guard"] },
+    { "id": "clockwork_sentinel", "name": "Clockwork Sentinel", "tags": ["construct", "patrol"] }
+  ]
+}

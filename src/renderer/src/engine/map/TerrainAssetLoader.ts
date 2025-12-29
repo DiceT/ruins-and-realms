@@ -1,15 +1,18 @@
-import { Assets, Texture } from 'pixi.js'
+import { Texture } from 'pixi.js'
 
 export class TerrainAssetLoader {
   private static textures: Record<string, Texture[]> = {}
-  private static loaded = false
 
   public static register(type: string, texture: Texture): void {
     if (!this.textures[type]) {
       this.textures[type] = []
     }
     this.textures[type].push(texture)
-    this.loaded = true
+  }
+
+  public static async loadAll(): Promise<void> {
+    // Determine what to load here - for now it can be a no-op or load placeholders
+    return Promise.resolve()
   }
 
   public static get(type: string): Texture[] {

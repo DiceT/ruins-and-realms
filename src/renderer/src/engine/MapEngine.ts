@@ -1,6 +1,5 @@
 import { Application, Container, TickerCallback, Graphics } from 'pixi.js'
 import { Camera } from './Camera'
-import { DungeonGenerator } from './map/DungeonGenerator'
 import { BaseGridSystem } from './systems/BaseGridSystem'
 import { SquareGridSystem } from './systems/SquareGridSystem'
 import { HexGridSystem } from './systems/HexGridSystem'
@@ -50,7 +49,6 @@ export class MapEngine {
   public camera: Camera
   public layers: MapLayers
   public gridSystem: BaseGridSystem
-  public dungeon: DungeonGenerator
   private tickerCallback: TickerCallback<MapEngine> | null = null
   public destroyed: boolean = false
 
@@ -66,6 +64,7 @@ export class MapEngine {
       | 'placing_terrain',
     hoveredTile: { x: Number.NaN, y: Number.NaN },
     hoveredRoomId: null as string | null,
+    hoveredFeatureId: null as string | null, // Room or Corridor ID for highlighting
     pendingRoomSize: { w: 0, h: 0 },
     activeRoomId: null as string | null,
     activeExitId: null as string | null
@@ -74,12 +73,6 @@ export class MapEngine {
 
   constructor(app: Application, options: MapEngineOptions = { gridType: 'square' }) {
     this.app = app
-
-    // Initialize Dungeon Generator
-    // Default to 20x20 if not provided
-    const w = options.width || 20
-    const h = options.height || 20
-    this.dungeon = new DungeonGenerator(w, h)
 
     // 1. Initialize Camera - pass viewport for isolation
     this.camera = new Camera(app)
@@ -141,16 +134,10 @@ export class MapEngine {
           const gridCoords = this.gridSystem.getGridCoords(worldPos.x, worldPos.y)
 
           this.interactionState.hoveredTile = gridCoords
-          const { x: tx, y: ty } = gridCoords
 
-          // Detect hovered room from tile
-          const dungeonState = this.dungeon.getState()
-          const tile = dungeonState.tiles[ty]?.[tx]
-          if (tile && tile.roomId) {
-            this.interactionState.hoveredRoomId = tile.roomId
-          } else {
-            this.interactionState.hoveredRoomId = null
-          }
+          // Room hover detection removed - dungeon mode now uses SeedGrowthGenerator
+          this.interactionState.hoveredRoomId = null
+          this.interactionState.hoveredFeatureId = null
         }
         // this.checkCameraMovement()
 
@@ -225,76 +212,22 @@ export class MapEngine {
       // Generic Click Callback moved to 'idle' state check below
       // this.options.onHexClicked?.(x, y)
 
+      // Legacy dungeon placement modes - stubbed out (now using SeedGrowthGenerator)
       if (this.interactionState.mode === 'placing_entrance') {
-        const { x, y } = this.interactionState.hoveredTile
-        if (this.dungeon.isValidEntrancePosition(x, y)) {
-          this.dungeon.applyEntrance(x, y)
-          this.interactionState.mode = 'idle'
-          if (this.options.onEntrancePlaced) {
-            this.options.onEntrancePlaced(x, y)
-          }
-        }
+        // Dungeon entrance placement removed - handled by SeedGrowthGenerator
+        console.log('[MapEngine] placing_entrance mode is deprecated')
       } else if (this.interactionState.mode === 'placing_room') {
-        const { x, y } = this.interactionState.hoveredTile
-        const { w, h } = this.interactionState.pendingRoomSize
-        if (this.dungeon.placeStartingRoom(x, y, w, h)) {
-          this.interactionState.mode = 'idle'
-          if (this.options.onRoomPlaced) {
-            this.options.onRoomPlaced(x, y, w, h)
-          }
-        }
+        // Dungeon room placement removed
+        console.log('[MapEngine] placing_room mode is deprecated')
       } else if (this.interactionState.mode === 'placing_exit') {
-        const { x, y } = this.interactionState.hoveredTile
-        const roomId = this.interactionState.activeRoomId
-        if (roomId && this.dungeon.addExit(x, y, roomId)) {
-          // Do NOT reset to idle. Let the UI controller handle it when count matches.
-          if (this.options.onExitPlaced) {
-            this.options.onExitPlaced(x, y)
-          }
-        }
+        // Dungeon exit placement removed
+        console.log('[MapEngine] placing_exit mode is deprecated')
       } else if (this.interactionState.mode === 'idle') {
         // Generic Click Callback (Only in Idle)
         this.options.onHexClicked?.(x, y)
-
-        // Check if clicking an unused exit to initiate new room
-        // const { x, y } = this.interactionState.hoveredTile // REMOVED: Caused TDZ. Use event coords from line 213.
-        const dungeonState = this.dungeon.getState()
-
-        for (const room of dungeonState.rooms) {
-          const exit = room.exits.find((e) => e.x === x && e.y === y)
-          if (exit && !exit.connectedRoomId) {
-            // Unused exit clicked
-            if (this.options.onExitClicked) {
-              this.options.onExitClicked(exit.id)
-            }
-            break
-          }
-        }
       } else if (this.interactionState.mode === 'placing_new_room') {
-        const { x, y } = this.interactionState.hoveredTile
-        const { w, h } = this.interactionState.pendingRoomSize
-        const exitId = this.interactionState.activeExitId
-
-        if (exitId) {
-          const roomId = this.dungeon.placeNewRoom(x, y, w, h, exitId)
-          if (roomId) {
-            this.interactionState.mode = 'idle'
-            this.interactionState.activeExitId = null
-            if (this.options.onNewRoomPlaced) {
-              this.options.onNewRoomPlaced(roomId, exitId)
-            }
-          }
-        }
-        if (exitId) {
-          const roomId = this.dungeon.placeNewRoom(x, y, w, h, exitId)
-          if (roomId) {
-            this.interactionState.mode = 'idle'
-            this.interactionState.activeExitId = null
-            if (this.options.onNewRoomPlaced) {
-              this.options.onNewRoomPlaced(roomId, exitId)
-            }
-          }
-        }
+        // Dungeon new room placement removed
+        console.log('[MapEngine] placing_new_room mode is deprecated')
       } else if (this.interactionState.mode === 'placing_town') {
         const { x, y } = this.interactionState.hoveredTile
         if (this.options.onTownPlaced) {
@@ -310,26 +243,17 @@ export class MapEngine {
     }
     target.on('pointertap', this.onPointerTap)
 
-    // 6. Initial Center and Fit
-    const mapState = this.dungeon.getState()
-    const tileSize = this.gridSystem.config.size
-
-    if (mapState.rooms.length > 0) {
-      const totalW = mapState.width * tileSize
-      const totalH = mapState.height * tileSize
-      this.camera.fitToView(totalW, totalH, 50)
-    } else {
-      // For empty maps (like Overworld start), center on 0,0 (Top Left of Grid)
-      // We use a small timeout to ensure GameLayout has resized and calculated viewport bounds
-      setTimeout(() => {
-        if (!this.destroyed) {
-          this.camera.centerAt(0, 0)
-        }
-      }, 50)
-    }
-
     // DEBUG: Expose for DebugToolbar
     ;(window as any).__MAP_ENGINE__ = this
+  }
+
+  public centerCamera(gridWidth: number, gridHeight: number): void {
+      console.log('[MapEngine] centerCamera called with grid size:', gridWidth, gridHeight)
+      const tileSize = this.gridSystem.config.size
+      const worldW = gridWidth * tileSize
+      const worldH = gridHeight * tileSize
+      console.log('[MapEngine] targeting world center:', worldW / 2, worldH / 2, 'TileSize:', tileSize)
+      this.camera.centerAt(worldW / 2, worldH / 2)
   }
 
   /**
@@ -344,8 +268,6 @@ export class MapEngine {
     if (this.gridSystem instanceof HexGridSystem) {
       const hexSys = this.gridSystem as HexGridSystem
       const r = hexSys.config.size
-
-      const h = 2 * r
 
       const drawR = r - 5 // Match ghost size
 

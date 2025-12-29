@@ -21,6 +21,11 @@ import { D8IconPanel } from './D8IconPanel'
 import diceLanding from '../assets/images/ui/dice-landing.png'
 import flairOverlay from '../assets/images/overland-tiles/flair_empty_0.png'
 
+// Seed Growth System
+import { SeedGrowthGenerator, SeedGrowthRenderer, RoomClassifier, SeedGrowthSettings, SeedGrowthState, createDefaultSettings } from '../engine/seed-growth'
+import { SeedGrowthControlPanel } from './SeedGrowthControlPanel'
+import { Container } from 'pixi.js'
+
 interface LandTypeEntry {
   land: string
   rank: number
@@ -37,6 +42,8 @@ interface Plot {
   ownerAndDetails: string
   landTypeList: LandTypeEntry[]
 }
+
+// Dungeon generation code stripped - taking new direction
 
 export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -72,28 +79,16 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   // Track if core systems are ready
   const [isReady, setIsReady] = useState(false)
 
-  // Dungeon Generation UI State
-  const [currentStep, setCurrentStep] = useState(1)
-  const [logs, setLogs] = useState<string[]>(['Dungeon Blueprint Initialized.'])
-  const [isPlacingEntrance, setIsPlacingEntrance] = useState(false)
-  const [isPlacingRoom, setIsPlacingRoom] = useState(false)
-  const [isPlacingExit, setIsPlacingExit] = useState(false)
-  const [exitCount, setExitCount] = useState(0)
-  const [activeExitId, setActiveExitId] = useState<string | null>(null)
-  const [pendingNewRoom, setPendingNewRoom] = useState<{
-    width: number
-    height: number
-    type: string
-  } | null>(null)
-  const [pendingRoom, setPendingRoom] = useState<{ width: number; height: number } | null>(null)
-  const [newlyPlacedRoomId, setNewlyPlacedRoomId] = useState<string | null>(null)
-  const [exitsToPlace, setExitsToPlace] = useState(0)
-  const [, setEligibleWalls] = useState<{
-    top: boolean
-    bottom: boolean
-    left: boolean
-    right: boolean
-  } | null>(null)
+  // Dungeon UI State (stripped - only keeping logs)
+  const [logs, setLogs] = useState<string[]>(['Ready.'])
+
+  // --- SEED GROWTH STATE ---
+  const [seedGrowthSettings, setSeedGrowthSettings] = useState<SeedGrowthSettings>(createDefaultSettings())
+  const seedGrowthGenRef = useRef<SeedGrowthGenerator | null>(null)
+  const seedGrowthRendererRef = useRef<SeedGrowthRenderer | null>(null)
+  const [seedGrowthState, setSeedGrowthState] = useState<SeedGrowthState | null>(null)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const animationFrameRef = useRef<number | null>(null)
 
   // Rolling State
   const [isRolling, setIsRolling] = useState(false)
@@ -126,12 +121,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   })
   const validMovesRef = useRef<Set<string>>(new Set())
 
-  // Ref to track current newlyPlacedRoomId for use in callbacks (avoids stale closure)
-  const newlyPlacedRoomIdRef = useRef<string | null>(null)
-  useEffect(() => {
-    newlyPlacedRoomIdRef.current = newlyPlacedRoomId
-  }, [newlyPlacedRoomId])
-
   // Fix: Stale Terrain Ref
   const currentTerrainRef = useRef(currentTerrain)
   useEffect(() => {
@@ -149,6 +138,175 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const addLog = (msg: string): void => {
     setLogs((prev) => [msg, ...prev.slice(0, 9)]) // Keep last 10 logs
   }
+
+  // --- SEED GROWTH CALLBACKS ---
+  const handleSeedGrowthRegenerate = useCallback(() => {
+    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+
+    // Stop animation if running
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+      setIsAnimating(false)
+    }
+
+    // Reset generator
+    seedGrowthGenRef.current.reset(seedGrowthSettings)
+
+    // Async chunked execution to prevent UI lockup
+    const runChunk = () => {
+      if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+
+      const state = seedGrowthGenRef.current.getState()
+      if (state.isComplete) {
+        // Run classification when complete
+        const classifier = new RoomClassifier()
+        const { rooms, corridors, connections } = classifier.classify(
+          state,
+          seedGrowthSettings.minRoomArea,
+          seedGrowthSettings.maxCorridorWidth,
+          seedGrowthSettings.classificationMode
+        )
+        state.rooms = rooms
+        state.corridors = corridors
+        state.connections = connections
+
+        seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+        setSeedGrowthState({ ...state })
+        return // Done!
+      }
+
+      // Run 100 steps per frame
+      seedGrowthGenRef.current.runSteps(100)
+      seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+      setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
+
+      // Schedule next chunk
+      requestAnimationFrame(runChunk)
+    }
+
+    runChunk()
+  }, [seedGrowthSettings])
+
+  const handleSeedGrowthStep = useCallback(() => {
+    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+
+    // If already complete, reset first (so Step can restart animation)
+    if (seedGrowthGenRef.current.getState().isComplete) {
+      seedGrowthGenRef.current.reset(seedGrowthSettings)
+    }
+
+    seedGrowthGenRef.current.step()
+    seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+    setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
+  }, [seedGrowthSettings])
+
+  const handleSeedGrowthRunSteps = useCallback((n: number) => {
+    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+    seedGrowthGenRef.current.runSteps(n)
+
+    // Run classification after steps
+    if (seedGrowthGenRef.current.getState().isComplete) {
+      const classifier = new RoomClassifier()
+      const { rooms, corridors, connections } = classifier.classify(
+        seedGrowthGenRef.current.getState(),
+        seedGrowthSettings.minRoomArea,
+        seedGrowthSettings.maxCorridorWidth,
+        seedGrowthSettings.classificationMode
+      )
+      seedGrowthGenRef.current.getState().rooms = rooms
+      seedGrowthGenRef.current.getState().corridors = corridors
+      seedGrowthGenRef.current.getState().connections = connections
+    }
+
+    seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+    setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
+  }, [seedGrowthSettings])
+
+  const handleSeedGrowthRunAll = useCallback(() => {
+    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+
+    // Async chunked execution to prevent UI lockup
+    const runChunk = () => {
+      if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+
+      const state = seedGrowthGenRef.current.getState()
+      if (state.isComplete) {
+        // Run classification when complete
+        const classifier = new RoomClassifier()
+        const { rooms, corridors, connections } = classifier.classify(
+          state,
+          seedGrowthSettings.minRoomArea,
+          seedGrowthSettings.maxCorridorWidth,
+          seedGrowthSettings.classificationMode
+        )
+        state.rooms = rooms
+        state.corridors = corridors
+        state.connections = connections
+
+        seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+        setSeedGrowthState({ ...state })
+        return // Done!
+      }
+
+      // Run 100 steps per frame (keeps UI responsive)
+      seedGrowthGenRef.current.runSteps(100)
+      seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+      setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
+
+      // Schedule next chunk
+      requestAnimationFrame(runChunk)
+    }
+
+    runChunk()
+  }, [seedGrowthSettings])
+
+  const handleSeedGrowthToggleAnimation = useCallback(() => {
+    if (isAnimating) {
+      // Stop
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+        animationFrameRef.current = null
+      }
+      setIsAnimating(false)
+    } else {
+      // Start
+      setIsAnimating(true)
+      const animate = () => {
+        if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+        const state = seedGrowthGenRef.current.getState()
+        if (state.isComplete) {
+          setIsAnimating(false)
+          // Run classification on complete
+          const classifier = new RoomClassifier()
+          const { rooms, corridors, connections } = classifier.classify(
+            state,
+            seedGrowthSettings.minRoomArea,
+            seedGrowthSettings.maxCorridorWidth,
+            seedGrowthSettings.classificationMode
+          )
+          state.rooms = rooms
+          state.corridors = corridors
+          state.connections = connections
+          seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+          setSeedGrowthState({ ...state })
+          return
+        }
+        seedGrowthGenRef.current.runSteps(3) // 3 steps per frame
+        seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+        setSeedGrowthState({ ...state })
+        animationFrameRef.current = requestAnimationFrame(animate)
+      }
+      animate()
+    }
+  }, [isAnimating, seedGrowthSettings])
+
+  // Re-render when debug settings change
+  useEffect(() => {
+    if (seedGrowthGenRef.current && seedGrowthRendererRef.current && gameMode === 'dungeon') {
+      seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+    }
+  }, [seedGrowthSettings.debug, gameMode])
 
   /**
    * Initializes the entire Game View (Pixi App, Layout, Backgrounds)
@@ -413,104 +571,51 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       }
 
       if (gameMode === 'dungeon') {
-        // --- DUNGEON MODE (Square Grid) ---
-        // Reset dungeon UI state
-        setCurrentStep(1)
-        setLogs(['Dungeon Blueprint Initialized.'])
-        setIsPlacingEntrance(false)
-        setIsPlacingRoom(false)
-        setIsPlacingExit(false)
-        setExitCount(0)
-        setActiveExitId(null)
-        setPendingNewRoom(null)
-        setPendingRoom(null)
-        setNewlyPlacedRoomId(null)
-        setExitsToPlace(0)
+        // --- SEED GROWTH DUNGEON MODE ---
+        setLogs(['Seed Growth Dungeon initialized.'])
 
-        mapEngineRef.current = new MapEngine(app, {
-          viewport: layout.middlePanel,
-          gridType: 'square',
-          width: mapConfig.width,
-          height: mapConfig.height,
-          onEntrancePlaced: (tx, ty) => {
-            addLog(`Entrance placed at ${tx},${ty}. Step 1 Complete.`)
-            setCurrentStep(2)
-            setIsPlacingEntrance(false)
-          },
-          onRoomPlaced: (x, y, w, h) => {
-            addLog(`Room placed at ${x},${y} (${w}x${h}). Step 3 Complete.`)
-            setCurrentStep(4)
-            setIsPlacingRoom(false)
-            setPendingRoom(null)
-          },
-          onExitPlaced: (x, y) => {
-            addLog(`Exit placed at ${x},${y}.`)
+        // Clean up previous renderer
+        if (seedGrowthRendererRef.current) {
+          seedGrowthRendererRef.current.destroy()
+          seedGrowthRendererRef.current = null
+        }
 
-            // Handle starter room exit placement (step 4)
-            setExitCount((prev) => prev + 1)
+        // Create a container for the seed growth renderer
+        const container = new Container()
+        layout.middlePanel.addChild(container)
 
-            // Handle new room exit placement
-            setExitsToPlace((prev) => {
-              if (prev > 0) {
-                const remaining = prev - 1
-                if (remaining === 0) {
-                  // All exits placed - finalize the room
-                  const roomId = newlyPlacedRoomIdRef.current
-                  if (mapEngineRef.current && roomId) {
-                    mapEngineRef.current.dungeon.finalizeNewRoom(roomId)
-                    mapEngineRef.current.interactionState.mode = 'idle'
-                    setNewlyPlacedRoomId(null)
-                    setEligibleWalls(null)
-                    setLogs([]) // Clear logs
-                  }
-                }
-                return remaining
-              }
-              return prev
-            })
-          },
-          onExitClicked: (exitId) => {
-            // Clear logs and set up for new room generation
-            setLogs(['New Room Generation Started.', 'Step 1: Roll Room Size'])
-            setActiveExitId(exitId)
-            setPendingNewRoom(null) // Reset pending room
+        // Initialize generator
+        const generator = new SeedGrowthGenerator(seedGrowthSettings)
+        generator.runToCompletion() // Initial generation
+        seedGrowthGenRef.current = generator
 
-            // Calculate and show max dimensions
-            if (mapEngineRef.current) {
-              const dims = mapEngineRef.current.dungeon.calculateMaxDimensions(exitId)
-              addLog(`Max Available Space: ${dims.maxW}x${dims.maxH}`)
-            }
-          },
-          onNewRoomPlaced: (roomId) => {
-            // (Callback uses roomId, exitId)
-            if (!mapEngineRef.current) return
+        // Run room classification
+        const classifier = new RoomClassifier()
+        const { rooms, corridors, connections } = classifier.classify(
+          generator.getState(),
+          seedGrowthSettings.minRoomArea,
+          seedGrowthSettings.maxCorridorWidth,
+          seedGrowthSettings.classificationMode
+        )
+        generator.getState().rooms = rooms
+        generator.getState().corridors = corridors
+        generator.getState().connections = connections
 
-            // Clear previous state
-            setActiveExitId(null)
-            setPendingNewRoom(null)
+        // Initialize renderer
+        const renderer = new SeedGrowthRenderer(container)
+        renderer.setTileSize(8)
+        renderer.render(generator.getState(), seedGrowthSettings)
+        seedGrowthRendererRef.current = renderer
 
-            // Log room placement
-            setLogs([`Room Placed! ID: ${roomId.substring(0, 12)}...`])
-            addLog('Step 2: Roll for Exits.')
+        // Center the view on the grid
+        const viewWidth = layout.middlePanel.width || app.screen.width - 600 // Approx middle panel width
+        const viewHeight = layout.middlePanel.height || app.screen.height
+        renderer.centerView(seedGrowthSettings.gridWidth, seedGrowthSettings.gridHeight, viewWidth, viewHeight)
 
-            // Calculate eligible walls
-            const eligibility = mapEngineRef.current.dungeon.calculateEligibleWalls(roomId)
-            addLog(`Eligible walls: ${eligibility.count} of 3`)
-            if (eligibility.top) addLog('  - Top wall: Eligible')
-            if (eligibility.bottom) addLog('  - Bottom wall: Eligible')
-            if (eligibility.left) addLog('  - Left wall: Eligible')
-            if (eligibility.right) addLog('  - Right wall: Eligible')
-            if (eligibility.connectedWall)
-              addLog(`  - ${eligibility.connectedWall} wall: Connected (Entry)`)
+        // Update state for UI
+        setSeedGrowthState({ ...generator.getState() })
 
-            // Store the new room ID for the exit roll button
-            setNewlyPlacedRoomId(roomId)
-          }
-        })
       } else {
-        // --- OVERWORLD MODE (Hex Grid) ---
-        // Reset Overworld UI state (if needed, but usually handled by button)
-        setCurrentStep(0) // Hide Dungeon UI
 
         mapEngineRef.current = new MapEngine(app, {
           viewport: layout.middlePanel,
@@ -540,21 +645,21 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             const isOdd = y % 2 !== 0
             const neighbors = isOdd
               ? [
-                  [0, -1],
-                  [1, -1],
-                  [-1, 0],
-                  [1, 0],
-                  [0, 1],
-                  [1, 1]
-                ]
+                [0, -1],
+                [1, -1],
+                [-1, 0],
+                [1, 0],
+                [0, 1],
+                [1, 1]
+              ]
               : [
-                  [-1, -1],
-                  [0, -1],
-                  [-1, 0],
-                  [1, 0],
-                  [-1, 1],
-                  [0, 1]
-                ]
+                [-1, -1],
+                [0, -1],
+                [-1, 0],
+                [1, 0],
+                [-1, 1],
+                [0, 1]
+              ]
 
             // Check if any neighbor is occupied
             let hasNeighbor = false
@@ -785,33 +890,17 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     }
   }, [overworldStep, gameMode, townPlaced])
 
-  useEffect(() => {
-    if (exitCount >= 3 && currentStep === 4) {
-      addLog('3 Exits placed. Finalizing Starter Room (Dead zones).')
-      if (mapEngineRef.current) {
-        const rooms = mapEngineRef.current.dungeon.getState().rooms
-        const starter = rooms.find((r) => r.type === 'start')
-        if (starter) {
-          mapEngineRef.current.dungeon.finalizeStarterRoom(starter.id)
-        }
-        mapEngineRef.current.interactionState.mode = 'idle'
-      }
-      setCurrentStep(5)
-      setIsPlacingExit(false)
-    }
-  }, [exitCount, currentStep])
-
   const handleCreateNewMap = (): void => {
-    setIsNewMapModalOpen(false)
-    setGameMode('dungeon') // Explicitly set dungeon mode
+    // BYPASS MODAL
+    // setIsNewMapModalOpen(false) 
 
-    // UI Resets happen in useEffect now, but setting config triggers re-render/effect maybe?
-    // Actually showMap toggle triggers effect.
-    // If showMap is already true, we need to trigger effect.
-    // Setting mapConfig is a dependency!
+    // Set Dungeon Mode
+    setGameMode('dungeon')
+
+    // Default Init Config (30x30)
     setMapConfig({
-      width: modalWidth,
-      height: modalHeight,
+      width: 30,
+      height: 30,
       id: Date.now()
     })
 
@@ -970,9 +1059,9 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             {showMap ? 'HIDE MAP' : 'SHOW MAP'}
           </div>
 
-          {/* NEW DUNGEON Button */}
+          {/* NEW DUNGEON Button (Bypasses Modal) */}
           <div
-            onClick={() => setIsNewMapModalOpen(true)}
+            onClick={handleCreateNewMap}
             style={{
               position: 'absolute',
               left: '50px',
@@ -1134,405 +1223,58 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
               }}
             />
 
-            {/* --- Dungeon UI --- */}
+            {/* --- Dungeon UI: Seed Growth Control Panel --- */}
             {gameMode === 'dungeon' && (
-              <>
-                {/* Content Wrapper with Padding */}
-                <div
+              <div
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: '24px',
+                  overflowY: 'auto',
+                  minHeight: 0
+                }}
+              >
+                <h2
                   style={{
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    padding: '24px',
-                    overflowY: 'auto', // Enable scrolling
-                    minHeight: 0 // Crucial for flex nested scrolling
+                    fontSize: '28px',
+                    borderBottom: '1px solid #bcd3d2',
+                    margin: '0 0 20px 0',
+                    paddingBottom: '10px',
+                    textAlign: 'center',
+                    flexShrink: 0
                   }}
                 >
-                  <h2
-                    style={{
-                      fontSize: '28px',
-                      borderBottom: '1px solid #bcd3d2',
-                      margin: '0 0 20px 0',
-                      paddingBottom: '10px',
-                      textAlign: 'center',
-                      flexShrink: 0
-                    }}
-                  >
-                    Dungeon Blueprint
-                  </h2>
+                  Seed Growth Dungeon
+                </h2>
 
-                  <div style={{ flexShrink: 0 }}>
-                    <div
-                      style={{
-                        fontSize: '20px',
-                        color: currentStep === 1 ? '#fff' : '#666',
-                        textAlign: 'center'
-                      }}
-                    >
-                      Step 1: Place Entrance
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '20px',
-                        color: currentStep === 2 ? '#fff' : '#666',
-                        textAlign: 'center',
-                        marginTop: '10px'
-                      }}
-                    >
-                      Step 2: Roll Room Size
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '20px',
-                        color: currentStep === 3 ? '#fff' : '#666',
-                        textAlign: 'center',
-                        marginTop: '10px'
-                      }}
-                    >
-                      Step 3: Place Room
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '20px',
-                        color: currentStep === 4 ? '#fff' : '#666',
-                        textAlign: 'center',
-                        marginTop: '10px'
-                      }}
-                    >
-                      Step 4: Exits ({exitCount}/3)
-                    </div>
-
-                    <button
-                      disabled={isPlacingEntrance || currentStep !== 1}
-                      onClick={() => {
-                        if (mapEngineRef.current) {
-                          mapEngineRef.current.interactionState.mode = 'placing_entrance'
-                          setIsPlacingEntrance(true)
-                          addLog('Ready to place entrance. Click bottom edge.')
-                        }
-                      }}
-                      style={{
-                        display: currentStep === 1 ? 'block' : 'none',
-                        width: '100%',
-                        marginTop: '15px',
-                        padding: '12px',
-                        backgroundColor: isPlacingEntrance ? '#4a5d5e' : '#2e3f41',
-                        border: '1px solid #bcd3d2',
-                        color: '#bcd3d2',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: '18px'
-                      }}
-                    >
-                      {isPlacingEntrance ? 'SELECT TILE...' : 'PLACE ENTRANCE'}
-                    </button>
-
-                    {/* Step 2: Roll Room Size */}
-                    <button
-                      disabled={isRolling}
-                      onClick={async () => {
-                        if (mapEngineRef.current) {
-                          setIsRolling(true)
-                          try {
-                            const result = await mapEngineRef.current.dungeon.rollStartingRoomSize()
-                            setPendingRoom(result)
-                            addLog(
-                              `Rolled ${result.original[0]} (X) & ${result.original[1]} (Y) -> Size: ${result.width}x${result.height}`
-                            )
-                            setCurrentStep(3)
-                          } catch (err) {
-                            console.error(err)
-                            addLog('Error rolling dice.')
-                          } finally {
-                            setIsRolling(false)
-                          }
-                        }
-                      }}
-                      style={{
-                        display: currentStep === 2 ? 'block' : 'none',
-                        width: '100%',
-                        marginTop: '15px',
-                        padding: '12px',
-                        backgroundColor: '#2e3f41',
-                        border: '1px solid #bcd3d2',
-                        color: '#bcd3d2',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: '18px'
-                      }}
-                    >
-                      ROLL ROOM SIZE (2d6)
-                    </button>
-
-                    {/* Step 3: Place Room */}
-                    <button
-                      disabled={isPlacingRoom || currentStep !== 3 || !pendingRoom}
-                      onClick={() => {
-                        if (mapEngineRef.current && pendingRoom) {
-                          mapEngineRef.current.interactionState.pendingRoomSize = {
-                            w: pendingRoom.width,
-                            h: pendingRoom.height
-                          }
-                          mapEngineRef.current.interactionState.mode = 'placing_room'
-                          setIsPlacingRoom(true)
-                          addLog('Click grid to place room.')
-                        }
-                      }}
-                      style={{
-                        display: currentStep === 3 ? 'block' : 'none',
-                        width: '100%',
-                        marginTop: '15px',
-                        padding: '12px',
-                        backgroundColor: isPlacingRoom ? '#4a5d5e' : '#2e3f41',
-                        border: '1px solid #bcd3d2',
-                        color: '#bcd3d2',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: '18px'
-                      }}
-                    >
-                      {isPlacingRoom ? 'SELECT TILE...' : 'PLACE ROOM'}
-                    </button>
-
-                    {/* Step 4: Place Exits */}
-                    <button
-                      disabled={isPlacingExit || currentStep !== 4}
-                      onClick={() => {
-                        if (mapEngineRef.current) {
-                          // Find starter room ID
-                          const rooms = mapEngineRef.current.dungeon.getState().rooms
-                          const starter = rooms.find((r) => r.type === 'start')
-                          if (starter) {
-                            mapEngineRef.current.interactionState.activeRoomId = starter.id
-                            mapEngineRef.current.interactionState.mode = 'placing_exit'
-                            setIsPlacingExit(true)
-                            addLog('Click room walls to place exit.')
-                          } else {
-                            addLog('Error: No starter room found.')
-                          }
-                        }
-                      }}
-                      style={{
-                        display: currentStep === 4 ? 'block' : 'none',
-                        width: '100%',
-                        marginTop: '15px',
-                        padding: '12px',
-                        backgroundColor: isPlacingExit ? '#4a5d5e' : '#2e3f41',
-                        border: '1px solid #bcd3d2',
-                        color: '#bcd3d2',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: '18px'
-                      }}
-                    >
-                      {isPlacingExit ? 'SELECT WALL...' : 'PLACE EXIT'}
-                    </button>
-
-                    {/* Step 5: New Room - Roll Size / Place Room */}
-                    <button
-                      disabled={!activeExitId || isRolling}
-                      onClick={async () => {
-                        if (!mapEngineRef.current || !activeExitId) return
-
-                        if (!pendingNewRoom) {
-                          setIsRolling(true)
-                          try {
-                            // Roll the room size
-                            const result =
-                              await mapEngineRef.current.dungeon.rollNewRoomAttributes(activeExitId)
-
-                            // Display all roll logs
-                            result.rolls.forEach((log) => addLog(log))
-
-                            // Display initial classification
-                            addLog(`Rolled: ${result.type} (${result.width}x${result.height})`)
-
-                            // Check if room fits, clamp if needed
-                            const clamped = mapEngineRef.current.dungeon.clampRoomToAvailableSpace(
-                              result.width,
-                              result.height,
-                              activeExitId
-                            )
-
-                            let finalWidth = result.width
-                            let finalHeight = result.height
-
-                            if (clamped.clamped) {
-                              addLog(`⚠️ ${clamped.reason}`)
-                              finalWidth = clamped.width
-                              finalHeight = clamped.height
-                              addLog(`Final size: ${finalWidth}x${finalHeight}`)
-                            }
-
-                            // Store pending room with (possibly clamped) dimensions
-                            setPendingNewRoom({
-                              width: finalWidth,
-                              height: finalHeight,
-                              type: result.type
-                            })
-                          } catch (err) {
-                            console.error(err)
-                            addLog('Error rolling room attributes.')
-                          } finally {
-                            setIsRolling(false)
-                          }
-                        } else {
-                          // Switch to placing mode
-                          mapEngineRef.current.interactionState.mode = 'placing_new_room'
-                          mapEngineRef.current.interactionState.pendingRoomSize = {
-                            w: pendingNewRoom.width,
-                            h: pendingNewRoom.height
-                          }
-                          mapEngineRef.current.interactionState.activeExitId = activeExitId
-                          addLog('Click to place the new room.')
-                        }
-                      }}
-                      style={{
-                        display: activeExitId ? 'block' : 'none',
-                        width: '100%',
-                        marginTop: '15px',
-                        padding: '12px',
-                        backgroundColor: pendingNewRoom ? '#4a5d5e' : '#2e3f41',
-                        border: '1px solid #bcd3d2',
-                        color: '#bcd3d2',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: '18px'
-                      }}
-                    >
-                      {pendingNewRoom ? 'PLACE ROOM' : 'ROLL ROOM SIZE'}
-                    </button>
-
-                    {/* Step: Roll for Exits (for newly placed room) */}
-                    <button
-                      disabled={!newlyPlacedRoomId || exitsToPlace > 0 || isRolling}
-                      onClick={async () => {
-                        if (mapEngineRef.current && newlyPlacedRoomId) {
-                          setIsRolling(true)
-                          try {
-                            const result = await mapEngineRef.current.dungeon.rollForExitCount()
-                            addLog(`Rolled 1d8: ${result.roll}`)
-
-                            let exitText = ''
-                            if (result.exitCount === 0) exitText = 'No Exits'
-                            else if (result.exitCount === 1) exitText = '1 Exit'
-                            else exitText = `${result.exitCount} Exits`
-
-                            addLog(`Result: ${exitText}`)
-
-                            if (result.exitCount === 0) {
-                              // No exits - finalize the room and clear UI
-                              mapEngineRef.current.dungeon.finalizeNewRoom(newlyPlacedRoomId)
-                              addLog('Room completed. Dead zones marked.')
-                              setNewlyPlacedRoomId(null)
-                              setLogs([]) // Clear logs
-                            } else {
-                              // 1+ exits - prepare for placing exits
-                              const eligibility =
-                                mapEngineRef.current.dungeon.calculateEligibleWalls(
-                                  newlyPlacedRoomId
-                                )
-
-                              // Cap exit count to number of eligible walls
-                              const actualExits = Math.min(result.exitCount, eligibility.count)
-
-                              if (actualExits === 0) {
-                                // No eligible walls - finalize room
-                                addLog(`Eligible walls: 0 of 3 - No exits can be placed.`)
-                                mapEngineRef.current.dungeon.finalizeNewRoom(newlyPlacedRoomId)
-                                addLog('Room completed. Dead zones marked.')
-                                setNewlyPlacedRoomId(null)
-                                setLogs([]) // Clear logs
-                              } else {
-                                if (actualExits < result.exitCount) {
-                                  addLog(
-                                    `Capped to ${actualExits} (only ${eligibility.count} wall(s) eligible)`
-                                  )
-                                }
-                                setExitsToPlace(actualExits)
-                                setEligibleWalls({
-                                  top: eligibility.top,
-                                  bottom: eligibility.bottom,
-                                  left: eligibility.left,
-                                  right: eligibility.right
-                                })
-                                mapEngineRef.current.interactionState.mode = 'placing_exit'
-                                mapEngineRef.current.interactionState.activeRoomId =
-                                  newlyPlacedRoomId
-                                addLog(`Click on eligible walls to place ${actualExits} exit(s).`)
-                              }
-                            }
-                          } catch (err) {
-                            console.error(err)
-                            addLog('Error rolling for exits.')
-                          } finally {
-                            setIsRolling(false)
-                          }
-                        }
-                      }}
-                      style={{
-                        display: newlyPlacedRoomId && exitsToPlace === 0 ? 'block' : 'none',
-                        width: '100%',
-                        marginTop: '15px',
-                        padding: '12px',
-                        backgroundColor: '#2e3f41',
-                        border: '1px solid #bcd3d2',
-                        color: '#bcd3d2',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: '18px'
-                      }}
-                    >
-                      ROLL FOR EXITS
-                    </button>
-
-                    {/* Step: Place Exits (for newly placed room) */}
-                    <button
-                      disabled={exitsToPlace === 0}
-                      onClick={() => {
-                        // This button is just informational - exits are placed via map clicks
-                      }}
-                      style={{
-                        display: exitsToPlace > 0 ? 'block' : 'none',
-                        width: '100%',
-                        marginTop: '15px',
-                        padding: '12px',
-                        backgroundColor: '#4a5d5e',
-                        border: '1px solid #bcd3d2',
-                        color: '#bcd3d2',
-                        cursor: 'default',
-                        fontFamily: 'inherit',
-                        fontSize: '18px'
-                      }}
-                    >
-                      PLACE EXIT ({exitsToPlace} remaining)
-                    </button>
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop: 'auto',
-                      height: '240px',
-                      border: '1px solid #2e3f41',
-                      padding: '10px',
-                      fontSize: '14px',
-                      overflowY: 'auto',
-                      backgroundColor: 'rgba(0,0,0,0.3)',
-                      fontFamily: 'monospace',
-                      flexShrink: 0
-                    }}
-                  >
-                    {logs.map((log, i) => (
-                      <div
-                        key={i}
-                        style={{ marginBottom: '5px', color: i === 0 ? '#fff' : '#888' }}
-                      >
-                        {`> ${log}`}
-                      </div>
-                    ))}
-                  </div>
+                <div style={{ fontSize: '14px', color: '#888', marginBottom: '10px' }}>
+                  Use the control panel at the bottom of the screen to adjust generation parameters.
                 </div>
-              </>
+
+                <div
+                  style={{
+                    marginTop: 'auto',
+                    height: '240px',
+                    border: '1px solid #2e3f41',
+                    padding: '10px',
+                    fontSize: '14px',
+                    overflowY: 'auto',
+                    backgroundColor: 'rgba(0,0,0,0.3)',
+                    fontFamily: 'monospace',
+                    flexShrink: 0
+                  }}
+                >
+                  {logs.map((log, i) => (
+                    <div
+                      key={i}
+                      style={{ marginBottom: '5px', color: i === 0 ? '#fff' : '#888' }}
+                    >
+                      {`> ${log}`}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
 
             {/* --- OVERWORLD UI --- */}
@@ -1695,211 +1437,235 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           </div>
         </div>
 
-        {isNewMapModalOpen && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              backgroundColor: 'rgba(0, 0, 0, 0.7)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 20
-            }}
-          >
+        {/* --- FLOATING SEED GROWTH CONTROL PANEL --- */}
+        {gameMode === 'dungeon' && seedGrowthState && (
+          <SeedGrowthControlPanel
+            settings={seedGrowthSettings}
+            onSettingsChange={setSeedGrowthSettings}
+            onRegenerate={handleSeedGrowthRegenerate}
+            onStep={handleSeedGrowthStep}
+            onRunSteps={handleSeedGrowthRunSteps}
+            onRunToCompletion={handleSeedGrowthRunAll}
+            tilesGrown={seedGrowthState.tilesGrown}
+            stepCount={seedGrowthState.stepCount}
+            isComplete={seedGrowthState.isComplete}
+            completionReason={seedGrowthState.completionReason}
+            isAnimating={isAnimating}
+            onToggleAnimation={handleSeedGrowthToggleAnimation}
+          />
+        )}
+
+        {
+          isNewMapModalOpen && (
             <div
               style={{
-                width: '400px',
-                backgroundColor: '#141d1f',
-                border: '2px solid #bcd3d2',
-                padding: '20px',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
                 display: 'flex',
-                flexDirection: 'column',
-                gap: '20px',
-                color: '#bcd3d2',
-                fontFamily: 'IMFellEnglishSC-Regular'
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 20
               }}
             >
-              <h2 style={{ margin: 0, textAlign: 'center', fontSize: '32px' }}>Create New Map</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <span>Width (X): {modalWidth}</span>
-                <input
-                  type="range"
-                  min="26"
-                  max="50"
-                  value={modalWidth}
-                  onChange={(e) => setModalWidth(Number(e.target.value))}
-                  style={{ width: '100%', accentColor: '#2e3f41' }}
-                />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <span>Height (Y): {modalHeight}</span>
-                <input
-                  type="range"
-                  min="26"
-                  max="50"
-                  value={modalHeight}
-                  onChange={(e) => setModalHeight(Number(e.target.value))}
-                  style={{ width: '100%', accentColor: '#2e3f41' }}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
-                <button
-                  onClick={() => setIsNewMapModalOpen(false)}
-                  style={{
-                    flex: 1,
-                    padding: '10px',
-                    backgroundColor: 'transparent',
-                    border: '1px solid #bcd3d2',
-                    color: '#bcd3d2',
-                    fontFamily: 'inherit',
-                    fontSize: '20px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  CANCEL
-                </button>
-                <button
-                  onClick={handleCreateNewMap}
-                  style={{
-                    flex: 1,
-                    padding: '10px',
-                    backgroundColor: '#2e3f41',
-                    border: '1px solid #bcd3d2',
-                    color: '#bcd3d2',
-                    fontFamily: 'inherit',
-                    fontSize: '20px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  CREATE
-                </button>
+              <div
+                style={{
+                  width: '400px',
+                  backgroundColor: '#141d1f',
+                  border: '2px solid #bcd3d2',
+                  padding: '20px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '20px',
+                  color: '#bcd3d2',
+                  fontFamily: 'IMFellEnglishSC-Regular'
+                }}
+              >
+                <h2 style={{ margin: 0, textAlign: 'center', fontSize: '32px' }}>Create New Map</h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <span>Width (X): {modalWidth}</span>
+                  <input
+                    type="range"
+                    min="26"
+                    max="50"
+                    value={modalWidth}
+                    onChange={(e) => setModalWidth(Number(e.target.value))}
+                    style={{ width: '100%', accentColor: '#2e3f41' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <span>Height (Y): {modalHeight}</span>
+                  <input
+                    type="range"
+                    min="26"
+                    max="50"
+                    value={modalHeight}
+                    onChange={(e) => setModalHeight(Number(e.target.value))}
+                    style={{ width: '100%', accentColor: '#2e3f41' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
+                  <button
+                    onClick={() => setIsNewMapModalOpen(false)}
+                    style={{
+                      flex: 1,
+                      padding: '10px',
+                      backgroundColor: 'transparent',
+                      border: '1px solid #bcd3d2',
+                      color: '#bcd3d2',
+                      fontFamily: 'inherit',
+                      fontSize: '20px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    onClick={handleCreateNewMap}
+                    style={{
+                      flex: 1,
+                      padding: '10px',
+                      backgroundColor: '#2e3f41',
+                      border: '1px solid #bcd3d2',
+                      color: '#bcd3d2',
+                      fontFamily: 'inherit',
+                      fontSize: '20px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    CREATE
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )
+        }
 
         <DiceSettingsWrapper isOpen={showDiceSettings} onClose={() => setShowDiceSettings(false)} />
         <SettingsSync />
         <DiceOverlay />
 
         {/* Tooltip */}
-        {tooltip.visible && (
-          <div
-            style={{
-              position: 'fixed',
-              left: tooltip.x + 15,
-              top: tooltip.y + 15,
-              backgroundColor: 'rgba(0,0,0,0.8)',
-              color: '#fff',
-              padding: '5px 10px',
-              borderRadius: '4px',
-              pointerEvents: 'none',
-              zIndex: 9999,
-              fontSize: '14px'
-            }}
-          >
-            {tooltip.text}
-          </div>
-        )}
+        {
+          tooltip.visible && (
+            <div
+              style={{
+                position: 'fixed',
+                left: tooltip.x + 15,
+                top: tooltip.y + 15,
+                backgroundColor: 'rgba(0,0,0,0.8)',
+                color: '#fff',
+                padding: '5px 10px',
+                borderRadius: '4px',
+                pointerEvents: 'none',
+                zIndex: 9999,
+                fontSize: '14px'
+              }}
+            >
+              {tooltip.text}
+            </div>
+          )
+        }
 
         {/* VIEW LOG BUTTON */}
 
         {/* UNCLAIMED LOG MODAL */}
-        {isLogModalOpen && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              backgroundColor: 'rgba(0,0,0,0.85)',
-              zIndex: 2000,
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center'
-            }}
-          >
+        {
+          isLogModalOpen && (
             <div
               style={{
-                width: '80%',
-                height: '80%',
-                backgroundColor: '#1a2628',
-                border: '2px solid #bcd3d2',
-                padding: '20px',
-                overflow: 'auto',
-                color: '#bcd3d2',
-                fontFamily: 'inherit',
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0,0,0,0.85)',
+                zIndex: 2000,
                 display: 'flex',
-                flexDirection: 'column'
+                justifyContent: 'center',
+                alignItems: 'center'
               }}
             >
               <div
-                style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}
+                style={{
+                  width: '80%',
+                  height: '80%',
+                  backgroundColor: '#1a2628',
+                  border: '2px solid #bcd3d2',
+                  padding: '20px',
+                  overflow: 'auto',
+                  color: '#bcd3d2',
+                  fontFamily: 'inherit',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
               >
-                <h2 style={{ margin: 0, fontSize: '24px' }}>UNCLAIMED LAND LOG</h2>
-                <button
-                  onClick={() => setIsLogModalOpen(false)}
-                  style={{
-                    background: 'none',
-                    border: '1px solid #bcd3d2',
-                    color: '#bcd3d2',
-                    cursor: 'pointer',
-                    padding: '5px 10px',
-                    fontSize: '16px'
-                  }}
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}
                 >
-                  CLOSE
-                </button>
-              </div>
+                  <h2 style={{ margin: 0, fontSize: '24px' }}>UNCLAIMED LAND LOG</h2>
+                  <button
+                    onClick={() => setIsLogModalOpen(false)}
+                    style={{
+                      background: 'none',
+                      border: '1px solid #bcd3d2',
+                      color: '#bcd3d2',
+                      cursor: 'pointer',
+                      padding: '5px 10px',
+                      fontSize: '16px'
+                    }}
+                  >
+                    CLOSE
+                  </button>
+                </div>
 
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #bcd3d2' }}>
-                    <th style={{ padding: '10px' }}>TAG</th>
-                    <th style={{ padding: '10px' }}>LAND TYPE</th>
-                    <th style={{ padding: '10px' }}>SIZE</th>
-                    <th style={{ padding: '10px' }}>RANK</th>
-                    <th style={{ padding: '10px' }}>MOD</th>
-                    <th style={{ padding: '10px' }}>COORDS (First)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unClaimedLog.map((plot, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #4a5d5e' }}>
-                      <td style={{ padding: '10px' }}>{plot.plotTag}</td>
-                      <td style={{ padding: '10px' }}>{plot.landType}</td>
-                      <td style={{ padding: '10px' }}>{plot.size}</td>
-                      <td style={{ padding: '10px' }}>{plot.rank}</td>
-                      <td style={{ padding: '10px' }}>{plot.rankModifier}</td>
-                      <td style={{ padding: '10px' }}>
-                        {plot.landTypeList[0]
-                          ? `${plot.landTypeList[0].coordX}, ${plot.landTypeList[0].coordY}`
-                          : 'N/A'}
-                      </td>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #bcd3d2' }}>
+                      <th style={{ padding: '10px' }}>TAG</th>
+                      <th style={{ padding: '10px' }}>LAND TYPE</th>
+                      <th style={{ padding: '10px' }}>SIZE</th>
+                      <th style={{ padding: '10px' }}>RANK</th>
+                      <th style={{ padding: '10px' }}>MOD</th>
+                      <th style={{ padding: '10px' }}>COORDS (First)</th>
                     </tr>
-                  ))}
-                  {unClaimedLog.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        style={{ padding: '20px', textAlign: 'center', color: '#666' }}
-                      >
-                        No unclaimed land logged yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {unClaimedLog.map((plot, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid #4a5d5e' }}>
+                        <td style={{ padding: '10px' }}>{plot.plotTag}</td>
+                        <td style={{ padding: '10px' }}>{plot.landType}</td>
+                        <td style={{ padding: '10px' }}>{plot.size}</td>
+                        <td style={{ padding: '10px' }}>{plot.rank}</td>
+                        <td style={{ padding: '10px' }}>{plot.rankModifier}</td>
+                        <td style={{ padding: '10px' }}>
+                          {plot.landTypeList[0]
+                            ? `${plot.landTypeList[0].coordX}, ${plot.landTypeList[0].coordY}`
+                            : 'N/A'}
+                        </td>
+                      </tr>
+                    ))}
+                    {unClaimedLog.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          style={{ padding: '20px', textAlign: 'center', color: '#666' }}
+                        >
+                          No unclaimed land logged yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-    </SettingsProvider>
+          )
+        }
+      </div >
+    </SettingsProvider >
   )
 }
 
