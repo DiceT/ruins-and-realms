@@ -61,6 +61,8 @@ export class RoomClassifier {
           // Flood fill to find contiguous area
           const blob = this.floodFill(grid, x, y, visited)
           
+          console.log(`[RoomClassifier] Found blob size: ${blob.length}, minRoomArea: ${minRoomArea}, isRoom: ${blob.length >= minRoomArea}`)
+
           if (blob.length >= minRoomArea) {
             // This is a room
             const room = this.createRoom(blob, tile.regionId || 0, roomIdCounter++)

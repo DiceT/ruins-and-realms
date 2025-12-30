@@ -467,12 +467,31 @@ export class SeedGrowthGenerator {
     return count
   }
 
-  private validatePlacement(pos: GridCoord, _region: Region): boolean {
+  private validatePlacement(pos: GridCoord, region: Region): boolean {
     if (!this.inBounds(pos.x, pos.y)) return false
     // Check if blocked by mask
     if (this.state.blocked[pos.y]?.[pos.x]) return false
     const tile = this.state.grid[pos.y][pos.x]
     if (tile.state !== 'empty') return false
+    
+    // Collision corridors: prevent growth if this would place our tile adjacent to another region
+    if (this.settings.collisionCorridors) {
+      const neighbors = [
+        { x: pos.x, y: pos.y - 1 },
+        { x: pos.x, y: pos.y + 1 },
+        { x: pos.x - 1, y: pos.y },
+        { x: pos.x + 1, y: pos.y }
+      ]
+      for (const n of neighbors) {
+        if (!this.inBounds(n.x, n.y)) continue
+        const neighborTile = this.state.grid[n.y][n.x]
+        // If neighbor belongs to a different region, block this placement
+        if (neighborTile.state === 'floor' && neighborTile.regionId !== null && neighborTile.regionId !== region.id) {
+          return false
+        }
+      }
+    }
+    
     return true
   }
 

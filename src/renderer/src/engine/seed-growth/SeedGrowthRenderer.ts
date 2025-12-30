@@ -419,14 +419,23 @@ export class SeedGrowthRenderer {
     }
   }
 
-  /** Render corridor tiles */
+  /** Render corridor tiles with yellow overlay */
   private renderCorridors(state: SeedGrowthState): void {
     const size = this.tileSize
+    const corridorColor = 0xffcc00 // Yellow
+    const corridorAlpha = 0.5
 
-    for (const corridor of state.corridors) {
-      for (const pos of corridor.tiles) {
-        this.corridorLayer.rect(pos.x * size, pos.y * size, size - 1, size - 1)
-        this.corridorLayer.fill({ color: 0xffaa00, alpha: 0.4 })
+    for (const row of state.grid) {
+      for (const tile of row) {
+        if (tile.state === 'floor' && tile.isCorridor) {
+          this.corridorLayer.rect(
+            tile.x * size,
+            tile.y * size,
+            size,
+            size
+          )
+          this.corridorLayer.fill({ color: corridorColor, alpha: corridorAlpha })
+        }
       }
     }
   }

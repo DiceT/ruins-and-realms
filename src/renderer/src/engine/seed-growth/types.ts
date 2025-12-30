@@ -151,13 +151,18 @@ export interface SeedGrowthSettings {
   /** 0-100, probability of mirrored growth */
   symmetry: number
   symmetryAxis: SymmetryAxis
-  /** If true, reject growth if mirror blocked. If false, allow solo growth. */
-  symmetryStrict: boolean
+  /** If true, primary mirror seeds grow in lockstep */
+  symmetryStrictPrimary: boolean
+  /** If true, secondary (paired) mirror seeds grow in lockstep */
+  symmetryStrictSecondary: boolean
 
   // --- Room/Corridor Extraction ---
   minRoomArea: number
+  maxRoomArea: number // Split rooms larger than this
   maxCorridorWidth: number
   classificationMode: RoomClassificationMode
+  /** If true, create visible corridor borders where regions collide */
+  collisionCorridors: boolean
 
   // --- Debug ---
   debug: DebugFlags
@@ -233,11 +238,14 @@ export function createDefaultSettings(): SeedGrowthSettings {
 
     symmetry: 0,
     symmetryAxis: 'vertical',
-    symmetryStrict: false,
+    symmetryStrictPrimary: false,
+    symmetryStrictSecondary: false,
 
     minRoomArea: 9,
+    maxRoomArea: 100, // Default: no practical limit
     maxCorridorWidth: 2,
     classificationMode: 'floodFill',
+    collisionCorridors: false,
 
     debug: {
       showRegions: true,
@@ -250,4 +258,325 @@ export function createDefaultSettings(): SeedGrowthSettings {
       showMask: true
     }
   }
+}
+
+// =============================================================================
+// Spine-Seed Generator Types
+// =============================================================================
+
+export type GeneratorMode = 'organic' | 'spineSeed'
+
+export type EjectionSide = 'both' | 'left' | 'right' | 'random'
+
+export type IntervalMode = 'random' | 'fixed'
+
+export type GrowthDirection = 'all' | 'perpendicular' | 'parallel'
+
+export type CollisionBehavior = 'bothStop' | 'newerStops' | 'olderStops'
+
+export type SpineSeedPhase = 'spine' | 'ejection' | 'roomGrowth' | 'walls' | 'complete'
+
+// -----------------------------------------------------------------------------
+// Spine Growth Settings
+// -----------------------------------------------------------------------------
+
+export interface SpineGrowthSettings {
+  /** Maximum number of spine branches (forks) */
+  maxForks: number
+  /** Maximum number of loop-backs to existing spine */
+  maxLoops: number
+  /** Width of spine corridor in tiles */
+  spineWidth: number
+  /** Whether the spine acts as a wall blocking room growth */
+  spineActsAsWall: boolean
+  // Reuses existing physics: gamma, straightBias, turnPenalty, branchPenalty
+}
+
+// -----------------------------------------------------------------------------
+// Seed Ejection Settings
+// -----------------------------------------------------------------------------
+
+export interface SeedEjectionSettings {
+  /** Minimum tiles between seed ejections */
+  minInterval: number
+  /** Maximum tiles between seed ejections */
+  maxInterval: number
+  /** Random intervals vs fixed intervals */
+  intervalMode: IntervalMode
+  /** Minimum distance from spine seed is placed */
+  minDistance: number
+  /** Maximum distance from spine seed is placed */
+  maxDistance: number
+  /** Which side(s) of spine to eject seeds */
+  ejectionSide: EjectionSide
+  /** Send 2 seeds same direction (one farther than the other) */
+  pairedEjection: boolean
+  /** Chance seed doesn't grow at all (0-1) */
+  dudChance: number
+  /** Chance to eject a wall-seed instead of room-seed (0-1) */
+  wallSeedChance: number
+}
+
+// -----------------------------------------------------------------------------
+// Room Growth Settings
+// -----------------------------------------------------------------------------
+
+export interface RoomGrowthSettings {
+  /** Minimum room width */
+  minWidth: number
+  /** Maximum room width */
+  maxWidth: number
+  /** Minimum room height */
+  minHeight: number
+  /** Maximum room height */
+  maxHeight: number
+  /** Growth direction relative to spine */
+  growthDirection: GrowthDirection
+  /** What happens when two rooms collide */
+  collisionBehavior: CollisionBehavior
+}
+
+// -----------------------------------------------------------------------------
+// Spine-Seed Debug Flags
+// -----------------------------------------------------------------------------
+
+export interface SpineSeedDebugFlags {
+  showSpine: boolean
+  showSeeds: boolean
+  showRoomGrowth: boolean
+  showWalls: boolean
+  showCollisions: boolean
+  showGrowthOrder: boolean
+}
+
+// -----------------------------------------------------------------------------
+// Spine-Seed Settings (Complete)
+// -----------------------------------------------------------------------------
+
+export interface SpineSeedSettings {
+  // --- Core ---
+  seed: number
+  gridWidth: number
+  gridHeight: number
+  /** Number of spine starting points */
+  seedCount: number
+  /** Maximum tiles for spine growth (like organic budget) */
+  tileBudget: number
+
+  // --- Spine Growth (uses existing physics) ---
+  spine: SpineGrowthSettings
+  /** Frontier weight exponent. >1 = blobby, <1 = stringy */
+  gamma: number
+  /** 0-1, prefer continuing same direction */
+  straightBias: number
+  /** Force spine to move in a straight line */
+  forceStraight: boolean
+  /** Override shape: 'N' (Normal), 'S' (S-shape), 'U' (U-shape), 'F' (Forks) */
+  turnOverride: 'N' | 'S' | 'U' | 'F'
+  /** 0-5, penalty for changing direction */
+  turnPenalty: number
+  /** 0-5, penalty for creating new branches */
+  branchPenalty: number
+
+  // --- Seed Ejection ---
+  ejection: SeedEjectionSettings
+
+  // --- Room Growth ---
+  roomGrowth: RoomGrowthSettings
+
+  // --- Symmetry (same as organic) ---
+  symmetry: number
+  /** If true, primary mirror seeds grow in lockstep */
+  symmetryStrictPrimary: boolean
+  /** If true, secondary (paired) mirror seeds grow in lockstep */
+  symmetryStrictSecondary: boolean
+
+  // --- Debug ---
+  debug: SpineSeedDebugFlags
+}
+
+// -----------------------------------------------------------------------------
+// Default Spine-Seed Settings Factory
+// -----------------------------------------------------------------------------
+
+export function createDefaultSpineSeedSettings(): SpineSeedSettings {
+  const gridWidth = 64
+  const gridHeight = 64
+  const fillPercent = 80 // Increased to 80% by default
+  return {
+    seed: Math.floor(Math.random() * 1000000),
+    gridWidth,
+    gridHeight,
+    seedCount: 24, // Default to 24 per user request
+    tileBudget: Math.floor(gridWidth * gridHeight * fillPercent / 100),
+
+    spine: {
+      maxForks: 1,
+      maxLoops: 1,
+      spineWidth: 1,
+      spineActsAsWall: true
+    },
+    gamma: 1.2,
+    straightBias: 0.5,
+    forceStraight: true, // User request: Enabled by default
+    turnOverride: 'N',
+    turnPenalty: 10,
+    branchPenalty: 0.8,
+
+    ejection: {
+      minInterval: 3,
+      maxInterval: 7, // User request: 7
+      intervalMode: 'random',
+      minDistance: 3,
+      maxDistance: 7, // User request: 7
+      ejectionSide: 'both',
+      pairedEjection: true, // Ensure defaults match user intent (usually true for spine seed)
+      dudChance: 0.0,
+      wallSeedChance: 0.0
+    },
+
+    roomGrowth: {
+      minWidth: 3,
+      maxWidth: 7, // User request: 7
+      minHeight: 3,
+      maxHeight: 7, // User request: 7
+      growthDirection: 'all',
+      collisionBehavior: 'bothStop'
+    },
+
+    symmetry: 0,
+    symmetryAxis: 'vertical',
+    symmetryStrictPrimary: false,
+    symmetryStrictSecondary: false,
+
+    debug: {
+      showSpine: true,
+      showSeeds: true,
+      showRoomGrowth: true,
+      showWalls: true,
+      showCollisions: false,
+      showGrowthOrder: false
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Spine Tile (extends grid tile concept)
+// -----------------------------------------------------------------------------
+
+export interface SpineTile {
+  x: number
+  y: number
+  /** Order this tile was added to spine */
+  spineOrder: number
+  /** Direction spine was traveling when this tile was placed */
+  direction: Direction
+  /** True if this is a fork point */
+  isForkPoint: boolean
+  /** True if this is a loop connection point */
+  isLoopPoint: boolean
+  /** Branch ID (0 = main, 1+ = branches) */
+  branchId: number
+}
+
+// -----------------------------------------------------------------------------
+// Room Seed (ejected from spine)
+// -----------------------------------------------------------------------------
+
+export interface RoomSeed {
+  id: string
+  /** Position where seed was ejected */
+  position: GridCoord
+  /** Spine tile this seed was ejected from */
+  sourceSpineTile: GridCoord
+  /** Direction from spine to seed */
+  ejectionDirection: Direction
+  /** Target room dimensions */
+  targetWidth: number
+  targetHeight: number
+  /** True if this is a wall-seed instead of room-seed */
+  isWallSeed: boolean
+  /** True if seed died (landed on existing room) */
+  isDead: boolean
+  /** Current room bounds during growth */
+  currentBounds: { x: number; y: number; w: number; h: number }
+  /** Tiles claimed by this room */
+  tiles: GridCoord[]
+  /** Growth order for animation */
+  birthOrder: number
+  /** True if room has finished growing */
+  isComplete: boolean
+  /** ID of symmetric partner seed (if any) for strict mirrored growth */
+  partnerId?: string
+  /** Generation type: primary or secondary (paired) */
+  generation: 'primary' | 'secondary'
+}
+
+// -----------------------------------------------------------------------------
+// State
+// -----------------------------------------------------------------------------
+
+export interface SpineHead {
+  x: number
+  y: number
+  dir: Direction
+  waypoints: { x: number; y: number }[]
+  isTrunk?: boolean // If true, reaching end triggers fork event
+}
+
+export interface SpineSeedState {
+  /** 2D grid of tiles (shared format with organic) */
+  grid: GridTile[][]
+  /** 2D blocked mask */
+  blocked: boolean[][]
+  /** Mask version counter */
+  maskVersion: number
+
+  /** Current generation phase */
+  phase: SpineSeedPhase
+
+  /** Spine tiles in order of creation */
+  spineTiles: SpineTile[]
+  /** Active spine frontier (for growth animation) - DEPRECATED, using head tracking instead */
+  spineFrontier: Set<number>
+  /** Number of forks created so far */
+  forkCount: number
+  /** Number of loops created so far */
+  loopCount: number
+  /** True if spine growth is complete */
+  spineComplete: boolean
+  /** Current spine head X position */
+  spineHeadX?: number
+  /** Current spine head Y position */
+  spineHeadY?: number
+  /** Current spine head direction */
+  spineHeadDir?: Direction
+  /** Current turn override setting (N, S, U, F) */
+  turnOverride?: 'N' | 'S' | 'U' | 'F'
+  /** Waypoints for predefined shapes (S, U) */
+  waypoints?: { x: number; y: number }[]
+
+  /** Active spine heads for branching growth */
+  activeHeads: SpineHead[]
+
+  /** Room seeds ejected from spine */
+  roomSeeds: RoomSeed[]
+  /** Index of next spine tile to eject from */
+  ejectionIndex: number
+  /** Distance counter for next ejection */
+  distanceToNextEjection: number
+  /** True if ejection phase is complete */
+  ejectionComplete: boolean
+
+  /** Active room frontiers keyed by seed ID */
+  roomFrontiers: Map<string, Set<number>>
+  /** True if all room growth is complete */
+  roomGrowthComplete: boolean
+
+  /** Total tiles grown */
+  tilesGrown: number
+  /** Current step count */
+  stepCount: number
+  /** True if entire generation is complete */
+  isComplete: boolean
 }

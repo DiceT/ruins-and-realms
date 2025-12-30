@@ -22,7 +22,24 @@ import diceLanding from '../assets/images/ui/dice-landing.png'
 import flairOverlay from '../assets/images/overland-tiles/flair_empty_0.png'
 
 // Seed Growth System
-import { SeedGrowthGenerator, SeedGrowthRenderer, DungeonViewRenderer, RoomClassifier, CorridorPathfinder, SeedGrowthSettings, SeedGrowthState, createDefaultSettings, MaskToolMode } from '../engine/seed-growth'
+import {
+  SeedGrowthGenerator,
+  SeedGrowthRenderer,
+  DungeonViewRenderer,
+  RoomClassifier,
+  CorridorPathfinder,
+  SeedGrowthSettings,
+  SeedGrowthState,
+  createDefaultSettings,
+  MaskToolMode,
+  // Spine-Seed Generator
+  SpineSeedGenerator,
+  SpineSeedRenderer,
+  SpineSeedSettings,
+  SpineSeedState,
+  createDefaultSpineSeedSettings,
+  GeneratorMode
+} from '../engine/seed-growth'
 import { SeedGrowthControlPanel } from './SeedGrowthControlPanel'
 import { Container } from 'pixi.js'
 
@@ -83,6 +100,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const [logs, setLogs] = useState<string[]>(['Ready.'])
 
   // --- SEED GROWTH STATE ---
+  const [generatorMode, setGeneratorMode] = useState<GeneratorMode>('spineSeed')
   const [seedGrowthSettings, setSeedGrowthSettings] = useState<SeedGrowthSettings>(createDefaultSettings())
   const seedGrowthSettingsRef = useRef(seedGrowthSettings)
   const seedGrowthGenRef = useRef<SeedGrowthGenerator | null>(null)
@@ -92,6 +110,13 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const [isAnimating, setIsAnimating] = useState(false)
   const animationFrameRef = useRef<number | null>(null)
   const [viewAsDungeon, setViewAsDungeon] = useState(false)
+
+  // --- SPINE-SEED STATE ---
+  const [spineSeedSettings, setSpineSeedSettings] = useState<SpineSeedSettings>(createDefaultSpineSeedSettings())
+  const spineSeedSettingsRef = useRef(spineSeedSettings)
+  const spineSeedGenRef = useRef<SpineSeedGenerator | null>(null)
+  const spineSeedRendererRef = useRef<SpineSeedRenderer | null>(null)
+  const [spineSeedState, setSpineSeedState] = useState<SpineSeedState | null>(null)
 
   // Mask Tool State
   const [maskToolMode, setMaskToolMode] = useState<MaskToolMode>('off')
@@ -147,46 +172,34 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     seedGrowthSettingsRef.current = seedGrowthSettings
   }, [seedGrowthSettings])
 
+  // Keep spineSeedSettingsRef in sync
+  useEffect(() => {
+    spineSeedSettingsRef.current = spineSeedSettings
+  }, [spineSeedSettings])
+
   const addLog = (msg: string): void => {
     setLogs((prev) => [msg, ...prev.slice(0, 9)]) // Keep last 10 logs
   }
 
   // --- SEED GROWTH CALLBACKS ---
   const processSeedGrowthComplete = useCallback((state: SeedGrowthState) => {
+    // Classify rooms and seed corridors (seed layer only)
+    // NOTE: Dungeon corridors (A* pathfinding) are handled separately in DungeonViewRenderer
     const classifier = new RoomClassifier()
-    const { rooms, connections } = classifier.classify(
+    const { rooms, corridors, connections } = classifier.classify(
       state,
       seedGrowthSettings.minRoomArea,
       seedGrowthSettings.maxCorridorWidth,
       seedGrowthSettings.classificationMode
     )
 
-    // Replace raw corridors with high-fidelity pathfound corridors
-    const pathfinder = new CorridorPathfinder()
-    const corridorTiles = pathfinder.generate(state, rooms)
-
-    // Update state
+    // Update state with seed-layer classification results
     state.rooms = rooms
+    state.corridors = corridors
     state.connections = connections
-    state.corridors = [{ id: 'pathfound_corridors', regionId: 0, tiles: corridorTiles }]
-
-    // Update the actual grid tiles to reflect corridor status for rendering/debug
-    state.grid.forEach(row => row.forEach(tile => {
-      if (tile.isCorridor) tile.isCorridor = false
-    }))
-    corridorTiles.forEach(pos => {
-      if (state.grid[pos.y]?.[pos.x]) {
-        state.grid[pos.y][pos.x].isCorridor = true
-      }
-    })
   }, [seedGrowthSettings])
 
   const handleSeedGrowthRegenerate = useCallback(() => {
-    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
-
-    // Use ref for latest settings to avoid stale closure
-    const currentSettings = seedGrowthSettingsRef.current
-
     // Stop animation if running
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current)
@@ -194,120 +207,177 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       setIsAnimating(false)
     }
 
-    // Reset generator but preserve the blocked mask
-    seedGrowthGenRef.current.reset(currentSettings, true)
-
-    // Async chunked execution to prevent UI lockup
-    const runChunk = () => {
+    if (generatorMode === 'organic') {
+      // --- ORGANIC MODE ---
       if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
 
-      const state = seedGrowthGenRef.current.getState()
-      if (state.isComplete) {
-        // Run classification and pathfinding when complete
-        processSeedGrowthComplete(state)
+      const currentSettings = seedGrowthSettingsRef.current
+      seedGrowthGenRef.current.reset(currentSettings, true)
 
-        seedGrowthRendererRef.current.render(state, currentSettings)
-        setSeedGrowthState({ ...state })
-        return // Done!
+      const runChunk = () => {
+        if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+
+        const state = seedGrowthGenRef.current.getState()
+        if (state.isComplete) {
+          processSeedGrowthComplete(state)
+          seedGrowthRendererRef.current.render(state, currentSettings)
+          setSeedGrowthState({ ...state })
+          return
+        }
+
+        seedGrowthGenRef.current.runSteps(100)
+        seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), currentSettings)
+        setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
+        requestAnimationFrame(runChunk)
       }
 
-      // Run 100 steps per frame
-      seedGrowthGenRef.current.runSteps(100)
-      seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), currentSettings)
-      setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
+      runChunk()
+    } else {
+      // --- SPINE-SEED MODE ---
+      if (!spineSeedGenRef.current || !spineSeedRendererRef.current) return
 
-      // Schedule next chunk
-      requestAnimationFrame(runChunk)
+      const currentSettings = spineSeedSettingsRef.current
+      spineSeedGenRef.current.reset(currentSettings)
+
+      const runChunk = () => {
+        if (!spineSeedGenRef.current || !spineSeedRendererRef.current) return
+
+        const state = spineSeedGenRef.current.getState()
+        if (state.isComplete) {
+          spineSeedRendererRef.current.render(state, currentSettings)
+          setSpineSeedState({ ...state })
+          return
+        }
+
+        spineSeedGenRef.current.runSteps(50)
+        spineSeedRendererRef.current.render(spineSeedGenRef.current.getState(), currentSettings)
+        setSpineSeedState({ ...spineSeedGenRef.current.getState() })
+        requestAnimationFrame(runChunk)
+      }
+
+      runChunk()
     }
-
-    runChunk()
-  }, []) // No dependencies - uses ref for latest settings
+  }, [generatorMode, processSeedGrowthComplete])
 
   const handleSeedGrowthStep = useCallback(() => {
-    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
-
-    // If already complete, reset first (so Step can restart animation)
-    if (seedGrowthGenRef.current.getState().isComplete) {
-      seedGrowthGenRef.current.reset(seedGrowthSettings)
-    }
-
-    seedGrowthGenRef.current.step()
-    seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
-    setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
-  }, [seedGrowthSettings])
-
-  const handleSeedGrowthRunSteps = useCallback((n: number) => {
-    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
-    seedGrowthGenRef.current.runSteps(n)
-
-    // Run classification and pathfinding after steps
-    if (seedGrowthGenRef.current.getState().isComplete) {
-      processSeedGrowthComplete(seedGrowthGenRef.current.getState())
-    }
-
-    seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
-    setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
-  }, [seedGrowthSettings])
-
-  const handleSeedGrowthRunAll = useCallback(() => {
-    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
-
-    // Async chunked execution to prevent UI lockup
-    const runChunk = () => {
+    if (generatorMode === 'organic') {
       if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
-
-      const state = seedGrowthGenRef.current.getState()
-      if (state.isComplete) {
-        // Run classification and pathfinding when complete
-        processSeedGrowthComplete(state)
-
-        seedGrowthRendererRef.current.render(state, seedGrowthSettings)
-        setSeedGrowthState({ ...state })
-        return // Done!
+      if (seedGrowthGenRef.current.getState().isComplete) {
+        seedGrowthGenRef.current.reset(seedGrowthSettings)
       }
-
-      // Run 100 steps per frame (keeps UI responsive)
-      seedGrowthGenRef.current.runSteps(100)
+      seedGrowthGenRef.current.step()
       seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
       setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
-
-      // Schedule next chunk
-      requestAnimationFrame(runChunk)
+    } else {
+      if (!spineSeedGenRef.current || !spineSeedRendererRef.current) return
+      if (spineSeedGenRef.current.getState().isComplete) {
+        spineSeedGenRef.current.reset(spineSeedSettings)
+      }
+      spineSeedGenRef.current.step()
+      spineSeedRendererRef.current.render(spineSeedGenRef.current.getState(), spineSeedSettings)
+      setSpineSeedState({ ...spineSeedGenRef.current.getState() })
     }
+  }, [generatorMode, seedGrowthSettings, spineSeedSettings])
 
-    runChunk()
-  }, [seedGrowthSettings])
+  const handleSeedGrowthRunSteps = useCallback((n: number) => {
+    if (generatorMode === 'organic') {
+      if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+      seedGrowthGenRef.current.runSteps(n)
+      if (seedGrowthGenRef.current.getState().isComplete) {
+        processSeedGrowthComplete(seedGrowthGenRef.current.getState())
+      }
+      seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+      setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
+    } else {
+      if (!spineSeedGenRef.current || !spineSeedRendererRef.current) return
+      spineSeedGenRef.current.runSteps(n)
+      spineSeedRendererRef.current.render(spineSeedGenRef.current.getState(), spineSeedSettings)
+      setSpineSeedState({ ...spineSeedGenRef.current.getState() })
+    }
+  }, [generatorMode, seedGrowthSettings, spineSeedSettings, processSeedGrowthComplete])
+
+  const handleSeedGrowthRunAll = useCallback(() => {
+    if (generatorMode === 'organic') {
+      if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+      const runChunk = () => {
+        if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+        const state = seedGrowthGenRef.current.getState()
+        if (state.isComplete) {
+          processSeedGrowthComplete(state)
+          seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+          setSeedGrowthState({ ...state })
+          return
+        }
+        seedGrowthGenRef.current.runSteps(100)
+        seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+        setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
+        requestAnimationFrame(runChunk)
+      }
+      runChunk()
+    } else {
+      if (!spineSeedGenRef.current || !spineSeedRendererRef.current) return
+      const runChunk = () => {
+        if (!spineSeedGenRef.current || !spineSeedRendererRef.current) return
+        const state = spineSeedGenRef.current.getState()
+        if (state.isComplete) {
+          spineSeedRendererRef.current.render(state, spineSeedSettings)
+          setSpineSeedState({ ...state })
+          return
+        }
+        spineSeedGenRef.current.runSteps(50)
+        spineSeedRendererRef.current.render(spineSeedGenRef.current.getState(), spineSeedSettings)
+        setSpineSeedState({ ...spineSeedGenRef.current.getState() })
+        requestAnimationFrame(runChunk)
+      }
+      runChunk()
+    }
+  }, [generatorMode, seedGrowthSettings, spineSeedSettings, processSeedGrowthComplete])
 
   const handleSeedGrowthToggleAnimation = useCallback(() => {
     if (isAnimating) {
-      // Stop
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current)
         animationFrameRef.current = null
       }
       setIsAnimating(false)
     } else {
-      // Start
       setIsAnimating(true)
-      const animate = () => {
-        if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
-        const state = seedGrowthGenRef.current.getState()
-        if (state.isComplete) {
-          setIsAnimating(false)
-          // Run classification and pathfinding on complete
-          processSeedGrowthComplete(state)
+      if (generatorMode === 'organic') {
+        const animate = () => {
+          if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+          const state = seedGrowthGenRef.current.getState()
+          if (state.isComplete) {
+            setIsAnimating(false)
+            processSeedGrowthComplete(state)
+            seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+            setSeedGrowthState({ ...state })
+            return
+          }
+          seedGrowthGenRef.current.runSteps(3)
           seedGrowthRendererRef.current.render(state, seedGrowthSettings)
           setSeedGrowthState({ ...state })
-          return
+          animationFrameRef.current = requestAnimationFrame(animate)
         }
-        seedGrowthGenRef.current.runSteps(3) // 3 steps per frame
-        seedGrowthRendererRef.current.render(state, seedGrowthSettings)
-        setSeedGrowthState({ ...state })
-        animationFrameRef.current = requestAnimationFrame(animate)
+        animate()
+      } else {
+        const animate = () => {
+          if (!spineSeedGenRef.current || !spineSeedRendererRef.current) return
+          const state = spineSeedGenRef.current.getState()
+          if (state.isComplete) {
+            setIsAnimating(false)
+            spineSeedRendererRef.current.render(state, spineSeedSettings)
+            setSpineSeedState({ ...state })
+            return
+          }
+          spineSeedGenRef.current.runSteps(2)
+          spineSeedRendererRef.current.render(state, spineSeedSettings)
+          setSpineSeedState({ ...state })
+          animationFrameRef.current = requestAnimationFrame(animate)
+        }
+        animate()
       }
-      animate()
     }
-  }, [isAnimating, seedGrowthSettings])
+  }, [isAnimating, generatorMode, seedGrowthSettings, spineSeedSettings, processSeedGrowthComplete])
 
   const handleClearMask = useCallback(() => {
     if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
@@ -354,10 +424,67 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
   // Re-render when debug settings change
   useEffect(() => {
-    if (seedGrowthGenRef.current && seedGrowthRendererRef.current && gameMode === 'dungeon') {
-      seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+    if (generatorMode === 'organic') {
+      if (seedGrowthGenRef.current && seedGrowthRendererRef.current && gameMode === 'dungeon') {
+        seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+      }
+    } else {
+      if (spineSeedGenRef.current && spineSeedRendererRef.current && gameMode === 'dungeon') {
+        spineSeedRendererRef.current.render(spineSeedGenRef.current.getState(), spineSeedSettings)
+      }
     }
-  }, [seedGrowthSettings.debug, gameMode])
+  }, [seedGrowthSettings.debug, spineSeedSettings.debug, gameMode, generatorMode])
+
+  // Handle Generator Mode Switch
+  useEffect(() => {
+    if (gameMode !== 'dungeon' || !showMap || !layoutRef.current) return
+
+    const layout = layoutRef.current
+    const viewWidth = layout.middlePanel.width || 800
+    const viewHeight = layout.middlePanel.height || 600
+
+    if (generatorMode === 'organic') {
+      // Hide spine-seed renderer, show organic renderer
+      if (spineSeedRendererRef.current) {
+        spineSeedRendererRef.current.getContainer().visible = false
+      }
+      if (seedGrowthRendererRef.current) {
+        seedGrowthRendererRef.current.getContainer().visible = true
+        if (seedGrowthGenRef.current) {
+          seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+        }
+      }
+    } else {
+      // Hide organic renderer, show (or create) spine-seed renderer
+      if (seedGrowthRendererRef.current) {
+        seedGrowthRendererRef.current.getContainer().visible = false
+      }
+
+      // Create spine-seed generator and renderer if they don't exist
+      if (!spineSeedGenRef.current) {
+        const generator = new SpineSeedGenerator(spineSeedSettings)
+        generator.runToCompletion()
+        spineSeedGenRef.current = generator
+      }
+
+      if (!spineSeedRendererRef.current && layout.middlePanel) {
+        const container = new Container()
+        layout.middlePanel.addChild(container)
+        const renderer = new SpineSeedRenderer(container)
+        renderer.setTileSize(8)
+        spineSeedRendererRef.current = renderer
+
+        // Center the view
+        renderer.centerView(spineSeedSettings.gridWidth, spineSeedSettings.gridHeight, viewWidth, viewHeight)
+      }
+
+      if (spineSeedRendererRef.current && spineSeedGenRef.current) {
+        spineSeedRendererRef.current.getContainer().visible = true
+        spineSeedRendererRef.current.render(spineSeedGenRef.current.getState(), spineSeedSettings)
+        setSpineSeedState({ ...spineSeedGenRef.current.getState() })
+      }
+    }
+  }, [generatorMode, gameMode, showMap, seedGrowthSettings, spineSeedSettings])
 
   // Handle View as Dungeon toggle
   useEffect(() => {
@@ -367,7 +494,12 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     if (!layoutRef.current) return
 
     // Use React state (has rooms) with fallback to generator state
-    const state = seedGrowthState ?? seedGrowthGenRef.current?.getState()
+    let state: any = null
+    if (generatorMode === 'organic') {
+      state = seedGrowthState ?? seedGrowthGenRef.current?.getState()
+    } else {
+      state = spineSeedState ?? spineSeedGenRef.current?.getState()
+    }
     if (!state) {
       console.log('[ViewAsDungeon] No state available')
       return
@@ -720,48 +852,55 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
       if (gameMode === 'dungeon') {
         // --- SEED GROWTH DUNGEON MODE ---
-        setLogs(['Seed Growth Dungeon initialized.'])
 
-        // Clean up previous renderer
-        if (seedGrowthRendererRef.current) {
-          seedGrowthRendererRef.current.destroy()
-          seedGrowthRendererRef.current = null
+        if (generatorMode === 'organic') {
+          setLogs(['Organic Dungeon initialized.'])
+
+          // Clean up previous renderer
+          if (seedGrowthRendererRef.current) {
+            seedGrowthRendererRef.current.destroy()
+            seedGrowthRendererRef.current = null
+          }
+
+          // Create a container for the seed growth renderer
+          const container = new Container()
+          layout.middlePanel.addChild(container)
+
+          // Initialize generator
+          const generator = new SeedGrowthGenerator(seedGrowthSettings)
+          generator.runToCompletion() // Initial generation
+          seedGrowthGenRef.current = generator
+
+          // Run room classification
+          const classifier = new RoomClassifier()
+          const { rooms, corridors, connections } = classifier.classify(
+            generator.getState(),
+            seedGrowthSettings.minRoomArea,
+            seedGrowthSettings.maxCorridorWidth,
+            seedGrowthSettings.classificationMode
+          )
+          generator.getState().rooms = rooms
+          generator.getState().corridors = corridors
+          generator.getState().connections = connections
+
+          // Initialize renderer
+          const renderer = new SeedGrowthRenderer(container)
+          renderer.setTileSize(8)
+          renderer.render(generator.getState(), seedGrowthSettings)
+          seedGrowthRendererRef.current = renderer
+
+          // Center the view on the grid
+          const viewWidth = layout.middlePanel.width || app.screen.width - 600 // Approx middle panel width
+          const viewHeight = layout.middlePanel.height || app.screen.height
+          renderer.centerView(seedGrowthSettings.gridWidth, seedGrowthSettings.gridHeight, viewWidth, viewHeight)
+
+          // Update state for UI
+          setSeedGrowthState({ ...generator.getState() })
+        } else {
+          // --- SPINE SEED MODE ---
+          setLogs(['Spine-Seed Dungeon initialized.'])
+          // Handled by Mode Switch Effect to avoid duplicates
         }
-
-        // Create a container for the seed growth renderer
-        const container = new Container()
-        layout.middlePanel.addChild(container)
-
-        // Initialize generator
-        const generator = new SeedGrowthGenerator(seedGrowthSettings)
-        generator.runToCompletion() // Initial generation
-        seedGrowthGenRef.current = generator
-
-        // Run room classification
-        const classifier = new RoomClassifier()
-        const { rooms, corridors, connections } = classifier.classify(
-          generator.getState(),
-          seedGrowthSettings.minRoomArea,
-          seedGrowthSettings.maxCorridorWidth,
-          seedGrowthSettings.classificationMode
-        )
-        generator.getState().rooms = rooms
-        generator.getState().corridors = corridors
-        generator.getState().connections = connections
-
-        // Initialize renderer
-        const renderer = new SeedGrowthRenderer(container)
-        renderer.setTileSize(8)
-        renderer.render(generator.getState(), seedGrowthSettings)
-        seedGrowthRendererRef.current = renderer
-
-        // Center the view on the grid
-        const viewWidth = layout.middlePanel.width || app.screen.width - 600 // Approx middle panel width
-        const viewHeight = layout.middlePanel.height || app.screen.height
-        renderer.centerView(seedGrowthSettings.gridWidth, seedGrowthSettings.gridHeight, viewWidth, viewHeight)
-
-        // Update state for UI
-        setSeedGrowthState({ ...generator.getState() })
 
       } else {
 
@@ -1044,6 +1183,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
     // Set Dungeon Mode
     setGameMode('dungeon')
+    setGeneratorMode('spineSeed') // Reset to default Spine mode
 
     // Default Init Config (30x30)
     setMapConfig({
@@ -1383,27 +1523,43 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                 }}
               >
                 <SeedGrowthControlPanel
+                  generatorMode={generatorMode}
+                  onGeneratorModeChange={setGeneratorMode}
                   settings={seedGrowthSettings}
                   onSettingsChange={setSeedGrowthSettings}
+                  spineSeedSettings={spineSeedSettings}
+                  onSpineSeedSettingsChange={setSpineSeedSettings}
                   onRegenerate={handleSeedGrowthRegenerate}
                   onStep={handleSeedGrowthStep}
                   onRunSteps={handleSeedGrowthRunSteps}
                   onRunToCompletion={handleSeedGrowthRunAll}
-                  tilesGrown={seedGrowthState?.tilesGrown ?? 0}
-                  stepCount={seedGrowthState?.stepCount ?? 0}
-                  isComplete={seedGrowthState?.isComplete ?? false}
-                  completionReason={seedGrowthState?.completionReason ?? null}
+                  tilesGrown={generatorMode === 'organic'
+                    ? (seedGrowthState?.tilesGrown ?? 0)
+                    : (spineSeedState?.tilesGrown ?? 0)}
+                  stepCount={generatorMode === 'organic'
+                    ? (seedGrowthState?.stepCount ?? 0)
+                    : (spineSeedState?.stepCount ?? 0)}
+                  isComplete={generatorMode === 'organic'
+                    ? (seedGrowthState?.isComplete ?? false)
+                    : (spineSeedState?.isComplete ?? false)}
+                  completionReason={generatorMode === 'organic'
+                    ? (seedGrowthState?.completionReason ?? null)
+                    : (spineSeedState?.completionReason ?? null)}
                   isAnimating={isAnimating}
                   onToggleAnimation={handleSeedGrowthToggleAnimation}
+                  spineSeedPhase={spineSeedState?.phase}
                   maskToolMode={maskToolMode}
                   onMaskToolModeChange={setMaskToolMode}
                   brushSize={brushSize}
                   onBrushSizeChange={setBrushSize}
                   onClearMask={handleClearMask}
                   blockedCount={
-                    seedGrowthState?.blocked?.flat().filter(Boolean).length ?? 0
+                    generatorMode === 'organic'
+                      ? (seedGrowthState?.blocked?.flat().filter(Boolean).length ?? 0)
+                      : (spineSeedState?.blocked?.flat().filter(Boolean).length ?? 0)
                   }
                   seedGrowthState={seedGrowthState}
+                  spineSeedState={spineSeedState}
                   viewAsDungeon={viewAsDungeon}
                   onViewAsDungeonChange={setViewAsDungeon}
                 />
@@ -1573,24 +1729,43 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         {/* --- FLOATING SEED GROWTH CONTROL PANEL --- */}
         {gameMode === 'dungeon' && seedGrowthState && (
           <SeedGrowthControlPanel
+            generatorMode={generatorMode}
+            onGeneratorModeChange={setGeneratorMode}
             settings={seedGrowthSettings}
             onSettingsChange={setSeedGrowthSettings}
+            spineSeedSettings={spineSeedSettings}
+            onSpineSeedSettingsChange={setSpineSeedSettings}
             onRegenerate={handleSeedGrowthRegenerate}
             onStep={handleSeedGrowthStep}
             onRunSteps={handleSeedGrowthRunSteps}
             onRunToCompletion={handleSeedGrowthRunAll}
-            tilesGrown={seedGrowthState.tilesGrown}
-            stepCount={seedGrowthState.stepCount}
-            isComplete={seedGrowthState.isComplete}
-            completionReason={seedGrowthState.completionReason}
+            tilesGrown={generatorMode === 'organic'
+              ? seedGrowthState.tilesGrown
+              : (spineSeedState?.tilesGrown ?? 0)}
+            stepCount={generatorMode === 'organic'
+              ? seedGrowthState.stepCount
+              : (spineSeedState?.stepCount ?? 0)}
+            isComplete={generatorMode === 'organic'
+              ? seedGrowthState.isComplete
+              : (spineSeedState?.isComplete ?? false)}
+            completionReason={generatorMode === 'organic'
+              ? seedGrowthState.completionReason
+              : (spineSeedState?.completionReason ?? null)}
             isAnimating={isAnimating}
             onToggleAnimation={handleSeedGrowthToggleAnimation}
+            spineSeedPhase={spineSeedState?.phase}
             maskToolMode={maskToolMode}
             onMaskToolModeChange={setMaskToolMode}
             brushSize={brushSize}
             onBrushSizeChange={setBrushSize}
             onClearMask={handleClearMask}
-            blockedCount={seedGrowthState.blocked.flat().filter(b => b).length}
+            blockedCount={generatorMode === 'organic'
+              ? seedGrowthState.blocked.flat().filter(b => b).length
+              : (spineSeedState?.blocked?.flat().filter(Boolean).length ?? 0)}
+            seedGrowthState={seedGrowthState}
+            spineSeedState={spineSeedState}
+            viewAsDungeon={viewAsDungeon}
+            onViewAsDungeonChange={setViewAsDungeon}
           />
         )}
 
