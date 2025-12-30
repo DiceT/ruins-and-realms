@@ -110,6 +110,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const [isAnimating, setIsAnimating] = useState(false)
   const animationFrameRef = useRef<number | null>(null)
   const [viewAsDungeon, setViewAsDungeon] = useState(false)
+  const [showRoomNumbers, setShowRoomNumbers] = useState(true)
+  const [showHeatMap, setShowHeatMap] = useState(false)
 
   // --- SPINE-SEED STATE ---
   const [spineSeedSettings, setSpineSeedSettings] = useState<SpineSeedSettings>(createDefaultSpineSeedSettings())
@@ -518,9 +520,12 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         dungeonViewRendererRef.current = dungeonRenderer
 
         // On first creation, sync from seed renderer
-        if (seedGrowthRendererRef.current) {
-          const transform = seedGrowthRendererRef.current.getTransform()
-          dungeonRenderer.syncTransform(transform.x, transform.y, transform.scale)
+        if (generatorMode === 'spineSeed' && spineSeedRendererRef.current) {
+          const t = spineSeedRendererRef.current.getTransform()
+          dungeonRenderer.syncTransform(t.x, t.y, t.scale)
+        } else if (seedGrowthRendererRef.current) {
+          const t = seedGrowthRendererRef.current.getTransform()
+          dungeonRenderer.syncTransform(t.x, t.y, t.scale)
         }
       }
 
@@ -528,23 +533,114 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       if (seedGrowthRendererRef.current) {
         seedGrowthRendererRef.current.getContainer().visible = false
       }
+      if (spineSeedRendererRef.current) {
+        spineSeedRendererRef.current.getContainer().visible = false
+      }
 
-      // Render dungeon view (preserve current transform - don't reset it)
+      // Render dungeon view
+
+      // Always update view dimensions first
       dungeonViewRendererRef.current.setViewDimensions(viewWidth, viewHeight)
-      dungeonViewRendererRef.current.render(state, seedGrowthSettings)
+
+      // Check if this is a "Toggle On" event (was hidden, now showing)
+      const isToggleOn = !dungeonViewRendererRef.current.getContainer().visible
+
+      // SYNC CAMERA from Spine Renderer (Only on toggle transition)
+      if (isToggleOn) {
+        if (generatorMode === 'spineSeed' && spineSeedRendererRef.current) {
+          const t = spineSeedRendererRef.current.getTransform()
+          dungeonViewRendererRef.current.syncTransform(t.x, t.y, t.scale)
+        } else if (seedGrowthRendererRef.current) {
+          const t = seedGrowthRendererRef.current.getTransform()
+          dungeonViewRendererRef.current.syncTransform(t.x, t.y, t.scale)
+        }
+      }
+
+      // --- ADAPTER LOGIC ---
+      if (generatorMode === 'spineSeed' && state.spineTiles) {
+        // Convert SpineSeedState to DungeonData
+        const rawSeeds = (state.roomSeeds || []) as any[]
+
+        // Prune small rooms (1x1 or 1xN)
+        const prunedRooms = rawSeeds
+          .filter(seed => seed.currentBounds.w > 1 && seed.currentBounds.h > 1)
+          .map(seed => ({
+            id: seed.id,
+            regionId: 0, // Mock
+            tiles: seed.tiles,
+            bounds: seed.currentBounds,
+            area: seed.tiles.length,
+            centroid: {
+              x: seed.currentBounds.x + Math.floor(seed.currentBounds.w / 2),
+              y: seed.currentBounds.y + Math.floor(seed.currentBounds.h / 2)
+            }
+          }))
+
+        // Pass explicit DungeonData
+        dungeonViewRendererRef.current.render({
+          gridWidth: spineSeedSettings.gridWidth,
+          gridHeight: spineSeedSettings.gridHeight,
+          rooms: prunedRooms,
+          spine: state.spineTiles, // Pass spine tiles directly
+          spineWidth: spineSeedSettings.spine.spineWidth
+        }, spineSeedSettings as any, showRoomNumbers)
+
+      } else {
+        dungeonViewRendererRef.current.render(state, seedGrowthSettings, showRoomNumbers)
+      }
+      dungeonViewRendererRef.current.setShowRoomNumbers(showRoomNumbers)
       dungeonViewRendererRef.current.getContainer().visible = true
     } else {
-      // Hide dungeon view, show seed renderer
+      // Toggle OFF logic
+      const isToggleOff = dungeonViewRendererRef.current?.getContainer().visible
+
+      // Hide dungeon view
       if (dungeonViewRendererRef.current) {
         dungeonViewRendererRef.current.getContainer().visible = false
       }
 
+      // Restore Seed Renderer
       if (seedGrowthRendererRef.current) {
         seedGrowthRendererRef.current.getContainer().visible = true
-        seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+        // Reverse Sync (Dungeon -> Organic)
+        if (isToggleOff && dungeonViewRendererRef.current) {
+          const t = dungeonViewRendererRef.current.getTransform()
+          seedGrowthRendererRef.current.syncTransform(t.x, t.y, t.scale)
+        }
+
+        if (generatorMode === 'organic') {
+          seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+        }
+      }
+
+      // Restore Spine Renderer
+      if (generatorMode === 'spineSeed' && spineSeedRendererRef.current && state) {
+        spineSeedRendererRef.current.getContainer().visible = true // FIXED: Explicitly show spine renderer
+
+        // Reverse Sync (Dungeon -> Spine)
+        if (isToggleOff && dungeonViewRendererRef.current) {
+          const t = dungeonViewRendererRef.current.getTransform()
+          spineSeedRendererRef.current.syncTransform(t.x, t.y, t.scale)
+        }
+        spineSeedRendererRef.current.render(state, spineSeedSettings)
       }
     }
-  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState])
+  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, showRoomNumbers])
+
+  // Dedicated effect for room number visibility toggle (independent of render)
+  useEffect(() => {
+    if (dungeonViewRendererRef.current) {
+      dungeonViewRendererRef.current.setShowRoomNumbers(showRoomNumbers)
+    }
+  }, [showRoomNumbers])
+
+  // Dedicated effect for heat map visibility (independent of render)
+  useEffect(() => {
+    if (dungeonViewRendererRef.current) {
+      console.log('[GameWindow] Toggling Heat Map:', showHeatMap)
+      dungeonViewRendererRef.current.setShowHeatMap(showHeatMap)
+    }
+  }, [showHeatMap])
 
   // Wire up mask paint events on Pixi container
   useEffect(() => {
@@ -1562,6 +1658,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                   spineSeedState={spineSeedState}
                   viewAsDungeon={viewAsDungeon}
                   onViewAsDungeonChange={setViewAsDungeon}
+                  showRoomNumbers={showRoomNumbers}
+                  onShowRoomNumbersChange={setShowRoomNumbers}
+                  showHeatMap={showHeatMap}
+                  onToggleHeatMap={setShowHeatMap}
                 />
               </div>
             )}
@@ -1728,6 +1828,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
         {/* --- FLOATING SEED GROWTH CONTROL PANEL --- */}
         {gameMode === 'dungeon' && seedGrowthState && (
+          // DEBUG: Log props being passed
+          (console.log('[GameWindow] Passing props:', {
+            showHeatMap,
+            hasToggleFn: !!setShowHeatMap
+          }) as any) ||
           <SeedGrowthControlPanel
             generatorMode={generatorMode}
             onGeneratorModeChange={setGeneratorMode}
@@ -1766,6 +1871,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             spineSeedState={spineSeedState}
             viewAsDungeon={viewAsDungeon}
             onViewAsDungeonChange={setViewAsDungeon}
+            showRoomNumbers={showRoomNumbers}
+            onShowRoomNumbersChange={setShowRoomNumbers}
+            showHeatMap={showHeatMap}
+            onToggleHeatMap={setShowHeatMap}
           />
         )}
 

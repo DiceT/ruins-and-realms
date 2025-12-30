@@ -276,6 +276,14 @@ export type CollisionBehavior = 'bothStop' | 'newerStops' | 'olderStops'
 
 export type SpineSeedPhase = 'spine' | 'ejection' | 'roomGrowth' | 'walls' | 'complete'
 
+export interface DungeonData {
+  gridWidth: number
+  gridHeight: number
+  rooms: Room[]
+  spine: SpineTile[]
+  spineWidth: number
+}
+
 // -----------------------------------------------------------------------------
 // Spine Growth Settings
 // -----------------------------------------------------------------------------

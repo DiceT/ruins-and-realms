@@ -660,7 +660,8 @@ export class SpineSeedGenerator {
 
       // Trim unused spine tiles (only for Normal/Organic spines)
       // For S, U, F overrides, we want to preserve the full shape even if seed count is met
-      if (!this.settings.turnOverride || this.settings.turnOverride === 'N') {
+      // UPDATE: User requests culling for ALL shapes (S, U, Fork) back to last seed.
+      if (true) {
         const unusedTiles = this.state.spineTiles.splice(this.state.ejectionIndex)
         const width = this.settings.spine.spineWidth
         const radius = Math.floor((width - 1) / 2)
@@ -1049,11 +1050,16 @@ export class SpineSeedGenerator {
         }
 
         // Buffer check: Ensure we don't touch another room (spine is OK)
+        // Check all 8 neighbors (including diagonals) to prevent corner touching
         const neighbors = [
-          { x: px + 1, y: py },
-          { x: px - 1, y: py },
-          { x: px, y: py + 1 },
-          { x: px, y: py - 1 }
+          { x: px + 1, y: py },     // East
+          { x: px - 1, y: py },     // West
+          { x: px, y: py + 1 },     // South
+          { x: px, y: py - 1 },     // North
+          { x: px + 1, y: py + 1 }, // SE
+          { x: px + 1, y: py - 1 }, // NE
+          { x: px - 1, y: py + 1 }, // SW
+          { x: px - 1, y: py - 1 }  // NW
         ]
 
         for (const n of neighbors) {

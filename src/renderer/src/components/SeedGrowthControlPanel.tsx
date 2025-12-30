@@ -6,7 +6,7 @@
  * Supports two modes: Organic (blob-based) and Spine-Seed (rectangular rooms)
  */
 
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
     SeedGrowthSettings,
     createDefaultSettings,
@@ -72,6 +72,14 @@ interface SeedGrowthControlPanelProps {
     // View as Dungeon toggle
     viewAsDungeon: boolean
     onViewAsDungeonChange: (enabled: boolean) => void
+
+    // Room number labels toggle
+    showRoomNumbers: boolean
+    onShowRoomNumbersChange: (enabled: boolean) => void
+
+    // Heat map toggle
+    showHeatMap: boolean
+    onToggleHeatMap: (enabled: boolean) => void
 }
 
 // ============================================================================
@@ -216,10 +224,43 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
     seedGrowthState,
     spineSeedState,
     viewAsDungeon,
-    onViewAsDungeonChange
+    onViewAsDungeonChange,
+    showRoomNumbers,
+    onShowRoomNumbersChange,
+    showHeatMap,
+    onToggleHeatMap
 }) => {
+    // DEBUG: Log all props to verify they are received
+    console.log('[SeedGrowthControlPanel] Props received:', {
+        hasShowHeatMap: showHeatMap !== undefined,
+        hasToggleHeatMap: !!onToggleHeatMap,
+        onToggleHeatMapType: typeof onToggleHeatMap
+    })
     const [activeTab, setActiveTab] = useState<TabId>('main')
     const [modalData, setModalData] = useState<{ title: string; data: unknown } | null>(null)
+
+    // Local state for room numbers toggle (default TRUE)
+    const [localShowRoomNumbers, setLocalShowRoomNumbers] = useState(true)
+
+    // Local state for heat map toggle (default FALSE)
+    const [localShowHeatMap, setLocalShowHeatMap] = useState(false)
+
+    // Sync local state to parent callback when it changes
+    useEffect(() => {
+        if (typeof onShowRoomNumbersChange === 'function') {
+            onShowRoomNumbersChange(localShowRoomNumbers)
+        }
+    }, [localShowRoomNumbers, onShowRoomNumbersChange])
+
+    // Sync heat map state to parent
+    useEffect(() => {
+        if (typeof onToggleHeatMap === 'function') {
+            console.log('[SeedGrowthControlPanel] Syncing heat map:', localShowHeatMap)
+            onToggleHeatMap(localShowHeatMap)
+        } else {
+            console.warn('[SeedGrowthControlPanel] onToggleHeatMap is not a function!', onToggleHeatMap)
+        }
+    }, [localShowHeatMap, onToggleHeatMap])
 
     // Debounced settings update
     const debounceRef = useRef<NodeJS.Timeout | null>(null)
@@ -844,28 +885,20 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
         <div style={sectionStyle}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <label style={checkboxLabelStyle}>
-                    <input type="checkbox" checked={settings.debug.showRegions} onChange={(e) => updateDebug('showRegions', e.target.checked)} />
-                    Show Regions
+                    <input
+                        type="checkbox"
+                        checked={localShowRoomNumbers}
+                        onChange={(e) => setLocalShowRoomNumbers(e.target.checked)}
+                    />
+                    View Room Numbers
                 </label>
                 <label style={checkboxLabelStyle}>
-                    <input type="checkbox" checked={settings.debug.showFrontier} onChange={(e) => updateDebug('showFrontier', e.target.checked)} />
-                    Show Frontier
-                </label>
-                <label style={checkboxLabelStyle}>
-                    <input type="checkbox" checked={settings.debug.showSymmetryAxis} onChange={(e) => updateDebug('showSymmetryAxis', e.target.checked)} />
-                    Show Symmetry Axis
-                </label>
-                <label style={checkboxLabelStyle}>
-                    <input type="checkbox" checked={settings.debug.showRoomBounds} onChange={(e) => updateDebug('showRoomBounds', e.target.checked)} />
-                    Show Room Bounds
-                </label>
-                <label style={checkboxLabelStyle}>
-                    <input type="checkbox" checked={settings.debug.showCorridors} onChange={(e) => updateDebug('showCorridors', e.target.checked)} />
-                    Show Corridors
-                </label>
-                <label style={checkboxLabelStyle}>
-                    <input type="checkbox" checked={settings.debug.showGrowthOrder} onChange={(e) => updateDebug('showGrowthOrder', e.target.checked)} />
-                    Show Growth Heatmap
+                    <input
+                        type="checkbox"
+                        checked={localShowHeatMap}
+                        onChange={(e) => setLocalShowHeatMap(e.target.checked)}
+                    />
+                    Show Heat Map
                 </label>
             </div>
         </div>

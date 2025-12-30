@@ -1025,4 +1025,314 @@ export class CorridorPathfinder {
     }
     return path.reverse()
   }
+
+  /**
+   * COST CONSTANTS for Tributary System
+   */
+  private readonly COST_VOID = 10
+  private readonly COST_EXISTING_FLOOR = 1
+  private readonly COST_NOISE_MAX = 5 // Random 0-5
+  private readonly SPINE_GRADIENT_FACTOR = 0.5 // Cost per index distance from spine start
+
+  /**
+   * New Pathfinding Method: Tributary System
+   * Connects rooms to the Spine (or existing corridors) using intelligence + organic noise
+   */
+  public generateSpineCorridors(
+    width: number,
+    height: number,
+    rooms: Room[], 
+    spineTiles: {x: number, y: number}[],
+    heatMap: Map<string, number>,
+    targetSet: Set<string>,   // Full Spine Tiles (Goal)
+    blockedSet: Set<string>   // Room Floor Tiles (Avoid)
+  ): { x: number; y: number }[] {
+    if (rooms.length === 0 || spineTiles.length === 0) return []
+
+    this.width = width
+    this.height = height
+    
+    // Normalize targetSet (Full Spine)
+    const connectedSet = new Set<string>(targetSet)
+
+    // Spine Gradient Map: Distance from start (Index)
+    const spineIndexMap = new Map<string, number>()
+    spineTiles.forEach((t, i) => spineIndexMap.set(`${t.x},${t.y}`, i))
+
+    // Pre-calculate per-tile noise
+    const noiseMap = new Map<string, number>()
+    
+    const newCorridors: { x: number; y: number }[] = []
+
+    // 1. Sort Rooms
+    const sortedRooms = [...rooms].sort((a, b) => b.id.localeCompare(a.id))
+
+    // 2. Iterate Rooms
+    // Pre-calculate target goal (spine center or nearest point)
+    // Optimization: Just use simplest approach -> Closest point in target set to Room Center?
+    // Actually, we pass heatMap. We can add a "Distance Score" to the heat map? No.
+    // In findBestRoomExit, we check candidates.
+    // We should compute "Dist to Spine" for candidates.
+    
+    // Build a quick lookup for spine tiles? We have spineIndexMap (distance to start).
+    // We want distance to ANY connected tile.
+    // That is expensive to check for every wall tile (dist to set).
+    // Heuristic: Center of Spine? Or simple "Distance to Center of Map" (if spine is central)?
+    // Better: Room Center to Nearest Spine Tile. Use that Spine Tile as attractor.
+    
+    // Find nearest spine tile for each room
+    const roomAttractors = new Map<string, GridCoord>()
+    const spineArr = Array.from(spineTiles) // {x,y}
+    
+    for (const room of sortedRooms) {
+        let minDist = Infinity
+        let bestT = spineTiles[0]
+        const rx = room.bounds.x + room.bounds.w/2
+        const ry = room.bounds.y + room.bounds.h/2
+        
+        for (const t of spineTiles) {
+            const d = Math.abs(t.x - rx) + Math.abs(t.y - ry)
+            if (d < minDist) {
+                minDist = d
+                bestT = t
+            }
+        }
+        roomAttractors.set(room.id, bestT)
+    }
+
+    for (const room of sortedRooms) {
+      const attractor = roomAttractors.get(room.id) || {x: this.width/2, y: this.height/2}
+      
+      // Find best start point on room wall
+      // Pass attractor to break ties
+      const startPoint = this.findBestRoomExit(room, heatMap, blockedSet, attractor)
+      if (!startPoint) continue
+
+      // Start A*
+      const path = this.findPathToNetwork(
+        startPoint,
+        connectedSet,
+        blockedSet,
+        heatMap,
+        spineIndexMap,
+        noiseMap
+      )
+
+      if (path.length > 0) {
+        for (const p of path) {
+            const key = `${p.x},${p.y}`
+            if (!connectedSet.has(key) && !blockedSet.has(key)) {
+                connectedSet.add(key)
+                newCorridors.push(p)
+            }
+        }
+      }
+    }
+
+    // 3. Post-Process: Prune Stubs (Recursive)
+    // A stub is a generated corridor tile with <= 1 connections (to rooms/targets/other corridors).
+    // Valid tiles must connect two things (>=2 neighbors).
+    
+    let pruning = true
+    while (pruning) {
+        pruning = false
+        const toRemove = new Set<number>()
+        
+        // Build efficient lookup for current corridors
+        const corridorSet = new Set<string>()
+        newCorridors.forEach(c => corridorSet.add(`${c.x},${c.y}`))
+
+        for (let i = 0; i < newCorridors.length; i++) {
+            const c = newCorridors[i]
+            // Skip already marked
+            // (We handle removal after loop, or splice carefully. Splicing is expensive inside loop.
+            // Using filter approach is better.)
+            
+            // Check neighbors
+            let connections = 0
+            const dirs = [{x:0, y:1}, {x:0, y:-1}, {x:1, y:0}, {x:-1, y:0}]
+            
+            for (const d of dirs) {
+                const nx = c.x + d.x, ny = c.y + d.y
+                const nKey = `${nx},${ny}`
+                
+                // Neighbor is valid if it is:
+                // A. Another Generated Corridor Tile
+                // B. A Target Tile (Spine/Network)
+                // C. A Blocked Tile (Room Floor)
+                
+                if (corridorSet.has(nKey) || targetSet.has(nKey) || blockedSet.has(nKey)) {
+                    connections++
+                }
+            }
+            
+            if (connections <= 1) {
+                // It's a stub or dead end.
+                // Note: Even a room exit needs >1 connection (1 to room, 1 to corridor).
+                // If it has 1 (to room), it goes nowhere.
+                toRemove.add(i)
+                pruning = true
+            }
+        }
+        
+        if (pruning) {
+            // Rebuild array without pruned tiles
+            // This is safer than splicing downwards
+            const nextCorridors: {x:number, y:number}[] = []
+            for (let i = 0; i < newCorridors.length; i++) {
+                if (!toRemove.has(i)) {
+                    nextCorridors.push(newCorridors[i])
+                }
+            }
+            // Update reference
+            if (nextCorridors.length === newCorridors.length) break // Safety
+            
+            // Clear current array and refill (to keep const ref if needed, or just reassign)
+            // Reassigning newCorridors is fine locally but we need to update 'connectedSet' for next pass?
+            // Actually 'connectedSet' contains targetSet too.
+            // We should remove pruned tiles from connectedSet?
+            // connectedSet was used FOR pathfinding. Post-processing doesn't need to update it unless we loop pathfinding.
+            // But the stub check relies on `corridorSet` which is rebuilt from `newCorridors`.
+            // So we just update `newCorridors`.
+            
+            newCorridors.length = 0
+            newCorridors.push(...nextCorridors)
+        }
+    }
+
+    return newCorridors
+  }
+
+  /**
+   * Find the lowest cost wall tile to exit from.
+   * Uses HeatMap score (Walls/Edges) + Distance to Attractor (Spine) to influence choice
+   */
+  private findBestRoomExit(
+    room: Room, 
+    heatMap: Map<string, number>, 
+    blockedSet: Set<string>,
+    attractor: GridCoord
+  ): GridCoord | null {
+    let bestSpot: GridCoord | null = null
+    let minScore = Infinity
+
+    const { x, y, w, h } = room.bounds
+    const checkObj = { bestSpot, minScore }
+    
+    // Helper to calculate total score
+    const calc = (tx: number, ty: number) => {
+         const key = `${tx},${ty}`
+         if (blockedSet.has(key)) return
+         
+         let score = heatMap.get(key)
+         if (score === undefined || score >= 100) return
+         
+         // Add Heuristic Score: Distance to Attractor * Factor
+         // Factor should be small enough not to override Wall vs Corner logic (which is ~5-10 diff)
+         // Dist is usually 0-50. 
+         // Factor 0.5: Dist 20 -> +10 cost.
+         const dist = (Math.abs(tx - attractor.x) + Math.abs(ty - attractor.y)) * 0.2
+         score += dist
+         
+         if (score < checkObj.minScore) {
+            checkObj.minScore = score
+            checkObj.bestSpot = {x: tx, y: ty}
+         }
+    }
+    
+    // Check all perimeter positions
+    for (let dx=0; dx<w; dx++) calc(x+dx, y-1)
+    for (let dx=0; dx<w; dx++) calc(x+dx, y+h)
+    for (let dy=0; dy<h; dy++) calc(x-1, y+dy)
+    for (let dy=0; dy<h; dy++) calc(x+w, y+dy)
+
+    return checkObj.bestSpot
+  }
+  
+  // Clean up unused checkExitCandidate if replaced
+  private unused_check() {}
+
+  /**
+   * A* Pathfinding to any tile in connectedSet
+   */
+  private findPathToNetwork(
+    start: GridCoord, 
+    connectedSet: Set<string>, 
+    blockedSet: Set<string>,
+    heatMap: Map<string, number>,
+    spineIndexMap: Map<string, number>,
+    noiseMap: Map<string, number>
+  ): GridCoord[] {
+    const openSet: PathNode[] = []
+    const closedSet = new Set<string>()
+    
+    const startKey = `${start.x},${start.y}`
+    if (blockedSet.has(startKey)) return [] // Should not happen due to exit check
+
+    openSet.push({ x: start.x, y: start.y, dir: null, g: 0, h: 0, parent: null })
+
+    while (openSet.length > 0) {
+        openSet.sort((a, b) => a.g - b.g)
+        const current = openSet.shift()!
+        const key = `${current.x},${current.y}`
+
+        if (closedSet.has(key)) continue
+        closedSet.add(key)
+
+        if (connectedSet.has(key)) {
+            return this.reconstructPath(current)
+        }
+        
+        const dirs: Direction[] = ['north', 'south', 'east', 'west']
+        for (const dir of dirs) {
+            const nextX = current.x + DIR_OFFSETS[dir].dx
+            const nextY = current.y + DIR_OFFSETS[dir].dy
+            
+            if (!this.inBounds(nextX, nextY)) continue
+            
+            const nextKey = `${nextX},${nextY}`
+            if (closedSet.has(nextKey)) continue
+            // Removed strict blockedSet check
+            
+            let moveCost = this.COST_VOID
+            const heatVal = heatMap.get(nextKey)
+            
+            if (connectedSet.has(nextKey)) {
+                // Goal or Existing Corridor -> Cheap
+                moveCost = this.COST_EXISTING_FLOOR
+            } else if (blockedSet.has(nextKey)) {
+                // Room Traversal -> Medium Cost (encourages going around unless far)
+                moveCost = 5 
+            } else if (heatVal !== undefined) {
+                // Wall/Constraint (Heat can be negative bonus now)
+                // Base 30 + Heat. (-20 -> 10, -10 -> 20, 0 -> 30, +100 -> 130)
+                moveCost = 30 + heatVal
+                if (moveCost < 1) moveCost = 1
+            } else {
+                if (!noiseMap.has(nextKey)) {
+                    noiseMap.set(nextKey, Math.floor(Math.random() * this.COST_NOISE_MAX))
+                }
+                moveCost += noiseMap.get(nextKey)!
+            }
+            
+            if (spineIndexMap.has(nextKey)) {
+                const idx = spineIndexMap.get(nextKey)!
+                moveCost += idx * this.SPINE_GRADIENT_FACTOR
+            }
+            
+            const newG = current.g + moveCost
+            
+            const existing = openSet.find(n => n.x === nextX && n.y === nextY)
+            if (existing) {
+                if (newG < existing.g) {
+                    existing.g = newG
+                    existing.parent = current
+                }
+            } else {
+                openSet.push({ x: nextX, y: nextY, dir: null, g: newG, h: 0, parent: current })
+            }
+        }
+    }
+    return []
+  }
 }
