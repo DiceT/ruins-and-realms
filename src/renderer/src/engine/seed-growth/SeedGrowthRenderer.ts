@@ -37,14 +37,23 @@ export class SeedGrowthRenderer {
   private readonly minZoom = 0.25
   private readonly maxZoom = 4.0
   
+  // View dimensions for center-based zoom
+  private viewWidth: number = 800
+  private viewHeight: number = 600
+  
   // Graphics layers
   private gridLayer: Graphics
+  private maskLayer: Graphics
   private regionLayer: Graphics
+  private corridorLayer: Graphics
   private frontierLayer: Graphics
   private roomBoundsLayer: Graphics
-  private corridorLayer: Graphics
   private symmetryLayer: Graphics
+  private gridLineLayer: Graphics // Constant-width grid lines
   private statusText: Text
+
+  // Grid line state
+  private floorPositions: Set<string> = new Set()
 
   constructor(parentContainer: Container) {
     this.container = new Container()
@@ -57,18 +66,22 @@ export class SeedGrowthRenderer {
 
     // Create layers in order (bottom to top)
     this.gridLayer = new Graphics()
+    this.maskLayer = new Graphics()
     this.regionLayer = new Graphics()
     this.corridorLayer = new Graphics()
     this.frontierLayer = new Graphics()
     this.roomBoundsLayer = new Graphics()
     this.symmetryLayer = new Graphics()
+    this.gridLineLayer = new Graphics()
     
     this.contentContainer.addChild(this.gridLayer)
+    this.contentContainer.addChild(this.maskLayer)
     this.contentContainer.addChild(this.regionLayer)
     this.contentContainer.addChild(this.corridorLayer)
     this.contentContainer.addChild(this.frontierLayer)
     this.contentContainer.addChild(this.roomBoundsLayer)
     this.contentContainer.addChild(this.symmetryLayer)
+    this.contentContainer.addChild(this.gridLineLayer)
 
     // Status text (fixed position, not affected by pan/zoom)
     const style = new TextStyle({
@@ -89,9 +102,9 @@ export class SeedGrowthRenderer {
     // Hit area for the container (so we can receive events)
     this.container.hitArea = { contains: () => true }
     
-    // Pan: mouse/touch drag
+    // Pan: right mouse or middle mouse drag (LMB reserved for painting)
     this.container.on('pointerdown', (e: FederatedPointerEvent) => {
-      if (e.button === 0 || e.button === 1) { // Left or middle mouse
+      if (e.button === 2 || e.button === 1) { // Right or middle mouse
         this.isPanning = true
         this.lastPanPos = { x: e.globalX, y: e.globalY }
       }
@@ -115,26 +128,29 @@ export class SeedGrowthRenderer {
       this.isPanning = false
     })
 
-    // Zoom: mouse wheel
+    // Zoom: mouse wheel - zoom towards VIEW CENTER (not mouse position)
     this.container.on('wheel', (e: WheelEvent) => {
       e.preventDefault()
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1
       const newZoom = Math.min(this.maxZoom, Math.max(this.minZoom, this.zoom * zoomFactor))
       
       if (newZoom !== this.zoom) {
-        // Zoom towards mouse position
-        const mouseX = e.offsetX
-        const mouseY = e.offsetY
+        // Zoom towards view center (not mouse position) to avoid sliding
+        const centerX = this.viewWidth / 2
+        const centerY = this.viewHeight / 2
         
-        const beforeZoomX = (mouseX - this.contentContainer.x) / this.zoom
-        const beforeZoomY = (mouseY - this.contentContainer.y) / this.zoom
+        const beforeZoomX = (centerX - this.contentContainer.x) / this.zoom
+        const beforeZoomY = (centerY - this.contentContainer.y) / this.zoom
         
         this.zoom = newZoom
         this.contentContainer.scale.set(this.zoom)
         
-        // Adjust position to keep mouse position stable
-        this.contentContainer.x = mouseX - beforeZoomX * this.zoom
-        this.contentContainer.y = mouseY - beforeZoomY * this.zoom
+        // Adjust position to keep view center stable
+        this.contentContainer.x = centerX - beforeZoomX * this.zoom
+        this.contentContainer.y = centerY - beforeZoomY * this.zoom
+
+        // Update grid lines to maintain constant screen-space width
+        this.updateGridLines()
       }
     })
   }
@@ -151,6 +167,10 @@ export class SeedGrowthRenderer {
 
   /** Center the view on the grid */
   public centerView(gridWidth: number, gridHeight: number, viewWidth: number, viewHeight: number): void {
+    // Store view dimensions for center-based zoom
+    this.viewWidth = viewWidth
+    this.viewHeight = viewHeight
+    
     const contentWidth = gridWidth * this.tileSize * this.zoom
     const contentHeight = gridHeight * this.tileSize * this.zoom
     
@@ -163,6 +183,69 @@ export class SeedGrowthRenderer {
     this.zoom = 1.0
     this.contentContainer.scale.set(1.0)
     this.centerView(gridWidth, gridHeight, viewWidth, viewHeight)
+  }
+
+  /** Get current transform for syncing to another renderer */
+  public getTransform(): { x: number; y: number; scale: number } {
+    return {
+      x: this.contentContainer.x,
+      y: this.contentContainer.y,
+      scale: this.zoom
+    }
+  }
+
+  /** Sync position and zoom from another renderer */
+  public syncTransform(x: number, y: number, scale: number): void {
+    this.contentContainer.x = x
+    this.contentContainer.y = y
+    this.zoom = scale
+    this.contentContainer.scale.set(scale)
+  }
+
+  /** Convert screen coordinates (relative to Pixi canvas) to grid coordinates */
+  public screenToGrid(screenX: number, screenY: number): { x: number; y: number } | null {
+    // Use Pixi's toLocal to properly handle the full transform chain
+    const local = this.contentContainer.toLocal({ x: screenX, y: screenY })
+    
+    const gridX = Math.floor(local.x / this.tileSize)
+    const gridY = Math.floor(local.y / this.tileSize)
+    
+    return { x: gridX, y: gridY }
+  }
+
+  /** Paint or erase tiles with given brush size */
+  public paintTile(
+    state: SeedGrowthState, 
+    gridX: number, 
+    gridY: number, 
+    brushSize: number, 
+    isErase: boolean,
+    gridWidth: number,
+    gridHeight: number
+  ): boolean {
+    let changed = false
+    const halfBrush = Math.floor(brushSize / 2)
+    
+    for (let dy = -halfBrush; dy < brushSize - halfBrush; dy++) {
+      for (let dx = -halfBrush; dx < brushSize - halfBrush; dx++) {
+        const tx = gridX + dx
+        const ty = gridY + dy
+        
+        if (tx >= 0 && tx < gridWidth && ty >= 0 && ty < gridHeight) {
+          const newValue = !isErase
+          if (state.blocked[ty][tx] !== newValue) {
+            state.blocked[ty][tx] = newValue
+            changed = true
+          }
+        }
+      }
+    }
+    
+    if (changed) {
+      state.maskVersion++
+    }
+    
+    return changed
   }
 
   /** Full render of current state */
@@ -190,17 +273,23 @@ export class SeedGrowthRenderer {
       this.renderSymmetryAxis(settings)
     }
 
+    if (settings.debug.showMask) {
+      this.renderMask(state, settings)
+    }
+
     this.renderStatus(state, settings)
   }
 
   /** Clear all layers */
   public clear(): void {
     this.gridLayer.clear()
+    this.maskLayer.clear()
     this.regionLayer.clear()
     this.frontierLayer.clear()
     this.roomBoundsLayer.clear()
     this.corridorLayer.clear()
     this.symmetryLayer.clear()
+    this.gridLineLayer.clear()
   }
 
   /** Render base grid (floor and empty tiles) */
@@ -212,13 +301,18 @@ export class SeedGrowthRenderer {
     this.gridLayer.rect(0, 0, gridWidth * size, gridHeight * size)
     this.gridLayer.fill({ color: 0x1a1a1a })
 
-    // Floor tiles
+    // Build and store set of floor positions for grid line logic
+    this.floorPositions.clear()
+
+    // Floor tiles (full size, no gaps)
     for (let y = 0; y < gridHeight; y++) {
       for (let x = 0; x < gridWidth; x++) {
         const tile = state.grid[y]?.[x]
         if (!tile) continue
 
         if (tile.state === 'floor') {
+          this.floorPositions.add(`${x},${y}`)
+          
           // Base floor color
           let color = 0x3a3a3a
 
@@ -228,9 +322,45 @@ export class SeedGrowthRenderer {
             color = this.heatmapColor(t)
           }
 
-          this.gridLayer.rect(x * size, y * size, size - 1, size - 1)
+          this.gridLayer.rect(x * size, y * size, size, size)
           this.gridLayer.fill({ color })
         }
+      }
+    }
+    
+    // Draw grid lines
+    this.updateGridLines()
+  }
+
+  /**
+   * Update grid lines with constant 1-screen-pixel width
+   * Called after zoom changes to maintain constant visual weight
+   */
+  private updateGridLines(): void {
+    this.gridLineLayer.clear()
+    
+    const size = this.tileSize
+    const gridColor = 0x666666
+    const gridAlpha = 0.5
+    
+    // Line width in world space = 1 screen pixel / zoom
+    const lineWidth = 1 / this.zoom
+    
+    for (const key of this.floorPositions) {
+      const [x, y] = key.split(',').map(Number)
+      const px = x * size
+      const py = y * size
+      
+      // Right edge - only draw if there's a floor tile to the right
+      if (this.floorPositions.has(`${x + 1},${y}`)) {
+        this.gridLineLayer.rect(px + size - lineWidth, py, lineWidth, size)
+        this.gridLineLayer.fill({ color: gridColor, alpha: gridAlpha })
+      }
+      
+      // Bottom edge - only draw if there's a floor tile below
+      if (this.floorPositions.has(`${x},${y + 1}`)) {
+        this.gridLineLayer.rect(px, py + size - lineWidth, size, lineWidth)
+        this.gridLineLayer.fill({ color: gridColor, alpha: gridAlpha })
       }
     }
   }
@@ -327,6 +457,23 @@ export class SeedGrowthRenderer {
       `Status: ${state.completionReason}`
     ]
     this.statusText.text = lines.join('\n')
+  }
+
+  /** Render blocked mask overlay */
+  private renderMask(state: SeedGrowthState, settings: SeedGrowthSettings): void {
+    const { gridWidth, gridHeight } = settings
+    const size = this.tileSize
+    const blockedColor = 0x1a1a2e // Dark rocky color
+    const blockedAlpha = 0.85
+
+    for (let y = 0; y < gridHeight; y++) {
+      for (let x = 0; x < gridWidth; x++) {
+        if (state.blocked[y]?.[x]) {
+          this.maskLayer.rect(x * size, y * size, size, size)
+            .fill({ color: blockedColor, alpha: blockedAlpha })
+        }
+      }
+    }
   }
 
   /** Convert 0-1 value to heatmap color */

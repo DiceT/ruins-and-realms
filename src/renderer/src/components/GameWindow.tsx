@@ -22,7 +22,7 @@ import diceLanding from '../assets/images/ui/dice-landing.png'
 import flairOverlay from '../assets/images/overland-tiles/flair_empty_0.png'
 
 // Seed Growth System
-import { SeedGrowthGenerator, SeedGrowthRenderer, RoomClassifier, SeedGrowthSettings, SeedGrowthState, createDefaultSettings } from '../engine/seed-growth'
+import { SeedGrowthGenerator, SeedGrowthRenderer, DungeonViewRenderer, RoomClassifier, CorridorPathfinder, SeedGrowthSettings, SeedGrowthState, createDefaultSettings, MaskToolMode } from '../engine/seed-growth'
 import { SeedGrowthControlPanel } from './SeedGrowthControlPanel'
 import { Container } from 'pixi.js'
 
@@ -84,11 +84,18 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
   // --- SEED GROWTH STATE ---
   const [seedGrowthSettings, setSeedGrowthSettings] = useState<SeedGrowthSettings>(createDefaultSettings())
+  const seedGrowthSettingsRef = useRef(seedGrowthSettings)
   const seedGrowthGenRef = useRef<SeedGrowthGenerator | null>(null)
   const seedGrowthRendererRef = useRef<SeedGrowthRenderer | null>(null)
+  const dungeonViewRendererRef = useRef<DungeonViewRenderer | null>(null)
   const [seedGrowthState, setSeedGrowthState] = useState<SeedGrowthState | null>(null)
   const [isAnimating, setIsAnimating] = useState(false)
   const animationFrameRef = useRef<number | null>(null)
+  const [viewAsDungeon, setViewAsDungeon] = useState(false)
+
+  // Mask Tool State
+  const [maskToolMode, setMaskToolMode] = useState<MaskToolMode>('off')
+  const [brushSize, setBrushSize] = useState(1)
 
   // Rolling State
   const [isRolling, setIsRolling] = useState(false)
@@ -135,13 +142,50 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     overworldStepRef.current = overworldStep
   }, [gameMode, overworldStep])
 
+  // Keep seedGrowthSettingsRef in sync
+  useEffect(() => {
+    seedGrowthSettingsRef.current = seedGrowthSettings
+  }, [seedGrowthSettings])
+
   const addLog = (msg: string): void => {
     setLogs((prev) => [msg, ...prev.slice(0, 9)]) // Keep last 10 logs
   }
 
   // --- SEED GROWTH CALLBACKS ---
+  const processSeedGrowthComplete = useCallback((state: SeedGrowthState) => {
+    const classifier = new RoomClassifier()
+    const { rooms, connections } = classifier.classify(
+      state,
+      seedGrowthSettings.minRoomArea,
+      seedGrowthSettings.maxCorridorWidth,
+      seedGrowthSettings.classificationMode
+    )
+
+    // Replace raw corridors with high-fidelity pathfound corridors
+    const pathfinder = new CorridorPathfinder()
+    const corridorTiles = pathfinder.generate(state, rooms)
+
+    // Update state
+    state.rooms = rooms
+    state.connections = connections
+    state.corridors = [{ id: 'pathfound_corridors', regionId: 0, tiles: corridorTiles }]
+
+    // Update the actual grid tiles to reflect corridor status for rendering/debug
+    state.grid.forEach(row => row.forEach(tile => {
+      if (tile.isCorridor) tile.isCorridor = false
+    }))
+    corridorTiles.forEach(pos => {
+      if (state.grid[pos.y]?.[pos.x]) {
+        state.grid[pos.y][pos.x].isCorridor = true
+      }
+    })
+  }, [seedGrowthSettings])
+
   const handleSeedGrowthRegenerate = useCallback(() => {
     if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+
+    // Use ref for latest settings to avoid stale closure
+    const currentSettings = seedGrowthSettingsRef.current
 
     // Stop animation if running
     if (animationFrameRef.current) {
@@ -150,8 +194,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       setIsAnimating(false)
     }
 
-    // Reset generator
-    seedGrowthGenRef.current.reset(seedGrowthSettings)
+    // Reset generator but preserve the blocked mask
+    seedGrowthGenRef.current.reset(currentSettings, true)
 
     // Async chunked execution to prevent UI lockup
     const runChunk = () => {
@@ -159,26 +203,17 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
       const state = seedGrowthGenRef.current.getState()
       if (state.isComplete) {
-        // Run classification when complete
-        const classifier = new RoomClassifier()
-        const { rooms, corridors, connections } = classifier.classify(
-          state,
-          seedGrowthSettings.minRoomArea,
-          seedGrowthSettings.maxCorridorWidth,
-          seedGrowthSettings.classificationMode
-        )
-        state.rooms = rooms
-        state.corridors = corridors
-        state.connections = connections
+        // Run classification and pathfinding when complete
+        processSeedGrowthComplete(state)
 
-        seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+        seedGrowthRendererRef.current.render(state, currentSettings)
         setSeedGrowthState({ ...state })
         return // Done!
       }
 
       // Run 100 steps per frame
       seedGrowthGenRef.current.runSteps(100)
-      seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
+      seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), currentSettings)
       setSeedGrowthState({ ...seedGrowthGenRef.current.getState() })
 
       // Schedule next chunk
@@ -186,7 +221,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     }
 
     runChunk()
-  }, [seedGrowthSettings])
+  }, []) // No dependencies - uses ref for latest settings
 
   const handleSeedGrowthStep = useCallback(() => {
     if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
@@ -205,18 +240,9 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
     seedGrowthGenRef.current.runSteps(n)
 
-    // Run classification after steps
+    // Run classification and pathfinding after steps
     if (seedGrowthGenRef.current.getState().isComplete) {
-      const classifier = new RoomClassifier()
-      const { rooms, corridors, connections } = classifier.classify(
-        seedGrowthGenRef.current.getState(),
-        seedGrowthSettings.minRoomArea,
-        seedGrowthSettings.maxCorridorWidth,
-        seedGrowthSettings.classificationMode
-      )
-      seedGrowthGenRef.current.getState().rooms = rooms
-      seedGrowthGenRef.current.getState().corridors = corridors
-      seedGrowthGenRef.current.getState().connections = connections
+      processSeedGrowthComplete(seedGrowthGenRef.current.getState())
     }
 
     seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
@@ -232,17 +258,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
       const state = seedGrowthGenRef.current.getState()
       if (state.isComplete) {
-        // Run classification when complete
-        const classifier = new RoomClassifier()
-        const { rooms, corridors, connections } = classifier.classify(
-          state,
-          seedGrowthSettings.minRoomArea,
-          seedGrowthSettings.maxCorridorWidth,
-          seedGrowthSettings.classificationMode
-        )
-        state.rooms = rooms
-        state.corridors = corridors
-        state.connections = connections
+        // Run classification and pathfinding when complete
+        processSeedGrowthComplete(state)
 
         seedGrowthRendererRef.current.render(state, seedGrowthSettings)
         setSeedGrowthState({ ...state })
@@ -277,17 +294,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         const state = seedGrowthGenRef.current.getState()
         if (state.isComplete) {
           setIsAnimating(false)
-          // Run classification on complete
-          const classifier = new RoomClassifier()
-          const { rooms, corridors, connections } = classifier.classify(
-            state,
-            seedGrowthSettings.minRoomArea,
-            seedGrowthSettings.maxCorridorWidth,
-            seedGrowthSettings.classificationMode
-          )
-          state.rooms = rooms
-          state.corridors = corridors
-          state.connections = connections
+          // Run classification and pathfinding on complete
+          processSeedGrowthComplete(state)
           seedGrowthRendererRef.current.render(state, seedGrowthSettings)
           setSeedGrowthState({ ...state })
           return
@@ -301,12 +309,152 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     }
   }, [isAnimating, seedGrowthSettings])
 
+  const handleClearMask = useCallback(() => {
+    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+    const state = seedGrowthGenRef.current.getState()
+    // Clear all blocked cells
+    for (let y = 0; y < state.blocked.length; y++) {
+      for (let x = 0; x < state.blocked[y].length; x++) {
+        state.blocked[y][x] = false
+      }
+    }
+    state.maskVersion++
+    seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+    setSeedGrowthState({ ...state })
+  }, [seedGrowthSettings])
+
+  // Paint stroke state
+  const isPaintingRef = useRef(false)
+
+  const handleMaskPaint = useCallback((screenX: number, screenY: number) => {
+    if (maskToolMode === 'off') return
+    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
+
+    const gridPos = seedGrowthRendererRef.current.screenToGrid(screenX, screenY)
+    if (!gridPos) return
+
+    const state = seedGrowthGenRef.current.getState()
+    const isErase = maskToolMode === 'erase'
+
+    const changed = seedGrowthRendererRef.current.paintTile(
+      state,
+      gridPos.x,
+      gridPos.y,
+      brushSize,
+      isErase,
+      seedGrowthSettings.gridWidth,
+      seedGrowthSettings.gridHeight
+    )
+
+    if (changed) {
+      seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+      setSeedGrowthState({ ...state })
+    }
+  }, [maskToolMode, brushSize, seedGrowthSettings])
+
   // Re-render when debug settings change
   useEffect(() => {
     if (seedGrowthGenRef.current && seedGrowthRendererRef.current && gameMode === 'dungeon') {
       seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
     }
   }, [seedGrowthSettings.debug, gameMode])
+
+  // Handle View as Dungeon toggle
+  useEffect(() => {
+    console.log('[ViewAsDungeon] Effect triggered:', { viewAsDungeon, gameMode, showMap, hasState: !!seedGrowthState })
+
+    if (gameMode !== 'dungeon' || !showMap) return
+    if (!layoutRef.current) return
+
+    // Use React state (has rooms) with fallback to generator state
+    const state = seedGrowthState ?? seedGrowthGenRef.current?.getState()
+    if (!state) {
+      console.log('[ViewAsDungeon] No state available')
+      return
+    }
+
+    console.log('[ViewAsDungeon] State has rooms:', state.rooms?.length ?? 0)
+
+    const layout = layoutRef.current
+    const viewWidth = layout.middlePanel.width || 800
+    const viewHeight = layout.middlePanel.height || 600
+
+    if (viewAsDungeon) {
+      // Create dungeon view renderer if it doesn't exist
+      if (!dungeonViewRendererRef.current) {
+        const dungeonRenderer = new DungeonViewRenderer(layout.middlePanel)
+        dungeonViewRendererRef.current = dungeonRenderer
+
+        // On first creation, sync from seed renderer
+        if (seedGrowthRendererRef.current) {
+          const transform = seedGrowthRendererRef.current.getTransform()
+          dungeonRenderer.syncTransform(transform.x, transform.y, transform.scale)
+        }
+      }
+
+      // Hide seed renderer, show dungeon view
+      if (seedGrowthRendererRef.current) {
+        seedGrowthRendererRef.current.getContainer().visible = false
+      }
+
+      // Render dungeon view (preserve current transform - don't reset it)
+      dungeonViewRendererRef.current.setViewDimensions(viewWidth, viewHeight)
+      dungeonViewRendererRef.current.render(state, seedGrowthSettings)
+      dungeonViewRendererRef.current.getContainer().visible = true
+    } else {
+      // Hide dungeon view, show seed renderer
+      if (dungeonViewRendererRef.current) {
+        dungeonViewRendererRef.current.getContainer().visible = false
+      }
+
+      if (seedGrowthRendererRef.current) {
+        seedGrowthRendererRef.current.getContainer().visible = true
+        seedGrowthRendererRef.current.render(state, seedGrowthSettings)
+      }
+    }
+  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState])
+
+  // Wire up mask paint events on Pixi container
+  useEffect(() => {
+    if (maskToolMode === 'off' || gameMode !== 'dungeon') return
+
+    const container = pixiContainerRef.current
+    if (!container) return
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return // Left click only
+      isPaintingRef.current = true
+      // Get position relative to container
+      const rect = container.getBoundingClientRect()
+      handleMaskPaint(e.clientX - rect.left, e.clientY - rect.top)
+    }
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isPaintingRef.current) return
+      const rect = container.getBoundingClientRect()
+      handleMaskPaint(e.clientX - rect.left, e.clientY - rect.top)
+    }
+
+    const handleMouseUp = () => {
+      isPaintingRef.current = false
+    }
+
+    container.addEventListener('mousedown', handleMouseDown)
+    container.addEventListener('mousemove', handleMouseMove)
+    container.addEventListener('mouseup', handleMouseUp)
+    container.addEventListener('mouseleave', handleMouseUp)
+
+    // Change cursor when mask tool is active
+    container.style.cursor = maskToolMode === 'paint' ? 'crosshair' : 'cell'
+
+    return () => {
+      container.removeEventListener('mousedown', handleMouseDown)
+      container.removeEventListener('mousemove', handleMouseMove)
+      container.removeEventListener('mouseup', handleMouseUp)
+      container.removeEventListener('mouseleave', handleMouseUp)
+      container.style.cursor = ''
+    }
+  }, [maskToolMode, gameMode, handleMaskPaint])
 
   /**
    * Initializes the entire Game View (Pixi App, Layout, Backgrounds)
@@ -1224,56 +1372,41 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             />
 
             {/* --- Dungeon UI: Seed Growth Control Panel --- */}
-            {gameMode === 'dungeon' && (
+            {gameMode === 'dungeon' && showMap && (
               <div
                 style={{
                   flex: 1,
                   display: 'flex',
                   flexDirection: 'column',
-                  padding: '24px',
-                  overflowY: 'auto',
-                  minHeight: 0
+                  minHeight: 0,
+                  overflow: 'hidden'
                 }}
               >
-                <h2
-                  style={{
-                    fontSize: '28px',
-                    borderBottom: '1px solid #bcd3d2',
-                    margin: '0 0 20px 0',
-                    paddingBottom: '10px',
-                    textAlign: 'center',
-                    flexShrink: 0
-                  }}
-                >
-                  Seed Growth Dungeon
-                </h2>
-
-                <div style={{ fontSize: '14px', color: '#888', marginBottom: '10px' }}>
-                  Use the control panel at the bottom of the screen to adjust generation parameters.
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 'auto',
-                    height: '240px',
-                    border: '1px solid #2e3f41',
-                    padding: '10px',
-                    fontSize: '14px',
-                    overflowY: 'auto',
-                    backgroundColor: 'rgba(0,0,0,0.3)',
-                    fontFamily: 'monospace',
-                    flexShrink: 0
-                  }}
-                >
-                  {logs.map((log, i) => (
-                    <div
-                      key={i}
-                      style={{ marginBottom: '5px', color: i === 0 ? '#fff' : '#888' }}
-                    >
-                      {`> ${log}`}
-                    </div>
-                  ))}
-                </div>
+                <SeedGrowthControlPanel
+                  settings={seedGrowthSettings}
+                  onSettingsChange={setSeedGrowthSettings}
+                  onRegenerate={handleSeedGrowthRegenerate}
+                  onStep={handleSeedGrowthStep}
+                  onRunSteps={handleSeedGrowthRunSteps}
+                  onRunToCompletion={handleSeedGrowthRunAll}
+                  tilesGrown={seedGrowthState?.tilesGrown ?? 0}
+                  stepCount={seedGrowthState?.stepCount ?? 0}
+                  isComplete={seedGrowthState?.isComplete ?? false}
+                  completionReason={seedGrowthState?.completionReason ?? null}
+                  isAnimating={isAnimating}
+                  onToggleAnimation={handleSeedGrowthToggleAnimation}
+                  maskToolMode={maskToolMode}
+                  onMaskToolModeChange={setMaskToolMode}
+                  brushSize={brushSize}
+                  onBrushSizeChange={setBrushSize}
+                  onClearMask={handleClearMask}
+                  blockedCount={
+                    seedGrowthState?.blocked?.flat().filter(Boolean).length ?? 0
+                  }
+                  seedGrowthState={seedGrowthState}
+                  viewAsDungeon={viewAsDungeon}
+                  onViewAsDungeonChange={setViewAsDungeon}
+                />
               </div>
             )}
 
@@ -1452,6 +1585,12 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             completionReason={seedGrowthState.completionReason}
             isAnimating={isAnimating}
             onToggleAnimation={handleSeedGrowthToggleAnimation}
+            maskToolMode={maskToolMode}
+            onMaskToolModeChange={setMaskToolMode}
+            brushSize={brushSize}
+            onBrushSizeChange={setBrushSize}
+            onClearMask={handleClearMask}
+            blockedCount={seedGrowthState.blocked.flat().filter(b => b).length}
           />
         )}
 

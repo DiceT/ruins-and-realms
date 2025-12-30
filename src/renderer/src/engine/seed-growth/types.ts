@@ -19,6 +19,8 @@ export type RoomClassificationMode = 'floodFill' | 'thickness'
 
 export type Direction = 'north' | 'south' | 'east' | 'west'
 
+export type MaskToolMode = 'off' | 'paint' | 'erase'
+
 // =============================================================================
 // Grid Types
 // =============================================================================
@@ -77,6 +79,12 @@ export interface Room {
   bounds: { x: number; y: number; w: number; h: number }
   area: number
   centroid: GridCoord
+  /** True if this room should be rendered as a circle */
+  isCircular?: boolean
+  /** Original rooms before merge (preserves their IDs, regionIds, etc.) */
+  subRooms?: Room[]
+  /** True if this room was created by merging overlapping rooms */
+  isMerged?: boolean
 }
 
 export interface Corridor {
@@ -104,6 +112,7 @@ export interface DebugFlags {
   showCorridors: boolean
   showConnectionsGraph: boolean
   showGrowthOrder: boolean
+  showMask: boolean
 }
 
 // =============================================================================
@@ -161,6 +170,10 @@ export interface SeedGrowthSettings {
 export interface SeedGrowthState {
   /** 2D grid of tiles */
   grid: GridTile[][]
+  /** 2D blocked mask - true = forbidden cells that growth cannot claim */
+  blocked: boolean[][]
+  /** Mask version counter for change tracking */
+  maskVersion: number
   /** Active regions */
   regions: Map<number, Region>
   /** Placed seeds */
@@ -233,7 +246,8 @@ export function createDefaultSettings(): SeedGrowthSettings {
       showRoomBounds: false,
       showCorridors: false,
       showConnectionsGraph: false,
-      showGrowthOrder: false
+      showGrowthOrder: false,
+      showMask: true
     }
   }
 }

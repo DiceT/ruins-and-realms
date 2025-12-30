@@ -1,0 +1,32 @@
+{
+  "seed": 446524,
+  "gridWidth": 48,
+  "gridHeight": 48,
+  "tileBudget": 345,
+  "seedCount": 9,
+  "seedPlacement": "center",
+  "minSeedDistance": 17,
+  "gamma": 0.2,
+  "straightBias": 0.15,
+  "turnPenalty": 2.4,
+  "branchPenalty": 5,
+  "neighborLimit": 2,
+  "allowLoops": false,
+  "loopChance": 0.1,
+  "symmetry": 75,
+  "symmetryAxis": "vertical",
+  "symmetryStrict": false,
+  "minRoomArea": 4,
+  "maxCorridorWidth": 1,
+  "classificationMode": "thickness",
+  "debug": {
+    "showRegions": false,
+    "showFrontier": false,
+    "showSymmetryAxis": false,
+    "showRoomBounds": true,
+    "showCorridors": true,
+    "showConnectionsGraph": false,
+    "showGrowthOrder": false,
+    "showMask": true
+  }
+}

@@ -86,10 +86,13 @@ export class RoomClassifier {
     // Group corridor tiles by region
     const corridors = this.groupCorridorsByRegion(corridorTiles, grid)
 
-    // Build connections
-    const connections = this.buildConnections(rooms, corridors, grid, width, height)
+    // Merge overlapping rooms
+    const mergedRooms = this.mergeOverlappingRooms(rooms)
 
-    return { rooms, corridors, connections }
+    // Build connections
+    const connections = this.buildConnections(mergedRooms, corridors, grid, width, height)
+
+    return { rooms: mergedRooms, corridors, connections }
   }
 
   private floodFill(grid: GridTile[][], startX: number, startY: number, visited: Set<string>): GridCoord[] {
@@ -190,10 +193,13 @@ export class RoomClassifier {
     // Group corridors
     const corridors = this.groupCorridorsByRegion(corridorTiles, grid)
 
-    // Build connections
-    const connections = this.buildConnections(rooms, corridors, grid, width, height)
+    // Merge overlapping rooms
+    const mergedRooms = this.mergeOverlappingRooms(rooms)
 
-    return { rooms, corridors, connections }
+    // Build connections
+    const connections = this.buildConnections(mergedRooms, corridors, grid, width, height)
+
+    return { rooms: mergedRooms, corridors, connections }
   }
 
   private calculateThickness(grid: GridTile[][], width: number, height: number): void {
@@ -292,14 +298,135 @@ export class RoomClassifier {
       sumY += t.y
     }
 
+    const w = maxX - minX + 1
+    const h = maxY - minY + 1
+
+    // Circular rooms disabled for now
+    const isCircular = false
+
     return {
       id: `room_${idNum}`,
       regionId,
       tiles,
-      bounds: { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 },
+      bounds: { x: minX, y: minY, w, h },
       area: tiles.length,
-      centroid: { x: Math.round(sumX / tiles.length), y: Math.round(sumY / tiles.length) }
+      centroid: { x: Math.round(sumX / tiles.length), y: Math.round(sumY / tiles.length) },
+      isCircular
     }
+  }
+
+  /**
+   * Merge rooms with overlapping or adjacent bounding boxes
+   * Preserves original rooms in subRooms array
+   */
+  private mergeOverlappingRooms(rooms: Room[]): Room[] {
+    if (rooms.length < 2) return rooms
+
+    // Helper to check if two bounds overlap OR are adjacent (touching)
+    const boundsOverlapOrAdjacent = (a: Room['bounds'], b: Room['bounds']): boolean => {
+      // Overlap: bounds intersect
+      // Adjacent: bounds touch at an edge (no gap between them)
+      // Use < instead of <= to include adjacency (when edges touch exactly)
+      return !(a.x + a.w < b.x || b.x + b.w < a.x || 
+               a.y + a.h < b.y || b.y + b.h < a.y)
+    }
+
+    // Union-find for merging rooms
+    const parent = new Map<string, string>()
+    for (const room of rooms) {
+      parent.set(room.id, room.id)
+    }
+
+    const find = (id: string): string => {
+      if (parent.get(id) !== id) {
+        parent.set(id, find(parent.get(id)!))
+      }
+      return parent.get(id)!
+    }
+
+    const union = (a: string, b: string): void => {
+      const rootA = find(a)
+      const rootB = find(b)
+      if (rootA !== rootB) {
+        parent.set(rootB, rootA)
+      }
+    }
+
+    // Find overlapping or adjacent pairs and union them
+    for (let i = 0; i < rooms.length; i++) {
+      for (let j = i + 1; j < rooms.length; j++) {
+        if (boundsOverlapOrAdjacent(rooms[i].bounds, rooms[j].bounds)) {
+          union(rooms[i].id, rooms[j].id)
+        }
+      }
+    }
+
+    // Group rooms by their root
+    const groups = new Map<string, Room[]>()
+    for (const room of rooms) {
+      const root = find(room.id)
+      if (!groups.has(root)) {
+        groups.set(root, [])
+      }
+      groups.get(root)!.push(room)
+    }
+
+    // Create merged rooms
+    const mergedRooms: Room[] = []
+    let mergedIdCounter = 0
+
+    for (const [_root, groupRooms] of groups) {
+      if (groupRooms.length === 1) {
+        // No merge needed
+        mergedRooms.push(groupRooms[0])
+      } else {
+        // Merge these rooms
+        const allTiles: GridCoord[] = []
+        const tileSet = new Set<string>()
+        
+        for (const room of groupRooms) {
+          for (const tile of room.tiles) {
+            const key = `${tile.x},${tile.y}`
+            if (!tileSet.has(key)) {
+              tileSet.add(key)
+              allTiles.push(tile)
+            }
+          }
+        }
+
+        // Calculate merged bounds
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        let sumX = 0, sumY = 0
+
+        for (const t of allTiles) {
+          minX = Math.min(minX, t.x)
+          minY = Math.min(minY, t.y)
+          maxX = Math.max(maxX, t.x)
+          maxY = Math.max(maxY, t.y)
+          sumX += t.x
+          sumY += t.y
+        }
+
+        const w = maxX - minX + 1
+        const h = maxY - minY + 1
+
+        const mergedRoom: Room = {
+          id: `merged_room_${mergedIdCounter++}`,
+          regionId: groupRooms[0].regionId, // Use first room's region
+          tiles: allTiles,
+          bounds: { x: minX, y: minY, w, h },
+          area: allTiles.length,
+          centroid: { x: Math.round(sumX / allTiles.length), y: Math.round(sumY / allTiles.length) },
+          isCircular: false, // Merged rooms can't be circular
+          subRooms: groupRooms,
+          isMerged: true
+        }
+
+        mergedRooms.push(mergedRoom)
+      }
+    }
+
+    return mergedRooms
   }
 
   private groupCorridorsByRegion(tiles: GridCoord[], grid: GridTile[][]): Corridor[] {
