@@ -294,6 +294,7 @@ export class DungeonViewRenderer {
     let corridorTiles: { x: number; y: number }[] = []
     let renderedSpinePath: {x: number, y: number}[] = []
     let tributaryTiles: { x: number; y: number }[] = []
+    let spineTiles: any[] = []
 
     // Check if we have Spine data (DungeonData) or Organic (SeedGrowthState)
     if ('spine' in data) {
@@ -302,7 +303,7 @@ export class DungeonViewRenderer {
         rooms = data.rooms
         
         // The spineTiles array only contains CENTER path tiles.
-        const spineTiles = (data as any).spine || []
+        spineTiles = (data as any).spine || []
         
         // 0. Calculate Scores
         const heatScores = this.calculateWallHeatScores(rooms, spineTiles)
@@ -408,62 +409,90 @@ export class DungeonViewRenderer {
             blockedSet
         )
 
-        // 4. RANGE-BASED PRUNING: Identify first and last "useful" spine segments
-        // A spine segment is "useful" if any part of its width touches a room, tributary, or object.
-        {
-            const roomTileSet = new Set<string>()
-            for (const r of rooms) {
-                for (const t of r.tiles) roomTileSet.add(`${t.x},${t.y}`)
+        // 4. Combine initial corridors (unpruned)
+        corridorTiles = [...renderedSpinePath, ...tributaryTiles]
+        
+        // Update data.spine to be the PHYSICAL spine corridor (for Analysis)
+        ;(data as any).spine = renderedSpinePath
+        
+        this.renderHeatMap(heatScores, size)
+        
+    } else {
+        // --- ORGANIC MODE ---
+        rooms = (data as any).rooms || []
+        const pathfinder = new CorridorPathfinder(settings.seed)
+        corridorTiles = pathfinder.generate(data, rooms)
+        // Set tributaryTiles for organic mode too so cleanup works
+        tributaryTiles = corridorTiles 
+    }
+    
+    // --- DECORATION PHASE ---
+    if (!data.corridors) (data as any).corridors = []
+    ;(data as any).corridors = [{
+        id: 'generated_render_corridors',
+        tiles: corridorTiles.map(t => ({ x: t.x, y: t.y }))
+    }]
+
+    const decorator = new DungeonDecorator(settings.seed)
+    decorator.decorate(data)
+
+    // --- UNIFIED PRUNING PHASE ---
+    {
+        const roomTileSet = new Set<string>()
+        for (const r of rooms) for (const t of r.tiles) roomTileSet.add(`${t.x},${t.y}`)
+        
+        const objectTileSet = new Set<string>() // ALL objects (protects these tiles)
+        const objectFloorSet = new Set<string>() // Objects needing floor rendering
+        if (data.objects) {
+            for (const obj of data.objects) {
+                const k = `${obj.x},${obj.y}`
+                objectTileSet.add(k)
+                if (obj.properties?.hasFloor) objectFloorSet.add(k)
             }
-            const tributarySet = new Set(tributaryTiles.map(t => `${t.x},${t.y}`))
-            const objectSet = new Set((data.objects || []).map(o => `${o.x},${o.y}`))
-            
-            // Helpful set for collision
-            const usefulSet = new Set([...roomTileSet, ...tributarySet, ...objectSet])
-            
+        }
+        
+        const tributarySet = new Set(tributaryTiles.map(t => `${t.x},${t.y}`))
+        
+        // 1. Spine Range Pruning (Critical for Wide Corridors)
+        if ('spine' in data && spineTiles.length > 0) {
             const spineWidth = data.spineWidth || 1
             const effectiveWidth = Math.max(1, spineWidth - 2)
             const radius = Math.floor((effectiveWidth - 1) / 2)
             
             const usedIndices: number[] = []
-            
             for (let i = 0; i < spineTiles.length; i++) {
                 const st = spineTiles[i]
-                const sliceKeys = [ `${st.x},${st.y}` ]
-                
+                const sliceKeys = [`${st.x},${st.y}`]
                 if (radius > 0) {
                     const dir = st.direction || 'north'
                     const perps = dir === 'north' || dir === 'south' 
                         ? [{ x: 1, y: 0 }, { x: -1, y: 0 }] 
                         : [{ x: 0, y: 1 }, { x: 0, y: -1 }]
                     for (let r = 1; r <= radius; r++) {
-                        for (const p of perps) {
-                            sliceKeys.push(`${st.x + p.x * r},${st.y + p.y * r}`)
-                        }
+                        for (const p of perps) sliceKeys.push(`${st.x + p.x * r},${st.y + p.y * r}`)
                     }
                 }
                 
-                // Check for ANY connection in this slice
-                const isUsed = sliceKeys.some(key => usefulSet.has(key))
-                
+                const isUsed = sliceKeys.some(key => {
+                    if (roomTileSet.has(key)) return true
+                    if (tributarySet.has(key)) return true
+                    if (objectTileSet.has(key)) return true
+                    
+                    const [x, y] = key.split(',').map(Number)
+                    const adj = [`${x+1},${y}`, `${x-1},${y}`, `${x},${y+1}`, `${x},${y-1}`]
+                    if (adj.some(k => tributarySet.has(k) || objectTileSet.has(k))) return true
+                    return false
+                })
                 if (isUsed) usedIndices.push(i)
             }
             
             if (usedIndices.length > 0) {
                 const first = usedIndices[0]
                 const last = usedIndices[usedIndices.length - 1]
+                const prunedSpineTiles = spineTiles.slice(first, last + 1)
                 
-                // Final range
-                const newMin = first
-                const newMax = last
-                
-                // Prune the spine path
-                const prunedSpineTiles = spineTiles.slice(newMin, newMax + 1)
-                
-                // Now we RE-GENERATE the fat corridor from the pruned spine path
                 const newFullSpineSet = new Set<string>()
                 const newFullSpineTiles: { x: number, y: number }[] = []
-                
                 for (const t of prunedSpineTiles) {
                     const key = `${t.x},${t.y}`
                     if (!newFullSpineSet.has(key)) {
@@ -477,8 +506,7 @@ export class DungeonViewRenderer {
                             : [{ x: 0, y: 1 }, { x: 0, y: -1 }]
                         for (let r = 1; r <= radius; r++) {
                             for (const p of perps) {
-                                const px = t.x + p.x * r
-                                const py = t.y + p.y * r
+                                const px = t.x + p.x * r, py = t.y + p.y * r
                                 const pkey = `${px},${py}`
                                 if (!newFullSpineSet.has(pkey)) {
                                     newFullSpineSet.add(pkey)
@@ -488,52 +516,63 @@ export class DungeonViewRenderer {
                         }
                     }
                 }
-                
                 renderedSpinePath = newFullSpineTiles
+                corridorTiles = [...renderedSpinePath, ...tributaryTiles]
             }
         }
 
-        // 5. Finalize Data (Keep separate!)
-        corridorTiles = [...renderedSpinePath, ...tributaryTiles]
+        // 2. Iterative Dead-end Erosion (Standard for 1-wide)
+        // Build floor set from rooms, ALL objects, and corridors
+        const allFloor = new Set<string>([...roomTileSet, ...objectTileSet, ...corridorTiles.map(t => `${t.x},${t.y}`)])
+        let currCorridorSet = new Set(corridorTiles.map(t => `${t.x},${t.y}`))
         
-        // Update data.spine to be the PHYSICAL spine corridor (for Analysis)
+        let changed = true
+        while (changed) {
+            changed = false
+            const toRemove: string[] = []
+            for (const key of currCorridorSet) {
+                // If this tile HAS an object (stair, door), it is an anchor. PROTECT.
+                if (objectTileSet.has(key)) continue
+                
+                const [x, y] = key.split(',').map(Number)
+                let floorNeighbors = 0
+                if (allFloor.has(`${x+1},${y}`)) floorNeighbors++
+                if (allFloor.has(`${x-1},${y}`)) floorNeighbors++
+                if (allFloor.has(`${x},${y+1}`)) floorNeighbors++
+                if (allFloor.has(`${x},${y-1}`)) floorNeighbors++
+                
+                if (floorNeighbors < 2) toRemove.push(key)
+            }
+            for (const key of toRemove) {
+                currCorridorSet.delete(key)
+                allFloor.delete(key)
+                changed = true
+            }
+        }
+        
+        // Rebuild corridorTiles from pruned set
+        corridorTiles = Array.from(currCorridorSet).map(k => {
+            const [x, y] = k.split(',').map(Number)
+            return { x, y }
+        })
+
+        // Finally, add all objects with 'hasFloor' to corridorTiles if they aren't already there
+        for (const k of objectFloorSet) {
+            if (!currCorridorSet.has(k)) {
+                const [x, y] = k.split(',').map(Number)
+                corridorTiles.push({ x, y })
+            }
+        }
+        
+        // Final Sync to Data
+        ;(data as any).corridors = [{
+            id: 'generated_render_corridors',
+            tiles: corridorTiles.map(t => ({ x: t.x, y: t.y }))
+        }]
+        
+        const prunedSet = new Set(corridorTiles.map(t => `${t.x},${t.y}`))
+        renderedSpinePath = renderedSpinePath.filter(t => prunedSet.has(`${t.x},${t.y}`))
         ;(data as any).spine = renderedSpinePath
-        
-        this.renderHeatMap(heatScores, size)
-        
-    } else {
-        // --- ORGANIC MODE ---
-        // @ts-ignore - Handle legacy state access
-        rooms = data.rooms || []
-        
-        // Generate corridors using pathfinder
-        const pathfinder = new CorridorPathfinder(settings.seed)
-        // @ts-ignore
-        corridorTiles = pathfinder.generate(data, rooms)
-        tributaryTiles = corridorTiles // In organic mode, they are the same
-    }
-    
-    // --- DECORATION PHASE ---
-    // Update data with generated corridors so Decorator can see them.
-    // CRITICAL: Spine Path != Corridor. Decorator only sees tributaries.
-    if (!data.corridors) (data as any).corridors = []
-    
-    ;(data as any).corridors = [{
-        id: 'generated_render_corridors',
-        tiles: tributaryTiles.map(t => ({ x: t.x, y: t.y }))
-    }]
-
-    // Place objects (Stairs, Doors, etc.)
-    const decorator = new DungeonDecorator(settings.seed)
-    decorator.decorate(data)
-
-    // Inject 'hasFloor' objects into corridorTiles so they get walls & floors
-    if (data.objects) {
-        for (const obj of data.objects) {
-            if (obj.properties?.hasFloor) {
-                corridorTiles.push({ x: obj.x, y: obj.y })
-            }
-        }
     }
 
     // 3. Render ROOM floors
