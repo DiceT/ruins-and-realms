@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "timestamp": 1767151625011,
+  "camera": {
+    "x": 888.4958677685951,
+    "y": 455.71900826446296,
+    "zoom": 0.8264462809917354
+  },
+  "grid": {
+    "type": "square",
+    "size": 50,
+    "thickness": 1,
+    "alpha": 0.5,
+    "color": "#a9cbdd"
+  },
+  "background": "#666666",
+  "layers": [
+    {
+      "id": "doors-e5d3",
+      "theme": "Objects",
+      "name": "Doors",
+      "config": {},
+      "visible": true,
+      "isObjectLayer": true,
+      "rooms": [],
+      "walls": [],
+      "paths": [],
+      "objects": []
+    },
+    {
+      "id": "theme-1",
+      "theme": "Dungeon",
+      "name": "Old School",
+      "config": {
+        "name": "Dungeon",
+        "thumbnail": "assets/themes/dungeon.png",
+        "background": "#666666",
+        "floor": {
+          "color": "#cccccc"
+        },
+        "shadow": {
+          "color": "#999999",
+          "x": 12,
+          "y": 9
+        },
+        "walls": {
+          "color": "#000000",
+          "width": 4,
+          "roughness": 1
+        },
+        "grid": {
+          "color": "#666666",
+          "width": 1,
+          "roughness": 0
+        }
+      },
+      "visible": true,
+      "rooms": [
+        {
+          "id": "4f896dd5-b9f8-4792-b31f-5d9c7c8cf55f",
+          "x": -400,
+          "y": -250,
+          "width": 300,
+          "height": 200,
+          "fillColor": 16777215,
+          "op": "add",
+          "layerId": "theme-1"
+        },
+        {
+          "id": "06cf2ed1-d5d5-412a-92a6-cd15bb1268d3",
+          "x": -50,
+          "y": -250,
+          "width": 250,
+          "height": 200,
+          "fillColor": 16777215,
+          "op": "add",
+          "layerId": "theme-1"
+        },
+        {
+          "id": "902a6791-34b3-4a0b-916d-b7594f8fa3b7",
+          "x": -350,
+          "y": 0,
+          "width": 200,
+          "height": 250,
+          "fillColor": 16777215,
+          "op": "add",
+          "layerId": "theme-1"
+        },
+        {
+          "id": "55c85a9c-2d90-4fa3-9f38-738f41eb96fd",
+          "x": 0,
+          "y": 0,
+          "width": 150,
+          "height": 250,
+          "fillColor": 16777215,
+          "op": "add",
+          "layerId": "theme-1"
+        },
+        {
+          "id": "85d90654-08ac-493b-bae8-e8feebf1cbb2",
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "fillColor": 16777215,
+          "type": "path",
+          "points": [
+            [
+              -250,
+              -75
+            ],
+            [
+              -250,
+              25
+            ],
+            [
+              -200,
+              25
+            ],
+            [
+              -200,
+              -75
+            ]
+          ],
+          "op": "add",
+          "layerId": "theme-1"
+        },
+        {
+          "id": "d21eb40a-4a46-4ecb-849a-b689447042ff",
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "fillColor": 16777215,
+          "type": "path",
+          "points": [
+            [
+              -125,
+              -100
+            ],
+            [
+              -25,
+              -100
+            ],
+            [
+              -25,
+              -150
+            ],
+            [
+              -125,
+              -150
+            ]
+          ],
+          "op": "add",
+          "layerId": "theme-1"
+        },
+        {
+          "id": "806c264b-b200-4b30-a944-062655a11ec5",
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "fillColor": 16777215,
+          "type": "path",
+          "points": [
+            [
+              50,
+              -75
+            ],
+            [
+              50,
+              25
+            ],
+            [
+              100,
+              25
+            ],
+            [
+              100,
+              -75
+            ]
+          ],
+          "op": "add",
+          "layerId": "theme-1"
+        }
+      ],
+      "walls": [],
+      "paths": [],
+      "objects": []
+    }
+  ],
+  "layerOrder": [
+    "doors-e5d3",
+    "theme-1"
+  ],
+  "activeLayerId": "theme-1"
+}

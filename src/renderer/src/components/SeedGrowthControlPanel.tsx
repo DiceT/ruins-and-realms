@@ -27,7 +27,7 @@ import {
 } from '../engine/seed-growth/types'
 import { SeedGrowthDataModal } from './SeedGrowthDataModal'
 
-type TabId = 'main' | 'animation' | 'mask' | 'debug' | 'output'
+type TabId = 'main' | 'animation' | 'mask' | 'debug' | 'output' | 'fx'
 
 interface SeedGrowthControlPanelProps {
     // Generator mode
@@ -80,6 +80,14 @@ interface SeedGrowthControlPanelProps {
     // Heat map toggle
     showHeatMap: boolean
     onToggleHeatMap: (enabled: boolean) => void
+
+    // FX toggles
+    activeTheme: string
+    onThemeChange: (theme: string) => void
+
+    // Walkmap toggle
+    showWalkmap: boolean
+    onToggleWalkmap: (enabled: boolean) => void
 }
 
 // ============================================================================
@@ -228,16 +236,15 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
     showRoomNumbers,
     onShowRoomNumbersChange,
     showHeatMap,
-    onToggleHeatMap
+    onToggleHeatMap,
+    activeTheme,
+    onThemeChange,
+    showWalkmap,
+    onToggleWalkmap
 }) => {
-    // DEBUG: Log all props to verify they are received
-    console.log('[SeedGrowthControlPanel] Props received:', {
-        hasShowHeatMap: showHeatMap !== undefined,
-        hasToggleHeatMap: !!onToggleHeatMap,
-        onToggleHeatMapType: typeof onToggleHeatMap
-    })
     const [activeTab, setActiveTab] = useState<TabId>('main')
     const [modalData, setModalData] = useState<{ title: string; data: unknown } | null>(null)
+    const [, forceUpdate] = useState(0)
 
     // Local state for room numbers toggle (default TRUE)
     const [localShowRoomNumbers, setLocalShowRoomNumbers] = useState(true)
@@ -354,6 +361,7 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
         { id: 'main', label: 'Main' },
         { id: 'animation', label: 'Anim' },
         { id: 'mask', label: 'Mask' },
+        { id: 'fx', label: 'FX' },
         { id: 'debug', label: 'Debug' },
         { id: 'output', label: 'Output' }
     ]
@@ -892,13 +900,22 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
                     />
                     View Room Numbers
                 </label>
-                <label style={checkboxLabelStyle}>
+                <label style={rowStyle}>
                     <input
                         type="checkbox"
-                        checked={localShowHeatMap}
-                        onChange={(e) => setLocalShowHeatMap(e.target.checked)}
+                        checked={showHeatMap}
+                        onChange={(e) => onToggleHeatMap(e.target.checked)}
                     />
                     Show Heat Map
+                </label>
+
+                <label style={rowStyle}>
+                    <input
+                        type="checkbox"
+                        checked={showWalkmap}
+                        onChange={(e) => onToggleWalkmap(e.target.checked)}
+                    />
+                    Show Walkmap (Cost)
                 </label>
             </div>
         </div>
@@ -950,13 +967,49 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
         )
     }
 
+    const renderFXTab = () => (
+        <>
+            <div style={sectionStyle}>
+                <div style={{ ...rowStyle, color: '#f39c12', fontWeight: 'bold' }}>✨ Visual Effects</div>
+
+                <div style={{ ...rowStyle, justifyContent: 'space-between', marginTop: 12 }}>
+                    <span style={labelStyle}>Theme:</span>
+                    <select
+                        value={activeTheme}
+                        onChange={(e) => onThemeChange(e.target.value)}
+                        style={{
+                            backgroundColor: '#1a1a1a',
+                            color: '#bcd3d2',
+                            border: '1px solid #444',
+                            padding: '4px',
+                            borderRadius: '4px',
+                            fontFamily: 'monospace',
+                            fontSize: '11px'
+                        }}
+                    >
+                        <option value="Dungeon">Dungeon</option>
+                        <option value="Old School">Old School</option>
+                        <option value="Rough Cavern">Rough Cavern</option>
+                        <option value="None">None</option>
+                    </select>
+                </div>
+
+                <div style={{ fontSize: 10, color: '#666', marginTop: 8 }}>
+                    Select a visual theme for the dungeon view.
+                </div>
+            </div>
+        </>
+    )
+
     const renderTabContent = () => {
         switch (activeTab) {
             case 'main': return renderMainTab()
             case 'animation': return renderAnimationTab()
             case 'mask': return renderMaskTab()
+            case 'fx': return renderFXTab()
             case 'debug': return renderDebugTab()
             case 'output': return renderOutputTab()
+            default: return null
         }
     }
 

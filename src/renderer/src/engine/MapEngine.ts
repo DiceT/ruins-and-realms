@@ -3,6 +3,7 @@ import { Camera } from './Camera'
 import { BaseGridSystem } from './systems/BaseGridSystem'
 import { SquareGridSystem } from './systems/SquareGridSystem'
 import { HexGridSystem } from './systems/HexGridSystem'
+import { ShaderManager } from './managers/ShaderManager'
 
 export type GridType = 'square' | 'hex'
 
@@ -49,6 +50,7 @@ export class MapEngine {
   public camera: Camera
   public layers: MapLayers
   public gridSystem: BaseGridSystem
+  public shaderManager: ShaderManager
   private tickerCallback: TickerCallback<MapEngine> | null = null
   public destroyed: boolean = false
 
@@ -119,6 +121,12 @@ export class MapEngine {
       this.gridSystem = new SquareGridSystem(this)
     }
 
+    // 4. Initialize Shader Manager
+    // applying to camera container affects EVERYTHING (grid, rooms, background)
+    // applying to background layer only affects background
+    this.shaderManager = new ShaderManager()
+    this.shaderManager.attach(this.camera.container)
+
     // 4. Render Loop
 
     this.tickerCallback = () => {
@@ -140,6 +148,8 @@ export class MapEngine {
           this.interactionState.hoveredFeatureId = null
         }
         // this.checkCameraMovement()
+        
+        // Note: shaderManager doesn't have an update method - filters are static
 
         // LOG INPUT DEBUG
         if (this.app.ticker.lastTime % 60 === 0) {

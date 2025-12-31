@@ -183,7 +183,8 @@ export class SpineSeedGenerator {
 
       tilesGrown: 0,
       stepCount: 0,
-      isComplete: false
+      isComplete: false,
+      objects: []
     }
 
     // Place initial spine tile at center

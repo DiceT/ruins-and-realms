@@ -1,4 +1,5 @@
 import { GridCoord, Room, SeedGrowthState, Direction } from './types'
+import { SeededRNG } from '../../utils/SeededRNG'
 
 interface PathNode {
   x: number
@@ -52,6 +53,12 @@ export class CorridorPathfinder {
   
   // Negotiated door positions: Map<"roomId:targetRoomId", GridCoord>
   private negotiatedDoors: Map<string, GridCoord> = new Map()
+  private rng: SeededRNG
+
+  constructor(seed: string = 'default') {
+    this.rng = new SeededRNG(seed)
+  }
+
   /**
    * Main entry point to generate corridors for the dungeon
    */
@@ -149,7 +156,7 @@ export class CorridorPathfinder {
         if (gap > MAX_GAP) continue
         
         // Roll 50% chance for loop
-        if (Math.random() < LOOP_CHANCE) {
+        if (this.rng.next() < LOOP_CHANCE) {
           const distance = this.distance(roomA.centroid, roomB.centroid)
           loopEdges.push({ from: roomA, to: roomB, distance })
           
@@ -223,7 +230,7 @@ export class CorridorPathfinder {
     
     let doorPos: GridCoord
     
-    if (Math.random() < this.ALIGNMENT_CHANCE) {
+    if (this.rng.next() < this.ALIGNMENT_CHANCE) {
       // 75%: Use center of facing wall
       doorPos = this.getCenterDoorPosition(room, facingWall)
     } else {
@@ -251,7 +258,7 @@ export class CorridorPathfinder {
     }
 
     // Determine if we can create a shared entry line (75% chance)
-    const useSharedEntryLine = Math.random() < this.ALIGNMENT_CHANCE
+    const useSharedEntryLine = this.rng.next() < this.ALIGNMENT_CHANCE
     
     if (useSharedEntryLine) {
       // Calculate the optimal entry line based on connection directions
@@ -310,10 +317,10 @@ export class CorridorPathfinder {
     const { x, y, w, h } = room.bounds
     
     switch (wall) {
-      case 'north': return { x: x + Math.floor(Math.random() * w), y: y - 1 }
-      case 'south': return { x: x + Math.floor(Math.random() * w), y: y + h }
-      case 'west': return { x: x - 1, y: y + Math.floor(Math.random() * h) }
-      case 'east': return { x: x + w, y: y + Math.floor(Math.random() * h) }
+      case 'north': return { x: x + Math.floor(this.rng.next() * w), y: y - 1 }
+      case 'south': return { x: x + Math.floor(this.rng.next() * w), y: y + h }
+      case 'west': return { x: x - 1, y: y + Math.floor(this.rng.next() * h) }
+      case 'east': return { x: x + w, y: y + Math.floor(this.rng.next() * h) }
     }
   }
 

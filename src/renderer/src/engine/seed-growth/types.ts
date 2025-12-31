@@ -116,6 +116,20 @@ export interface DebugFlags {
 }
 
 // =============================================================================
+// Dungeon Objects
+// =============================================================================
+
+export interface DungeonObject {
+  id: string
+  type: string // e.g., 'stairs_up', 'chest', 'trap'
+  x: number // Grid coordinates
+  y: number
+  scale?: number
+  rotation?: number
+  properties?: Record<string, any>
+}
+
+// =============================================================================
 // Generator Settings
 // =============================================================================
 
@@ -197,6 +211,8 @@ export interface SeedGrowthState {
   corridors: Corridor[]
   /** Room connections graph */
   connections: Connection[]
+  /** Placed objects */
+  objects: DungeonObject[]
 }
 
 // =============================================================================
@@ -282,6 +298,8 @@ export interface DungeonData {
   rooms: Room[]
   spine: SpineTile[]
   spineWidth: number
+  objects: DungeonObject[]
+  seed?: number  // For seeded RNG operations (anti-clustering, etc.)
 }
 
 // -----------------------------------------------------------------------------
@@ -587,4 +605,7 @@ export interface SpineSeedState {
   stepCount: number
   /** True if entire generation is complete */
   isComplete: boolean
+  
+  /** Placed objects */
+  objects: DungeonObject[]
 }

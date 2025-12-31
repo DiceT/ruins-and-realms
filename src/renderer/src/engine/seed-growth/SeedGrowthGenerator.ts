@@ -163,7 +163,8 @@ export class SeedGrowthGenerator {
       completionReason: 'running',
       rooms: [],
       corridors: [],
-      connections: []
+      connections: [],
+      objects: []
     }
 
     // Place seeds

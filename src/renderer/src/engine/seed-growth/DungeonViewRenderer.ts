@@ -8,26 +8,28 @@
  * and displays rooms, corridors, and walls in a dungeon style.
  */
 
-import { Container, Graphics, FederatedPointerEvent, Text, TextStyle } from 'pixi.js'
-import { SeedGrowthState, SeedGrowthSettings, Room, Corridor, Connection, DungeonData } from './types'
+import { Container, Graphics, FederatedPointerEvent, Text, TextStyle, DisplacementFilter, Sprite, Texture, Assets } from 'pixi.js'
+import { SeedGrowthState, SeedGrowthSettings, Room, Corridor, Connection, DungeonData, DungeonObject } from './types'
 import { CorridorPathfinder } from './CorridorPathfinder'
-
-// Dungeon theme colors
-const THEME = {
-  background: 0x0a0a0a,
-  floor: 0xF9F6EE,
-  roomFloor: 0xF9F6EE,
-  wall: 0x444444, // Lighter grey for visibility
-  corridorFloor: 0xC8CDD4, // Darker grey for visibility
-  doorway: 0x6a5a4a,
-  grid: 0x1a1a1a,
-  gridAlpha: 0.5
-}
+import { DungeonDecorator } from './DungeonDecorator'
+import { SeededRNG } from '../../utils/SeededRNG'
+import { DungeonAnalysis, FurthestRoomResult } from '../analysis/DungeonAnalysis'
+import { ThemeManager } from '../managers/ThemeManager'
+import { RoomLayerConfig } from '../themes/ThemeTypes'
+import { createNoiseTexture } from '../utils/rendering'
+import stairsIcon from '../../assets/images/icons/stairs.svg'
+import doorIcon from '../../assets/images/icons/door.svg'
+import doorSecretIcon from '../../assets/images/icons/door-secret.svg'
+import doorArchwayIcon from '../../assets/images/icons/door-archway.svg'
+import doorLockedIcon from '../../assets/images/icons/door-locked.svg'
+import doorPortcullisIcon from '../../assets/images/icons/door-portcullis.svg'
+import doorBarredIcon from '../../assets/images/icons/door-barred.svg'
 
 export interface DungeonViewOptions {
   tileSize?: number
   showGrid?: boolean
   showRoomLabels?: boolean
+  themeManager?: ThemeManager
 }
 
 export class DungeonViewRenderer {
@@ -35,21 +37,32 @@ export class DungeonViewRenderer {
   private contentContainer: Container
   private tileSize: number = 8
   
+  // Theme Manager
+  private themeManager: ThemeManager
+  private config: RoomLayerConfig
+
   // Pan/zoom state
   private isPanning: boolean = false
   private lastPanPos: { x: number; y: number } = { x: 0, y: 0 }
-  private zoom: number = 1.0
-  private readonly minZoom = 0.25
+  private zoom: number = 0.25
+  private readonly minZoom = 0.05
   private readonly maxZoom = 4.0
   
   // Layers
   private backgroundLayer: Graphics
+  private shadowLayer: Graphics // New: Shadows
   private floorLayer: Graphics
   private wallLayer: Graphics
+  private objectLayer: Container // New: Objects (Sprites, Decorations)
   private gridLineLayer: Graphics  // Separate layer for grid lines (re-rendered on zoom)
   private overlayLayer: Graphics
   private heatMapLayer: Graphics    // Heat map debug layer
+  private walkmapContainer: Container // New: Walkmap overlay
   private labelContainer: Container
+
+  // FX
+  private noiseSprite: Sprite | null = null
+  private displacementFilter: DisplacementFilter | null = null
   
   // View state
   private viewWidth: number = 800
@@ -66,30 +79,96 @@ export class DungeonViewRenderer {
     this.contentContainer = new Container()
     this.container.addChild(this.contentContainer)
     
+    // Theme Manager
+    this.themeManager = options.themeManager || new ThemeManager()
+    this.config = this.themeManager.config
+    
     // Create layers
     this.backgroundLayer = new Graphics()
+    this.shadowLayer = new Graphics() // Shadow below floor/walls? Or between?
+    // Usually: Floor -> Shadow (on top of floor) -> Walls
+    // Or: Shadow (behind everything) -> Floor -> Walls?
+    // Let's put Shadow ON TOP of Floor, UNDER Walls.
+    
     this.floorLayer = new Graphics()
     this.wallLayer = new Graphics()
+    this.objectLayer = new Container()
     this.gridLineLayer = new Graphics()
     this.overlayLayer = new Graphics()
     this.heatMapLayer = new Graphics()
     this.heatMapLayer.visible = false  // Default OFF
+    this.heatMapLayer.visible = false  // Default OFF
+    this.walkmapContainer = new Container()
     this.labelContainer = new Container()
     
     this.contentContainer.addChild(this.backgroundLayer)
     this.contentContainer.addChild(this.floorLayer)
+    this.contentContainer.addChild(this.shadowLayer) // Shadows on top of floor
     this.contentContainer.addChild(this.wallLayer)
+    this.contentContainer.addChild(this.objectLayer) // Objects on top of walls (or below?) usually above floors, maybe below high walls? User said "map icons", usually top.
     this.contentContainer.addChild(this.heatMapLayer)  // Above walls
     this.contentContainer.addChild(this.gridLineLayer)
     this.contentContainer.addChild(this.overlayLayer)
+    this.contentContainer.addChild(this.overlayLayer)
+    this.contentContainer.addChild(this.walkmapContainer)
     this.contentContainer.addChild(this.labelContainer)
     
     if (options.tileSize) {
       this.tileSize = options.tileSize
     }
     
+    // Listen for theme changes
+    this.themeManager.onThemeChange((name, config) => {
+        this.config = config
+        // Re-apply filters immediately
+        this.updateFilters()
+        // If we had data, we would re-render. 
+        // For now, next render() call will pick up colors.
+        // We can force existing graphics to update color if we stored the data...
+        // But DungeonViewRenderer is stateless regarding data storage (passed in render).
+        // So this will take effect on next render loop or user interaction.
+    })
+
+    // Initialize Roughness (Displacement)
+    this.initRoughness()
+
+    // Apply initial theme config (filters only, geometry needs render call)
+    this.updateFilters()
+
     // Setup pan/zoom
     this.setupPanZoom()
+  }
+
+  private initRoughness() {
+    const noiseTexture = createNoiseTexture(64)
+    this.noiseSprite = new Sprite(noiseTexture)
+    this.noiseSprite.scale.set(20)
+    // Access texture source style correctly for PixiJS v8
+    this.noiseSprite.texture.source.style.addressMode = 'repeat'
+    this.noiseSprite.renderable = false
+    this.container.addChild(this.noiseSprite)
+  }
+
+  private updateFilters() {
+      // Apply displacement filter based on wall roughness
+      const wallRough = this.config.walls.roughness
+      
+      if (wallRough > 0 && this.noiseSprite) {
+          if (!this.displacementFilter) {
+               this.displacementFilter = new DisplacementFilter({
+                  sprite: this.noiseSprite,
+                  scale: wallRough * 4 
+               })
+          } else {
+              this.displacementFilter.scale.x = wallRough * 4
+              this.displacementFilter.scale.y = wallRough * 4
+          }
+          this.displacementFilter.padding = (this.config.walls.width || 0) + 20
+          
+          this.contentContainer.filters = [this.displacementFilter]
+      } else {
+          this.contentContainer.filters = []
+      }
   }
   
   private setupPanZoom(): void {
@@ -188,15 +267,14 @@ export class DungeonViewRenderer {
   }
   
   /**
-   * Render the dungeon view from seed growth state
-   * Floors are created based on Room tiles only (not corridors or raw floor tiles)
-   */
-  /**
    * Render the dungeon view from seed growth state OR DungeonData
    */
-  public render(data: SeedGrowthState | DungeonData, settings: SeedGrowthSettings, showRoomNumbers: boolean = true): void {
-    console.log('[DungeonViewRenderer] render called with showRoomNumbers:', showRoomNumbers)
+  public renderDungeonView(data: SeedGrowthState | DungeonData, settings: SeedGrowthSettings, showRoomNumbers: boolean = true, showWalkmap: boolean = false): void {
+    console.log('[DungeonViewRenderer] renderDungeonView Start', { showWalkmap, rooms: (data as any).rooms?.length })
     this.clear()
+    
+    // Ensure filters are up to date (in case config changed)
+    this.updateFilters()
     
     const { gridWidth, gridHeight } = settings
     const size = this.tileSize
@@ -210,10 +288,12 @@ export class DungeonViewRenderer {
         (gridWidth + pad * 2) * size, 
         (gridHeight + pad * 2) * size
     )
-    this.backgroundLayer.fill({ color: THEME.background })
+    this.backgroundLayer.fill({ color: this.config.background })
 
     let rooms: Room[] = []
     let corridorTiles: { x: number; y: number }[] = []
+    let renderedSpinePath: {x: number, y: number}[] = []
+    let tributaryTiles: { x: number; y: number }[] = []
 
     // Check if we have Spine data (DungeonData) or Organic (SeedGrowthState)
     if ('spine' in data) {
@@ -227,6 +307,38 @@ export class DungeonViewRenderer {
         // 0. Calculate Scores
         const heatScores = this.calculateWallHeatScores(rooms, spineTiles)
         
+        // --- SPINE PRUNING ---
+        // Determine active range of the spine
+        let minActiveIndex = 0
+        let maxActiveIndex = spineTiles.length - 1
+        
+        if (spineTiles.length > 0) {
+            // Skip early pruning - final cleanup pass after tributaries handles dead-ends
+            // Just determine if stairs should be at spine start (affects south trimming)
+            const spineWidth = data.spineWidth || 1
+            const rng = new SeededRNG(settings.seed)
+            let stairsOnSpine = false
+            if (spineWidth >= 3) {
+                if (Math.floor(rng.next() * 100) < 50) stairsOnSpine = true
+            }
+            
+            // Use full spine range - final cleanup will trim dead ends
+            minActiveIndex = 0
+            maxActiveIndex = spineTiles.length - 1
+        }
+        
+        // Ensure valid range
+        if (minActiveIndex > maxActiveIndex) {
+            minActiveIndex = 0
+            maxActiveIndex = spineTiles.length - 1
+        }
+        
+        const activeSpineTiles = spineTiles.slice(minActiveIndex, maxActiveIndex + 1)
+        
+        // Use activeSpineTiles for heat map and generation
+        // But 'heatScores' was calculated on FULL spine. That's fine, scores are per-tile.
+        // We need to use activeSpineTiles for rendering the corridor.
+        
         // 1. Build Blocked Set (Room Floors)
         const blockedSet = new Set<string>()
         for (const room of rooms) {
@@ -237,27 +349,21 @@ export class DungeonViewRenderer {
         
         const spineWidth = data.spineWidth || 1
         let targetSet = new Set<string>()
-        let renderedSpinePath: {x: number, y: number}[] = []
 
         if (spineWidth > 1) {
             // --- MODE A: SPINE CORRIDOR (Width 3, 5, 7) ---
-            // Width Rule: Rendered Width = Input Width - 2.
-            // Width 3 -> 1 Floor
-            // Width 5 -> 3 Floor
-            // Width 7 -> 5 Floor
             const effectiveWidth = Math.max(1, spineWidth - 2)
             const radius = Math.floor((effectiveWidth - 1) / 2)
             
             const fullSpineSet = new Set<string>()
             const fullSpineTiles: { x: number, y: number, dir: string }[] = []
             
-            for (const t of spineTiles) {
+            for (const t of activeSpineTiles) {
                 const key = `${t.x},${t.y}`
                 if (!fullSpineSet.has(key)) {
                     fullSpineSet.add(key)
                     fullSpineTiles.push({ x: t.x, y: t.y, dir: t.direction || 'north' })
                 }
-                // Only expand if radius > 0 (Width >= 5 -> Eff 3 -> Radius 1)
                 if (radius > 0) {
                     const dir = t.direction || 'north'
                     const perps = dir === 'north' || dir === 'south' 
@@ -277,15 +383,11 @@ export class DungeonViewRenderer {
                 }
             }
 
-            // Target Set = Walkable Path
-            // Since we reduced by 2 to get the floor, this entire set IS the walkable floor.
             renderedSpinePath = fullSpineTiles.map(t => ({ x: t.x, y: t.y }))
             for (const t of renderedSpinePath) targetSet.add(`${t.x},${t.y}`)
 
         } else {
             // --- MODE B: NETWORK / ORGANIC SPINE (Width 1) ---
-            // No rendered spine. 
-            // Target = Lowest ID Room (Network Seed)
             if (rooms.length > 0) {
                 const seedRoom = rooms.reduce((prev, curr) => (prev.id.localeCompare(curr.id) < 0 ? prev : curr))
                 for (const tile of seedRoom.tiles) {
@@ -295,117 +397,281 @@ export class DungeonViewRenderer {
         }
 
         // 3. Generate Tributary Corridors
-        const pathfinder = new CorridorPathfinder()
-        const tributaryTiles = pathfinder.generateSpineCorridors(
+        const pathfinder = new CorridorPathfinder(settings.seed)
+        tributaryTiles = pathfinder.generateSpineCorridors(
             data.gridWidth, 
             data.gridHeight, 
             rooms, 
-            spineTiles, 
+            activeSpineTiles, 
             heatScores,
             targetSet,
             blockedSet
         )
 
-        // 4. Combine
+        // 4. RANGE-BASED PRUNING: Identify first and last "useful" spine segments
+        // A spine segment is "useful" if any part of its width touches a room, tributary, or object.
+        {
+            const roomTileSet = new Set<string>()
+            for (const r of rooms) {
+                for (const t of r.tiles) roomTileSet.add(`${t.x},${t.y}`)
+            }
+            const tributarySet = new Set(tributaryTiles.map(t => `${t.x},${t.y}`))
+            const objectSet = new Set((data.objects || []).map(o => `${o.x},${o.y}`))
+            
+            // Helpful set for collision
+            const usefulSet = new Set([...roomTileSet, ...tributarySet, ...objectSet])
+            
+            const spineWidth = data.spineWidth || 1
+            const effectiveWidth = Math.max(1, spineWidth - 2)
+            const radius = Math.floor((effectiveWidth - 1) / 2)
+            
+            const usedIndices: number[] = []
+            
+            for (let i = 0; i < spineTiles.length; i++) {
+                const st = spineTiles[i]
+                const sliceKeys = [ `${st.x},${st.y}` ]
+                
+                if (radius > 0) {
+                    const dir = st.direction || 'north'
+                    const perps = dir === 'north' || dir === 'south' 
+                        ? [{ x: 1, y: 0 }, { x: -1, y: 0 }] 
+                        : [{ x: 0, y: 1 }, { x: 0, y: -1 }]
+                    for (let r = 1; r <= radius; r++) {
+                        for (const p of perps) {
+                            sliceKeys.push(`${st.x + p.x * r},${st.y + p.y * r}`)
+                        }
+                    }
+                }
+                
+                // Check for ANY connection in this slice
+                const isUsed = sliceKeys.some(key => usefulSet.has(key))
+                
+                if (isUsed) usedIndices.push(i)
+            }
+            
+            if (usedIndices.length > 0) {
+                const first = usedIndices[0]
+                const last = usedIndices[usedIndices.length - 1]
+                
+                // Final range
+                const newMin = first
+                const newMax = last
+                
+                // Prune the spine path
+                const prunedSpineTiles = spineTiles.slice(newMin, newMax + 1)
+                
+                // Now we RE-GENERATE the fat corridor from the pruned spine path
+                const newFullSpineSet = new Set<string>()
+                const newFullSpineTiles: { x: number, y: number }[] = []
+                
+                for (const t of prunedSpineTiles) {
+                    const key = `${t.x},${t.y}`
+                    if (!newFullSpineSet.has(key)) {
+                        newFullSpineSet.add(key)
+                        newFullSpineTiles.push({ x: t.x, y: t.y })
+                    }
+                    if (radius > 0) {
+                        const dir = t.direction || 'north'
+                        const perps = dir === 'north' || dir === 'south' 
+                            ? [{ x: 1, y: 0 }, { x: -1, y: 0 }] 
+                            : [{ x: 0, y: 1 }, { x: 0, y: -1 }]
+                        for (let r = 1; r <= radius; r++) {
+                            for (const p of perps) {
+                                const px = t.x + p.x * r
+                                const py = t.y + p.y * r
+                                const pkey = `${px},${py}`
+                                if (!newFullSpineSet.has(pkey)) {
+                                    newFullSpineSet.add(pkey)
+                                    newFullSpineTiles.push({ x: px, y: py })
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                renderedSpinePath = newFullSpineTiles
+            }
+        }
+
+        // 5. Finalize Data (Keep separate!)
         corridorTiles = [...renderedSpinePath, ...tributaryTiles]
         
-        // 2. Render Heat Map (Visualization update)
-        // We do this every frame? Or optimize? Doing it here is fine for prototype.
+        // Update data.spine to be the PHYSICAL spine corridor (for Analysis)
+        ;(data as any).spine = renderedSpinePath
+        
         this.renderHeatMap(heatScores, size)
         
-        console.log('[DungeonView] Rendering Spine Mode:', { 
-            rooms: rooms.length, 
-            centerSpineTiles: spineTiles.length,
-            visibleCorridorTiles: corridorTiles.length
-        })
-
     } else {
         // --- ORGANIC MODE ---
         // @ts-ignore - Handle legacy state access
         rooms = data.rooms || []
         
         // Generate corridors using pathfinder
-        const pathfinder = new CorridorPathfinder()
+        const pathfinder = new CorridorPathfinder(settings.seed)
         // @ts-ignore
         corridorTiles = pathfinder.generate(data, rooms)
-        console.log('[DungeonView] Rendering Organic Mode:', { rooms: rooms.length, generatedCorridors: corridorTiles.length })
+        tributaryTiles = corridorTiles // In organic mode, they are the same
     }
     
+    // --- DECORATION PHASE ---
+    // Update data with generated corridors so Decorator can see them.
+    // CRITICAL: Spine Path != Corridor. Decorator only sees tributaries.
+    if (!data.corridors) (data as any).corridors = []
+    
+    ;(data as any).corridors = [{
+        id: 'generated_render_corridors',
+        tiles: tributaryTiles.map(t => ({ x: t.x, y: t.y }))
+    }]
+
+    // Place objects (Stairs, Doors, etc.)
+    const decorator = new DungeonDecorator(settings.seed)
+    decorator.decorate(data)
+
+    // Inject 'hasFloor' objects into corridorTiles so they get walls & floors
+    if (data.objects) {
+        for (const obj of data.objects) {
+            if (obj.properties?.hasFloor) {
+                corridorTiles.push({ x: obj.x, y: obj.y })
+            }
+        }
+    }
+
     // 3. Render ROOM floors
+    console.log('[DungeonViewRenderer] Rendering Floors for', rooms.length, 'rooms')
     for (const room of rooms) {
       this.renderRoomFloor(room, size)
     }
     
     // 4. Render corridor floors
+    // Color depends on config - maybe distinct corridor color or same as floor
+    // Using theme's floor color for now, unless we want to distinguish
     for (const pos of corridorTiles) {
-      this.floorLayer.rect(pos.x * size, pos.y * size, size, size)
-      this.floorLayer.fill({ color: THEME.corridorFloor })
+      this.floorLayer.rect(pos.x * size, pos.y * size, size - 1, size - 1)
+      this.floorLayer.fill({ color: this.config.floor.color }) // Use theme floor
     }
     
     // 5. Render walls (around rooms AND corridors)
-    // We pass a composite object that mimics what renderWalls expects (rooms)
-    this.renderWalls(rooms, settings, size, corridorTiles)
+    const wallSet = this.renderWalls(rooms, settings, size, corridorTiles)
     
+    // 5b. Render Shadows
+    // Only if wallRoughness > 0 or specific shadow config exists?
+    // Theme configs usually have shadows defined if they are 'Dungeon' etc.
+    if (this.config.shadow) {
+        this.renderShadows(wallSet, size)
+    }
+
     // 6. Render door markers
-    this.renderDoorMarkers(rooms, corridorTiles, size)
+    // [REMOVED] Obsolete
+    // this.renderDoorMarkers(rooms, corridorTiles, size)
     
     // 7. Render grid lines
     this.renderGridLines(rooms, corridorTiles, size)
     
     // 8. Render room labels (only if enabled)
+    // First, analyze "furthest rooms"
+    const furthest = DungeonAnalysis.findFurthestRooms(data)
+    
+    // Create lookup map
+    const furthestMap = new Map<string, FurthestRoomResult>()
+    for (const f of furthest) {
+        furthestMap.set(f.roomId, f)
+    }
+
     if (showRoomNumbers) {
-      this.renderRoomLabels(rooms, size)
+      this.renderRoomLabels(rooms, size, furthestMap, furthest.length)
     }
     
     // 9. Render heat map (always renders, visibility controlled by toggle)
-    // 9. Render heat map (always renders, visibility controlled by toggle)
-    // Use the center spine tiles (data.spine) for spine-adjacency checks
-    // Cast data to any to check for spine property safely
     const spineTilesForHeat = (data as any).spine ? (data as any).spine : []
     this.renderHeatMap(rooms, spineTilesForHeat, size)
+
+    // 10. Render Objects
+    this.renderObjects(data.objects || [], size)
+    
+    // 11. Render Walkmap (debug overlay)
+    if (showWalkmap) {
+        console.log('[DungeonViewRenderer] Rendering Walkmap')
+        this.renderWalkmap(data, size)
+    }
+    console.log('[DungeonViewRenderer] Render Complete')
   }
 
-  /**
-   * Render door markers - small wall-colored squares on corridor tiles adjacent to rooms
-   */
-  private renderDoorMarkers(rooms: Room[], corridorTiles: { x: number; y: number }[], size: number): void {
-    // Build set of room floor positions
-    const roomFloors = new Set<string>()
-    for (const room of rooms) {
-      const { x, y, w, h } = room.bounds
-      for (let dy = 0; dy < h; dy++) {
-        for (let dx = 0; dx < w; dx++) {
-          roomFloors.add(`${x + dx},${y + dy}`)
-        }
-      }
-    }
-    
-    // Find corridor tiles adjacent to room tiles (doorways)
-    const doorMarkerSize = size * 0.35 // 35% of tile size
-    const offset = (size - doorMarkerSize) / 2
-    
-    for (const pos of corridorTiles) {
-      // Check if this corridor tile is adjacent to any room tile
-      const neighbors = [
-        { x: pos.x, y: pos.y - 1 },
-        { x: pos.x, y: pos.y + 1 },
-        { x: pos.x - 1, y: pos.y },
-        { x: pos.x + 1, y: pos.y },
-      ]
+  private renderObjects(objects: DungeonObject[], size: number): void {
+      this.objectLayer.removeChildren()
       
-      const isAdjacentToRoom = neighbors.some(n => roomFloors.has(`${n.x},${n.y}`))
-      
-      if (isAdjacentToRoom) {
-        // Draw small wall-colored square centered on the tile
-        this.floorLayer.rect(
-          pos.x * size + offset,
-          pos.y * size + offset,
-          doorMarkerSize,
-          doorMarkerSize
-        )
-        this.floorLayer.fill({ color: THEME.wall })
+      for (const obj of objects) {
+          if (obj.type === 'stairs_up') {
+              const sprite = new Sprite()
+              sprite.x = obj.x * size
+              sprite.y = obj.y * size
+              sprite.width = size
+              sprite.height = size
+              this.objectLayer.addChild(sprite)
+
+              Assets.load(stairsIcon).then((texture) => {
+                  sprite.texture = texture
+                  // Ensure scaling is maintained
+                  sprite.width = size
+                  sprite.height = size
+              }).catch(err => {
+                  console.error('Failed to load stairs icon', err)
+              })
+          }
+          else if (obj.type.startsWith('door')) {
+              const sprite = new Sprite()
+              // Center anchor for rotation
+              sprite.anchor.set(0.5)
+              sprite.x = (obj.x + 0.5) * size
+              sprite.y = (obj.y + 0.5) * size
+              sprite.width = size
+              sprite.height = size
+              sprite.angle = obj.rotation || 0
+              
+              this.objectLayer.addChild(sprite)
+              
+              let iconPath = doorIcon
+              switch (obj.type) {
+                  case 'door-secret': iconPath = doorSecretIcon; break;
+                  case 'door-archway': iconPath = doorArchwayIcon; break;
+                  case 'door-locked': iconPath = doorLockedIcon; break;
+                  case 'door-portcullis': iconPath = doorPortcullisIcon; break;
+                  case 'door-barred': iconPath = doorBarredIcon; break;
+              }
+
+              Assets.load(iconPath).then((texture) => {
+                  sprite.texture = texture
+                  sprite.width = size
+                  sprite.height = size
+              }).catch(err => {
+                  console.error('Failed to load door icon', obj.type, err)
+              })
+          }
       }
-    }
+  }
+
+  private renderShadows(wallPositions: Set<string>, size: number) {
+      if (!this.config.shadow) return
+
+      const { color, x: offX, y: offY } = this.config.shadow
+      
+      // Draw shadow rects at offset position
+      // Simple drop shadow approach
+      this.shadowLayer.clear()
+      
+      for (const key of wallPositions) {
+          const [x, y] = key.split(',').map(Number)
+          // Convert grid pos to pixel pos
+          // Offset by shadow config (pixels? or units? usually pixels)
+          // In ThemeTypes, x:12, y:9 are likely pixels.
+          
+          this.shadowLayer.rect(
+              x * size + offX, 
+              y * size + offY, 
+              size, 
+              size
+          )
+      }
+      this.shadowLayer.fill({ color: color, alpha: 0.5 }) // Opacity?
   }
   
   private renderGridLines(rooms: Room[], corridorTiles: { x: number; y: number }[], size: number): void {
@@ -439,6 +705,7 @@ export class DungeonViewRenderer {
     const size = this.tileSize
     // Line width in world space = 1 screen pixel / zoom
     const lineWidth = 1 / this.zoom
+    const color = this.config.grid.color
     
     // Draw grid lines ONLY between adjacent floor tiles (not at edges)
     for (const key of this.floorPositions) {
@@ -449,13 +716,13 @@ export class DungeonViewRenderer {
       // Right edge - only draw if there's a floor tile to the right
       if (this.floorPositions.has(`${x + 1},${y}`)) {
         this.gridLineLayer.rect(px + size - lineWidth, py, lineWidth, size)
-        this.gridLineLayer.fill({ color: THEME.grid, alpha: THEME.gridAlpha })
+        this.gridLineLayer.fill({ color: color })
       }
       
       // Bottom edge - only draw if there's a floor tile below
       if (this.floorPositions.has(`${x},${y + 1}`)) {
         this.gridLineLayer.rect(px, py + size - lineWidth, size, lineWidth)
-        this.gridLineLayer.fill({ color: THEME.grid, alpha: THEME.gridAlpha })
+        this.gridLineLayer.fill({ color: color })
       }
     }
   }
@@ -465,13 +732,13 @@ export class DungeonViewRenderer {
    */
   private renderRoomFloor(room: Room, size: number): void {
     const { x, y, w, h } = room.bounds
-    console.log('[DungeonView] Rendering room:', { id: room.id, x, y, w, h, isCircular: room.isCircular })
+    // console.log('[DungeonView] Rendering room:', { id: room.id, x, y, w, h, isCircular: room.isCircular })
     
     if (room.isCircular) {
       // Draw wall-colored bounding box first (corners will show as walls)
       // Draw on floorLayer so it's under the circle but above the background
       this.floorLayer.rect(x * size, y * size, w * size, h * size)
-      this.floorLayer.fill({ color: THEME.wall })
+      this.floorLayer.fill({ color: this.config.walls.color })
       
       // Draw circular room on top (same layer, so it covers the center)
       const centerX = (x + w / 2) * size
@@ -479,26 +746,19 @@ export class DungeonViewRenderer {
       const radius = (w / 2) * size
       
       this.floorLayer.circle(centerX, centerY, radius)
-      this.floorLayer.fill({ color: THEME.roomFloor })
+      this.floorLayer.fill({ color: this.config.floor.color })
     } else {
       // Draw rectangular room (full tiles, grid lines drawn separately)
       for (let dy = 0; dy < h; dy++) {
         for (let dx = 0; dx < w; dx++) {
           this.floorLayer.rect((x + dx) * size, (y + dy) * size, size, size)
-          this.floorLayer.fill({ color: THEME.roomFloor })
+          this.floorLayer.fill({ color: this.config.floor.color })
         }
       }
     }
   }
   
-  private renderCorridorFloor(corridor: Corridor, size: number): void {
-    for (const pos of corridor.tiles) {
-      this.floorLayer.rect(pos.x * size, pos.y * size, size - 1, size - 1)
-      this.floorLayer.fill({ color: THEME.corridorFloor })
-    }
-  }
-  
-  private renderWalls(rooms: Room[], settings: SeedGrowthSettings, size: number, corridorTiles: { x: number; y: number }[] = []): void {
+  private renderWalls(rooms: Room[], settings: SeedGrowthSettings, size: number, corridorTiles: { x: number; y: number }[] = []): Set<string> {
     const { gridWidth, gridHeight } = settings
     
     // Build a set of floor positions from room bounding boxes
@@ -525,6 +785,7 @@ export class DungeonViewRenderer {
       [-1, -1], [1, -1], [-1, 1], [1, 1]
     ]
     
+    // Just for shadow calculation - we need "external" wall positions
     for (const key of floorSet) {
       const [x, y] = key.split(',').map(Number)
       
@@ -546,38 +807,193 @@ export class DungeonViewRenderer {
     for (const key of wallSet) {
       const [x, y] = key.split(',').map(Number)
       this.wallLayer.rect(x * size, y * size, size, size)
-      this.wallLayer.fill({ color: THEME.wall })
+      this.wallLayer.fill({ color: this.config.walls.color })
     }
+
+    return wallSet
   }
   
   /**
    * Render room number labels at center of each room
    */
-  private renderRoomLabels(rooms: Room[], size: number): void {
-    // Clear previous labels
-    this.labelContainer.removeChildren()
-    
-    const style = new TextStyle({
+  private renderRoomLabels(rooms: Room[], size: number, furthestMap: Map<string, FurthestRoomResult>, totalFurthest: number): void {
+    // Label Style Options (Plain Object)
+    const baseStyle = {
       fontFamily: 'Arial',
-      fontSize: 12,
-      fill: 0x000000,
-      fontWeight: 'bold'
-    })
-    
-    for (let i = 0; i < rooms.length; i++) {
-      const room = rooms[i]
-      if (!room.bounds) continue
+      fontSize: Math.max(12, Math.floor(size / 2)),
+      fontWeight: 'bold',
+      fill: '#000000', // Default black
+      stroke: '#ffffff',
+      strokeThickness: 2,
+      align: 'center'
+    }
+
+    this.labelContainer.removeChildren()
+
+    for (const room of rooms) {
+      const isFurthest = furthestMap.get(room.id)
       
-      // Calculate center of room in pixels
-      const centerX = (room.bounds.x + room.bounds.w / 2) * size
-      const centerY = (room.bounds.y + room.bounds.h / 2) * size
+      // Calculate color
+      // Default: Black
+      // Furthest: Gradient Red (#FF0000) -> Orange (#FFA500)
+      // Rank 0 = Red
+      // Rank total-1 = Orange
       
-      const label = new Text({ text: String(i + 1), style })
-      label.anchor.set(0.5, 0.5)
-      label.position.set(centerX, centerY)
+      let fillColor: string | number = '#000000'
+      
+      if (isFurthest) {
+           const rank = isFurthest.rank
+           const maxRank = Math.max(1, totalFurthest - 1)
+           const t = Math.min(1, rank / maxRank) // 0 to 1
+           
+           // Interpolate RGB
+           // Red: 255, 0, 0
+           // Orange: 255, 165, 0
+           
+           const r1 = 255, g1 = 0, b1 = 0
+           const r2 = 255, g2 = 165, b2 = 0
+           
+           const r = Math.round(r1 + (r2 - r1) * t)
+           const g = Math.round(g1 + (g2 - g1) * t)
+           const b = Math.round(b1 + (b2 - b1) * t)
+           
+           fillColor = `rgb(${r}, ${g}, ${b})`
+      }
+
+      // Parse ID to number
+      let labelText = ''
+      try {
+          const num = parseInt(room.id.replace('room_', ''))
+          labelText = String(num + 1)
+      } catch (e) {
+          labelText = room.id
+      }
+
+      const label = new Text({ 
+          text: labelText, 
+          style: {
+              ...baseStyle,
+              fill: fillColor
+          }
+      })
+      
+      label.anchor.set(0.5)
+      
+      // Calculate center of room
+      let cx = 0, cy = 0
+      
+      if (room.centroid) {
+        cx = room.centroid.x
+        cy = room.centroid.y
+      } else {
+        // Fallback
+        cx = room.bounds.x + room.bounds.w / 2
+        cy = room.bounds.y + room.bounds.h / 2
+      }
+      
+      // Adjust to pixel coordinates (center of tile)
+      label.x = (cx + 0.5) * size
+      label.y = (cy + 0.5) * size
       
       this.labelContainer.addChild(label)
     }
+  }
+
+  private renderWalkmap(data: DungeonData, size: number): void {
+      const analysis = DungeonAnalysis.analyze(data)
+      const { roomCosts, walkableTiles, roomTraversals, doorTraversals } = analysis
+      
+      const graphics = new Graphics()
+      // Light blue with 50% transparency
+      graphics.fillStyle = { color: 0xADD8E6, alpha: 0.5 } // light blue
+      
+      for (const key of walkableTiles) {
+          const [x, y] = key.split(',').map(Number)
+          graphics.rect(x * size, y * size, size, size)
+          graphics.fill()
+      }
+      
+      this.walkmapContainer.addChild(graphics)
+      
+      // Render Cost Labels
+      // "right one squares from center... put the movement cost... in parenthesis"
+      const style = {
+          fontFamily: 'Arial',
+          fontSize: Math.max(10, Math.floor(size / 2.5)),
+          fontWeight: 'normal',
+          fill: '#000000', // Black
+          align: 'center'
+      }
+      
+      for (const room of data.rooms) {
+          const cost = roomCosts.get(room.id)
+          if (cost !== undefined) {
+              // Center position
+              const cx = room.centroid.x
+              const cy = room.centroid.y
+              
+              // Target: Center + 1 X for cost
+              const tx = cx + 1
+              const ty = cy
+              
+              const text = new Text({
+                  text: `(${cost})`,
+                  style
+              })
+              text.anchor.set(0.5)
+              text.x = (tx + 0.5) * size
+              text.y = (ty + 0.5) * size
+              
+              this.walkmapContainer.addChild(text)
+          }
+          
+          // Render room/door traversal counts one square below center
+          const roomCount = roomTraversals.get(room.id) ?? 0
+          const doorCount = doorTraversals.get(room.id) ?? 0
+          
+          const cx = room.centroid.x
+          const cy = room.centroid.y
+          
+          // Position: Center + 1 Y (below)
+          const labelText = `R:${roomCount} D:${doorCount}`
+          const traversalLabel = new Text({
+              text: labelText,
+              style: {
+                  ...style,
+                  fontSize: Math.max(8, Math.floor(size / 3)),
+                  fill: '#333333'
+              }
+          })
+          traversalLabel.anchor.set(0.5)
+          traversalLabel.x = (cx + 0.5) * size
+          traversalLabel.y = (cy + 1.5) * size
+          
+          this.walkmapContainer.addChild(traversalLabel)
+      }
+  }
+  
+  /**
+   * Main render method for the dungeon.
+   */
+  public render(data: SeedGrowthState | DungeonData, settings: SeedGrowthSettings, showRoomNumbers: boolean = true, showWalkmap: boolean = false): void {
+    // Clear previous
+    this.backgroundLayer.clear()
+    this.shadowLayer.clear()
+    this.floorLayer.clear()
+    this.wallLayer.clear()
+    this.gridLineLayer.clear()
+    this.heatMapLayer.clear()
+    this.overlayLayer.clear()
+    this.objectLayer.removeChildren()
+    this.labelContainer.removeChildren()
+    this.walkmapContainer.removeChildren() // Clear Walkmap
+
+    // ... (rest of the render logic would go here)
+    // For example:
+    // if (showWalkmap && data instanceof DungeonData) {
+    //   this.renderWalkmap(data, settings.tileSize)
+    // }
+    // ...
   }
   
   /**
@@ -587,16 +1003,20 @@ export class DungeonViewRenderer {
     this.backgroundLayer.clear()
     this.floorLayer.clear()
     this.wallLayer.clear()
+    this.shadowLayer.clear()
     this.gridLineLayer.clear()
     this.heatMapLayer.clear()
     this.overlayLayer.clear()
     this.labelContainer.removeChildren()
+    this.objectLayer.removeChildren()
+    this.walkmapContainer.removeChildren()
   }
   
   /**
    * Destroy and cleanup
    */
   public destroy(): void {
+    this.themeManager.offThemeChange(this.onThemeChange)
     this.container.destroy({ children: true })
   }
   
@@ -624,12 +1044,12 @@ export class DungeonViewRenderer {
   /**
    * Toggle heat map visibility
    */
-  public setShowHeatMap(show: boolean): void {
-    console.log('[DungeonViewRenderer] setShowHeatMap:', show, 'Layer:', !!this.heatMapLayer)
-    if (this.heatMapLayer) {
-      this.heatMapLayer.visible = show
-      console.log('[DungeonViewRenderer] Layer visible set to:', this.heatMapLayer.visible)
-    }
+  public setShowHeatMap(visible: boolean): void {
+      this.heatMapLayer.visible = visible
+  }
+
+  public setShowWalkmap(visible: boolean): void {
+      this.walkmapContainer.visible = visible
   }
 
   /**
@@ -645,13 +1065,6 @@ export class DungeonViewRenderer {
                spineSet.has(`${x},${y+1}`) || 
                spineSet.has(`${x-1},${y}`) || 
                spineSet.has(`${x+1},${y}`)
-    }
-
-    // Helper to add score (Accumulate bonuses)
-    const addScore = (x: number, y: number, val: number) => {
-        const key = `${x},${y}`
-        const current = heatScores.get(key) || 0
-        heatScores.set(key, current + val)
     }
 
     for (const room of rooms) {
@@ -711,22 +1124,10 @@ export class DungeonViewRenderer {
         { x: x + w, y: y + h }
       ]
       for (const c of corners) {
-        // heatScores.set(`${c.x},${c.y}`, 500)
-        // Add huge penalty
         const key = `${c.x},${c.y}`
         const current = heatScores.get(key) || 0
         heatScores.set(key, current + 100)
       }
-      
-      // Also mark Room Floor tiles as 500 (or keep separate?)
-      // Pathfinding treats Room Floor as cheap if traversing.
-      // But visually? We only want to visualize "Proximity to Wall".
-      // Let's NOT add room floors to heat map for visualization, 
-      // but pathfinder logic handles its own "Room Floor" cost (1 if traversing).
-      // However, we did say "Room tiles=500" in comments.
-      // For now, let's leave room tiles OUT of heat map (or keep logic consistent).
-      // Previous code added room tiles? No, just comments said so. 
-      // Line 728 (below view) might iterate room tiles.
     }
     return heatScores
   }
@@ -738,8 +1139,7 @@ export class DungeonViewRenderer {
   public renderHeatMap(scores: Map<string, number>, size: number): void {
     this.heatMapLayer.clear()
     
-    // Color scale helper
-     // Color scale helper for Additive Scores
+    // Color scale helper for Additive Scores
     const scoreToColor = (s: number): number => {
         if (s <= -20) return 0x00FF00 // Green (Best - Double Shared)
         if (s < -5) return 0x00FFFF // Cyan (Good - Center/Edge)
@@ -751,29 +1151,14 @@ export class DungeonViewRenderer {
     for (const [key, score] of scores.entries()) {
         if (typeof key !== 'string') continue
         const [x, y] = key.split(',').map(Number)
-        this.heatMapLayer.beginFill(scoreToColor(score), 0.5)
-        this.heatMapLayer.drawRect(x * size, y * size, size, size)
-        this.heatMapLayer.endFill()
+        this.heatMapLayer.rect(x * size, y * size, size, size)
+        this.heatMapLayer.fill({ color: scoreToColor(score), alpha: 0.5 })
     }
   }
-      
-  /**
-   * Convert score to color
-   * 500+ = Dark Red, 0-100 = Orange (low) to Blue (high)
-   */
-  private scoreToColor(score: number): number {
-    if (score >= 500) {
-      return 0x8B0000 // Dark red
-    }
-    
-    // Clamp to 0-100 range
-    const t = Math.min(1, Math.max(0, score / 100))
-    
-    // Orange (#FF8C00) to Blue (#0066FF)
-    const r = Math.round(255 * (1 - t))
-    const g = Math.round(140 * (1 - t) + 102 * t)
-    const b = Math.round(255 * t)
-    
-    return (r << 16) | (g << 8) | b
+
+  // Bind for cleanup
+  private onThemeChange = (name: string, config: RoomLayerConfig) => {
+      this.config = config
+      this.updateFilters()
   }
 }

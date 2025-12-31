@@ -45,8 +45,8 @@ export class SpineSeedRenderer {
   // Pan/zoom state
   private isPanning: boolean = false
   private lastPanPos: { x: number; y: number } = { x: 0, y: 0 }
-  private zoom: number = 1.0
-  private readonly minZoom = 0.25
+  private zoom: number = 0.25
+  private readonly minZoom = 0.05
   private readonly maxZoom = 4.0
   
   // View dimensions
@@ -184,8 +184,8 @@ export class SpineSeedRenderer {
 
   /** Reset zoom to 1.0 and center */
   public resetView(gridWidth: number, gridHeight: number, viewWidth: number, viewHeight: number): void {
-    this.zoom = 1.0
-    this.contentContainer.scale.set(1.0)
+    this.zoom = 0.25
+    this.contentContainer.scale.set(0.25)
     this.centerView(gridWidth, gridHeight, viewWidth, viewHeight)
   }
 

@@ -1,13 +1,13 @@
 {
-  "seed": 542301,
+  "seed": 270506,
   "gridWidth": 64,
   "gridHeight": 64,
   "seedCount": 24,
   "tileBudget": 3276,
   "spine": {
-    "maxForks": 0,
+    "maxForks": 1,
     "maxLoops": 1,
-    "spineWidth": 3,
+    "spineWidth": 1,
     "spineActsAsWall": true
   },
   "gamma": 1.2,

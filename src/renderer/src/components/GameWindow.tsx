@@ -5,6 +5,7 @@ import { useAppStore, useAppActions } from '@/stores/useAppStore'
 import { MapEngine } from '../engine/MapEngine'
 import { HexLogic } from '../engine/systems/HexLogic'
 import { OverworldManager } from '../engine/managers/OverworldManager'
+import { ThemeManager } from '../engine/managers/ThemeManager'
 import { GameLayout } from '../engine/ui/GameLayout'
 import { BackgroundSystem } from '../engine/ui/BackgroundSystem'
 import { TableEngine } from '../engine/tables/TableEngine'
@@ -109,9 +110,13 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const [seedGrowthState, setSeedGrowthState] = useState<SeedGrowthState | null>(null)
   const [isAnimating, setIsAnimating] = useState(false)
   const animationFrameRef = useRef<number | null>(null)
-  const [viewAsDungeon, setViewAsDungeon] = useState(false)
-  const [showRoomNumbers, setShowRoomNumbers] = useState(true)
-  const [showHeatMap, setShowHeatMap] = useState(false)
+  // View As Dungeon toggle
+  const [viewAsDungeon, setViewAsDungeon] = useState<boolean>(false)
+  const [showRoomNumbers, setShowRoomNumbers] = useState<boolean>(true)
+  const [showHeatMap, setShowHeatMap] = useState<boolean>(false)
+  const [showWalkmap, setShowWalkmap] = useState<boolean>(false) // New: Walkmap toggle
+  const [activeTheme, setActiveTheme] = useState('None')
+  const themeManagerRef = useRef<ThemeManager | null>(null)
 
   // --- SPINE-SEED STATE ---
   const [spineSeedSettings, setSpineSeedSettings] = useState<SpineSeedSettings>(createDefaultSpineSeedSettings())
@@ -473,7 +478,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         const container = new Container()
         layout.middlePanel.addChild(container)
         const renderer = new SpineSeedRenderer(container)
-        renderer.setTileSize(8)
+        renderer.setTileSize(50)
         spineSeedRendererRef.current = renderer
 
         // Center the view
@@ -496,18 +501,27 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     if (!layoutRef.current) return
 
     // Use React state (has rooms) with fallback to generator state
+    // Force refresh from ref if state is null/outdated
     let state: any = null
     if (generatorMode === 'organic') {
-      state = seedGrowthState ?? seedGrowthGenRef.current?.getState()
+      // Prioritize Ref current state as it is most up to date during animation/steps
+      state = seedGrowthGenRef.current?.getState() ?? seedGrowthState
     } else {
-      state = spineSeedState ?? spineSeedGenRef.current?.getState()
+      state = spineSeedGenRef.current?.getState() ?? spineSeedState
     }
     if (!state) {
       console.log('[ViewAsDungeon] No state available')
       return
     }
 
-    console.log('[ViewAsDungeon] State has rooms:', state.rooms?.length ?? 0)
+    // Updated Logging for debugging Spine Mode
+    if (generatorMode === 'spineSeed') {
+      console.log('[ViewAsDungeon] Spine Mode State Check:')
+      console.log(' - roomSeeds count:', (state as any).roomSeeds?.length ?? 0)
+      console.log(' - spineTiles present:', !!(state as any).spineTiles, (state as any).spineTiles?.length)
+    } else {
+      console.log('[ViewAsDungeon] Organic Mode Rooms:', state.rooms?.length ?? 0)
+    }
 
     const layout = layoutRef.current
     const viewWidth = layout.middlePanel.width || 800
@@ -516,17 +530,15 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     if (viewAsDungeon) {
       // Create dungeon view renderer if it doesn't exist
       if (!dungeonViewRendererRef.current) {
-        const dungeonRenderer = new DungeonViewRenderer(layout.middlePanel)
-        dungeonViewRendererRef.current = dungeonRenderer
-
-        // On first creation, sync from seed renderer
-        if (generatorMode === 'spineSeed' && spineSeedRendererRef.current) {
-          const t = spineSeedRendererRef.current.getTransform()
-          dungeonRenderer.syncTransform(t.x, t.y, t.scale)
-        } else if (seedGrowthRendererRef.current) {
-          const t = seedGrowthRendererRef.current.getTransform()
-          dungeonRenderer.syncTransform(t.x, t.y, t.scale)
+        // Initialize ThemeManager if needed
+        if (!themeManagerRef.current) {
+          themeManagerRef.current = new ThemeManager(activeTheme)
         }
+
+        dungeonViewRendererRef.current = new DungeonViewRenderer(
+          appRef.current.stage,
+          { tileSize: 50, themeManager: themeManagerRef.current }
+        )
       }
 
       // Hide seed renderer, show dungeon view
@@ -558,6 +570,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
       // --- ADAPTER LOGIC ---
       if (generatorMode === 'spineSeed' && state.spineTiles) {
+        console.log('[ViewAsDungeon] Entering Spine Adapter logic')
         // Convert SpineSeedState to DungeonData
         const rawSeeds = (state.roomSeeds || []) as any[]
 
@@ -576,17 +589,24 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             }
           }))
 
+        console.log('[ViewAsDungeon] Pruned rooms count:', prunedRooms.length)
+        console.log('[ViewAsDungeon] Calling renderDungeonView() with spine settings')
+
         // Pass explicit DungeonData
-        dungeonViewRendererRef.current.render({
+        dungeonViewRendererRef.current.renderDungeonView({
           gridWidth: spineSeedSettings.gridWidth,
           gridHeight: spineSeedSettings.gridHeight,
           rooms: prunedRooms,
           spine: state.spineTiles, // Pass spine tiles directly
-          spineWidth: spineSeedSettings.spine.spineWidth
-        }, spineSeedSettings as any, showRoomNumbers)
+          spineWidth: spineSeedSettings.spine.spineWidth,
+          seed: spineSeedSettings.seed // For seeded RNG ops
+        }, spineSeedSettings as any, showRoomNumbers, showWalkmap)
+
+        console.log('[ViewAsDungeon] Render returned')
 
       } else {
-        dungeonViewRendererRef.current.render(state, seedGrowthSettings, showRoomNumbers)
+        console.log('[ViewAsDungeon] calling renderDungeonView() with Organic state')
+        dungeonViewRendererRef.current.renderDungeonView(state, seedGrowthSettings, showRoomNumbers, showWalkmap)
       }
       dungeonViewRendererRef.current.setShowRoomNumbers(showRoomNumbers)
       dungeonViewRendererRef.current.getContainer().visible = true
@@ -625,7 +645,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         spineSeedRendererRef.current.render(state, spineSeedSettings)
       }
     }
-  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, showRoomNumbers])
+  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, showRoomNumbers, showWalkmap])
 
   // Dedicated effect for room number visibility toggle (independent of render)
   useEffect(() => {
@@ -641,6 +661,21 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       dungeonViewRendererRef.current.setShowHeatMap(showHeatMap)
     }
   }, [showHeatMap])
+
+  // Dedicated effect for walkmap visibility (independent of render)
+  useEffect(() => {
+    if (dungeonViewRendererRef.current) {
+      console.log('[GameWindow] Toggling Walkmap:', showWalkmap)
+      dungeonViewRendererRef.current.setShowWalkmap(showWalkmap)
+    }
+  }, [showWalkmap])
+
+  // Update theme when active theme changes
+  useEffect(() => {
+    if (themeManagerRef.current) {
+      themeManagerRef.current.setTheme(activeTheme)
+    }
+  }, [activeTheme])
 
   // Wire up mask paint events on Pixi container
   useEffect(() => {
@@ -949,6 +984,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       if (gameMode === 'dungeon') {
         // --- SEED GROWTH DUNGEON MODE ---
 
+
+
         if (generatorMode === 'organic') {
           setLogs(['Organic Dungeon initialized.'])
 
@@ -1006,6 +1043,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           // Use large logical size for infinite-feel hex grid
           width: 100,
           height: 100,
+
+
 
           // -- Overworld Callbacks --
           onValidatePlacement: (x, y) => {
@@ -1211,8 +1250,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                   if (batchMoves.length === 0) {
                     addLog('No more space! Ending batch early.')
                     setOverworldStep(1)
-                    overworldManagerRef.current.finishBatch()
                     mapEngineRef.current.interactionState.mode = 'idle'
+                    overworldManagerRef.current.finishBatch()
+
+                    // Revert to global valid
                     const allValid = overworldManagerRef.current.getValidMoves()
                     validMovesRef.current = new Set(allValid.map((m) => `${m.x},${m.y}`))
                     mapEngineRef.current.highlightValidMoves(allValid)
@@ -1230,6 +1271,9 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           onHexHover: handleHexHover,
           onHexClicked: handleHexClick
         })
+
+          // Expose to window for UI/Shader access
+          ; (window as any).__MAP_ENGINE__ = mapEngineRef.current
 
         // Initial Center for Overworld
         setTimeout(() => {
@@ -1662,6 +1706,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                   onShowRoomNumbersChange={setShowRoomNumbers}
                   showHeatMap={showHeatMap}
                   onToggleHeatMap={setShowHeatMap}
+                  showWalkmap={showWalkmap}
+                  onToggleWalkmap={setShowWalkmap}
+                  activeTheme={activeTheme}
+                  onThemeChange={setActiveTheme}
                 />
               </div>
             )}
@@ -1875,6 +1923,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             onShowRoomNumbersChange={setShowRoomNumbers}
             showHeatMap={showHeatMap}
             onToggleHeatMap={setShowHeatMap}
+            activeTheme={activeTheme}
+            onThemeChange={setActiveTheme}
           />
         )}
 
