@@ -8,8 +8,9 @@
  * and displays rooms, corridors, and walls in a dungeon style.
  */
 
-import { Container, Graphics, FederatedPointerEvent, Text, TextStyle, DisplacementFilter, Sprite, Texture, Assets } from 'pixi.js'
+import { Container, Graphics, FederatedPointerEvent, Text, TextStyle, DisplacementFilter, Sprite, Texture, Assets, RenderTexture, Matrix, Rectangle } from 'pixi.js'
 import { SeedGrowthState, SeedGrowthSettings, Room, Corridor, Connection, DungeonData, DungeonObject } from './types'
+import { LightProfile, VisionGrid, VISION_STATE } from '../data/LightingData'
 import { CorridorPathfinder } from './CorridorPathfinder'
 import { DungeonDecorator } from './DungeonDecorator'
 import { SeededRNG } from '../../utils/SeededRNG'
@@ -58,6 +59,13 @@ export class DungeonViewRenderer {
   private overlayLayer: Graphics
   private heatMapLayer: Graphics    // Heat map debug layer
   private walkmapContainer: Container // New: Walkmap overlay
+  
+  // --- New Visibility Layers ---
+  private fogLayer: Container // Multiplied Fog (Unexplored=Black, Dim=Gray)
+  private darknessLayer: Graphics // Base ambient darkness
+  private lightLayer: Sprite // Additive Light field
+  private entityLayer: Container // Player/Monsters (Masked)
+  
   private labelContainer: Container
 
   // FX
@@ -70,7 +78,17 @@ export class DungeonViewRenderer {
   
   // Grid line state (stored for re-rendering on zoom)
   private floorPositions: Set<string> = new Set()
+  // Accessible corridor tiles for collision
+  private corridorTiles: Set<string> = new Set()
+
+  private fogTexture: RenderTexture | null = null
+  private lightTexture: RenderTexture | null = null
+  private playerSprite: Graphics | null = null
   
+  // Debug flags
+  private showFog: boolean = true
+  private showLight: boolean = true
+
   constructor(parentContainer: Container, options: DungeonViewOptions = {}) {
     this.container = new Container()
     this.container.eventMode = 'static'
@@ -85,10 +103,7 @@ export class DungeonViewRenderer {
     
     // Create layers
     this.backgroundLayer = new Graphics()
-    this.shadowLayer = new Graphics() // Shadow below floor/walls? Or between?
-    // Usually: Floor -> Shadow (on top of floor) -> Walls
-    // Or: Shadow (behind everything) -> Floor -> Walls?
-    // Let's put Shadow ON TOP of Floor, UNDER Walls.
+    this.shadowLayer = new Graphics() 
     
     this.floorLayer = new Graphics()
     this.wallLayer = new Graphics()
@@ -97,18 +112,56 @@ export class DungeonViewRenderer {
     this.overlayLayer = new Graphics()
     this.heatMapLayer = new Graphics()
     this.heatMapLayer.visible = false  // Default OFF
-    this.heatMapLayer.visible = false  // Default OFF
     this.walkmapContainer = new Container()
+    
+    // VISIBILITY INIT
+    this.fogLayer = new Container() 
+    
+    // We will attach the graphics to this container
+    // The Container itself needs the blend mode for its children to composite correctly against the world?
+    // Or we apply blendMode to the child Graphics. 
+    // Usually applying to Container works if children don't override.
+    // Let's apply to the Graphics child to be safe, or direct to container.
+    // Pixi Container supports blendMode.
+    this.fogLayer.blendMode = 'normal'
+    
+    this.darknessLayer = new Graphics()
+    this.darknessLayer.blendMode = 'multiply' // Darkens everything
+    
+    this.lightLayer = new Sprite(Texture.WHITE)
+    this.lightLayer.blendMode = 'screen' // Brightens
+    
+    this.entityLayer = new Container()
+    this.playerSprite = new Graphics()
+    this.entityLayer.addChild(this.playerSprite)
+    
     this.labelContainer = new Container()
     
+    // LAYER ORDER
     this.contentContainer.addChild(this.backgroundLayer)
     this.contentContainer.addChild(this.floorLayer)
-    this.contentContainer.addChild(this.shadowLayer) // Shadows on top of floor
+    this.contentContainer.addChild(this.shadowLayer)
     this.contentContainer.addChild(this.wallLayer)
-    this.contentContainer.addChild(this.objectLayer) // Objects on top of walls (or below?) usually above floors, maybe below high walls? User said "map icons", usually top.
-    this.contentContainer.addChild(this.heatMapLayer)  // Above walls
+    
+    this.contentContainer.addChild(this.objectLayer)
+    
+    // VISIBILITY STACK
+    // Grid Lines should be affected by Fog? User said "Grid layer should adhere to light rules".
+    // So Grid Lines -> Fog -> Light -> Entities?
+    // If Grid is under Fog, it will get dark. Correct.
+    // VISIBILITY STACK
+    // Light MUST be below Fog to be occluded by Unexplored areas
+    this.contentContainer.addChild(this.lightLayer)
+    
     this.contentContainer.addChild(this.gridLineLayer)
-    this.contentContainer.addChild(this.overlayLayer)
+    this.contentContainer.addChild(this.fogLayer) 
+    this.contentContainer.addChild(this.darknessLayer)
+    
+    this.contentContainer.addChild(this.entityLayer)
+    
+    // OVERLAYS / DEBUG
+    this.contentContainer.addChild(this.heatMapLayer)
+    // Grid Line Layer was here (150). Removed.
     this.contentContainer.addChild(this.overlayLayer)
     this.contentContainer.addChild(this.walkmapContainer)
     this.contentContainer.addChild(this.labelContainer)
@@ -120,23 +173,234 @@ export class DungeonViewRenderer {
     // Listen for theme changes
     this.themeManager.onThemeChange((name, config) => {
         this.config = config
-        // Re-apply filters immediately
         this.updateFilters()
-        // If we had data, we would re-render. 
-        // For now, next render() call will pick up colors.
-        // We can force existing graphics to update color if we stored the data...
-        // But DungeonViewRenderer is stateless regarding data storage (passed in render).
-        // So this will take effect on next render loop or user interaction.
     })
 
     // Initialize Roughness (Displacement)
     this.initRoughness()
 
-    // Apply initial theme config (filters only, geometry needs render call)
+    // Apply initial theme config (filters only)
     this.updateFilters()
 
     // Setup pan/zoom
     this.setupPanZoom()
+  }
+
+  public setDebugVisibility(fog: boolean, light: boolean) {
+      this.showFog = fog
+      this.showLight = light
+      this.fogLayer.visible = fog
+      this.darknessLayer.visible = light
+      this.lightLayer.visible = light
+  }
+
+  public updateVisibilityState(
+      gridWidth: number, 
+      gridHeight: number, 
+      visionGrid: VisionGrid,
+      playerX: number,
+      playerY: number,
+      lightProfile: LightProfile
+  ) {
+      // 1. Resize RTs if needed
+      const viewW = gridWidth * this.tileSize
+      const viewH = gridHeight * this.tileSize
+      
+      if (!this.fogTexture || this.fogTexture.width !== viewW || this.fogTexture.height !== viewH) {
+          this.fogTexture?.destroy(true)
+          this.lightTexture?.destroy(true)
+          this.fogTexture = RenderTexture.create({ width: viewW, height: viewH })
+          this.lightTexture = RenderTexture.create({ width: viewW, height: viewH })
+          this.fogLayer.texture = this.fogTexture
+          this.lightLayer.texture = this.lightTexture
+      }
+
+      const tempG = new Graphics()
+      
+      // 2. Render FOG
+      if (this.showFog) {
+          tempG.clear()
+          // Fill black (unexplored)
+          tempG.rect(0, 0, viewW, viewH).fill(0x000000)
+          
+          for (let y = 0; y < gridHeight; y++) {
+              for (let x = 0; x < gridWidth; x++) {
+                  const idx = y * gridWidth + x
+                  const state = visionGrid[idx]
+                  const px = x * this.tileSize
+                  const py = y * this.tileSize
+                  
+                  if (state === VISION_STATE.VISIBLE) {
+                      // Fully visible (transparent fog) - cut hole
+                      tempG.rect(px, py, this.tileSize, this.tileSize).cut()
+                  } else if (state === VISION_STATE.EXPLORED) {
+                      // Dim (gray fog)
+                      // Actually, we filled black. So we draw a semi-transparent white rect?
+                      // Wait, blend mode multiply. 
+                      // White = Transparent. Black = Dark.
+                      // Explored should be DIM (0.5 visibility). So draw 0x808080
+                      tempG.rect(px, py, this.tileSize, this.tileSize).fill({ color: 0xFFFFFF, alpha: 0.5 }) 
+                  }
+              }
+          }
+          // The base was black (0x000000). Cut makes it 0 alpha (transparent)? 
+          // No, Graphics context..
+          // Better approach for FOG MASK:
+          // Draw the VISIBLE areas as WHITE.
+          // Draw EXPLORED areas as GRAY.
+          // Draw UNEXPLORED as BLACK.
+          // Then use this texture as a mask or multiply? 
+          // Current FogLayer is Multiplied.
+          // So: White = No change (Visible). Gray = Darken (Explored). Black = Black (Unexplored).
+          
+          tempG.clear()
+          tempG.rect(0, 0, viewW, viewH).fill(0x000000) // Unexplored
+          
+          for (let y = 0; y < gridHeight; y++) {
+              for (let x = 0; x < gridWidth; x++) {
+                  const idx = y * gridWidth + x
+                  const state = visionGrid[idx]
+                  
+                  if (state === VISION_STATE.VISIBLE) {
+                      tempG.rect(x * this.tileSize, y * this.tileSize, this.tileSize, this.tileSize).fill(0xFFFFFF)
+                  } else if (state === VISION_STATE.EXPLORED) {
+                      // 0.5 brightness
+                       tempG.rect(x * this.tileSize, y * this.tileSize, this.tileSize, this.tileSize).fill(0x555555)
+                  }
+              }
+          }
+          
+          // Render to texture
+          // We need a renderer instance.. passed in or global?
+          // Pixi v8 handles this via app.renderer... but we don't have app ref here.
+          // We can use the container's transform? No, need renderer.
+          // Actually, we can just leave the Graphics as a child if performance allows.
+          // Optimisation: Render only on change.
+          // For now, let's just use the Graphics directly attached to fogLayer? 
+          // No, separate RT is cleaner for masks.
+          // But without renderer ref, we can't update RT.
+          // We can attach the Graphics to the container and toggle visibility?
+          // Let's replace the sprite logic with direct Graphics for now to avoid RT complexity without App ref.
+      }
+  }
+  
+  // NOTE: Switched to Direct Graphics for Fog to avoid RT overhead
+  private fogGraphics: Graphics = new Graphics()
+  private lightTextureCache: Map<string, Texture> = new Map()
+  
+  public updateVisibilityGraphics(
+      gridWidth: number, 
+      gridHeight: number, 
+      visionGrid: VisionGrid,
+      playerX: number,
+      playerY: number,
+      lightProfile: LightProfile
+  ) {
+      // FOG
+      this.fogLayer.removeChildren() // Clear container
+      this.fogGraphics.clear()
+      
+      if (this.showFog) {
+           // 1. Draw "Border" Fog (Infinite Blackness outside the grid) to prevent light bleed
+           const gloomSize = 10000 
+           const totalW = gridWidth * this.tileSize
+           const totalH = gridHeight * this.tileSize
+
+           // Top
+           this.fogGraphics.rect(-gloomSize, -gloomSize, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
+           // Bottom
+           this.fogGraphics.rect(-gloomSize, totalH, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
+           // Left
+           this.fogGraphics.rect(-gloomSize, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
+           // Right
+           this.fogGraphics.rect(totalW, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
+
+           // Debug counts
+           let visibleCount = 0
+           
+           for (let y = 0; y < gridHeight; y++) {
+              for (let x = 0; x < gridWidth; x++) {
+                  const idx = y * gridWidth + x
+                  const state = visionGrid[idx]
+                  
+                  const px = x * this.tileSize
+                  const py = y * this.tileSize
+                  
+                   if (state === VISION_STATE.VISIBLE) {
+                      visibleCount++
+                      // Draw nothing (transparent)
+                  } else if (state === VISION_STATE.EXPLORED) {
+                       // Dimmed (Explored)
+                       // User requested "Reduce visibility... to 25%". 
+                       // 25% Visibility means 75% Opacity.
+                       this.fogGraphics.rect(px, py, this.tileSize, this.tileSize).fill({ color: 0x000000, alpha: 0.75 })
+                  } else {
+                       // Unexplored (Hidden) - Default
+                       this.fogGraphics.rect(px, py, this.tileSize, this.tileSize).fill({ color: 0x000000, alpha: 1.0 })
+                  }
+              }
+           }
+           console.log(`[DungeonView] Fog Update: ${visibleCount} visible tiles`)
+      }
+      this.fogLayer.addChild(this.fogGraphics)
+
+      // PLAYER
+      if (this.playerSprite) {
+          const cx = (playerX + 0.5) * this.tileSize
+          const cy = (playerY + 0.5) * this.tileSize
+          const r = this.tileSize * 0.4
+          this.playerSprite.clear()
+          this.playerSprite.circle(cx, cy, r).fill(0xFFA500).stroke({ width: 2, color: 0xFFFFFF }) // Orange circle
+      }
+      
+      // LIGHTING (Gradient Texture)
+      if (this.showLight) {
+          let tex = this.lightTextureCache.get(lightProfile.type)
+          if (!tex) {
+              tex = this.generateLightTexture(lightProfile)
+              this.lightTextureCache.set(lightProfile.type, tex)
+          }
+          
+          this.lightLayer.texture = tex
+          this.lightLayer.anchor.set(0.5)
+          this.lightLayer.width = lightProfile.dimRadius * 2 * this.tileSize
+          this.lightLayer.height = lightProfile.dimRadius * 2 * this.tileSize
+          this.lightLayer.x = (playerX + 0.5) * this.tileSize
+          this.lightLayer.y = (playerY + 0.5) * this.tileSize
+          this.lightLayer.visible = true
+      } else {
+          this.lightLayer.visible = false
+      }
+  }
+
+  private generateLightTexture(profile: LightProfile): Texture {
+      const size = 512
+      const canvas = document.createElement('canvas')
+      canvas.width = size
+      canvas.height = size
+      const ctx = canvas.getContext('2d')
+      
+      if (ctx) {
+          const cx = size / 2
+          const cy = size / 2
+          const r = size / 2
+          
+          const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
+          const brightRatio = Math.min(1, profile.brightRadius / profile.dimRadius)
+          
+          // Adjustable Warm Colors
+          // Center: Bright
+          grad.addColorStop(0, 'rgba(255, 240, 200, 1.0)') 
+          // Bright edge: Start fading
+          grad.addColorStop(brightRatio, 'rgba(255, 200, 150, 0.6)') 
+          // Dim edge: Fade to black
+          grad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+          
+          ctx.fillStyle = grad
+          ctx.fillRect(0, 0, size, size)
+      }
+      
+      return Texture.from(canvas)
   }
 
   private initRoughness() {
@@ -265,6 +529,14 @@ export class DungeonViewRenderer {
     this.contentContainer.x = (this.viewWidth - contentWidth) / 2
     this.contentContainer.y = (this.viewHeight - contentHeight) / 2
   }
+
+  public focusOnTile(tx: number, ty: number): void {
+      const cx = (tx + 0.5) * this.tileSize * this.zoom
+      const cy = (ty + 0.5) * this.tileSize * this.zoom
+      
+      this.contentContainer.x = (this.viewWidth / 2) - cx
+      this.contentContainer.y = (this.viewHeight / 2) - cy
+  }
   
   /**
    * Render the dungeon view from seed growth state OR DungeonData
@@ -388,7 +660,10 @@ export class DungeonViewRenderer {
             for (const t of renderedSpinePath) targetSet.add(`${t.x},${t.y}`)
 
         } else {
-            // --- MODE B: NETWORK / ORGANIC SPINE (Width 1) ---
+            // --- MODE B: WIDTH 1 - NO SPINE CORRIDOR ---
+            // When spine width is 1, the spine is just a pathfinding guide.
+            // renderedSpinePath stays empty (no spine floor tiles drawn).
+            // But we still need to set a targetSet for tributary generation.
             if (rooms.length > 0) {
                 const seedRoom = rooms.reduce((prev, curr) => (prev.id.localeCompare(curr.id) < 0 ? prev : curr))
                 for (const tile of seedRoom.tiles) {
@@ -397,7 +672,7 @@ export class DungeonViewRenderer {
             }
         }
 
-        // 3. Generate Tributary Corridors
+        // 3. Generate Tributary Corridors (connecting rooms)
         const pathfinder = new CorridorPathfinder(settings.seed)
         tributaryTiles = pathfinder.generateSpineCorridors(
             data.gridWidth, 
@@ -410,6 +685,8 @@ export class DungeonViewRenderer {
         )
 
         // 4. Combine initial corridors (unpruned)
+        // For width 1: renderedSpinePath is empty, only tributaries are used
+        // For width > 1: both spine corridor and tributaries are included
         corridorTiles = [...renderedSpinePath, ...tributaryTiles]
         
         // Update data.spine to be the PHYSICAL spine corridor (for Analysis)
@@ -434,6 +711,9 @@ export class DungeonViewRenderer {
     }]
 
     const decorator = new DungeonDecorator(settings.seed)
+    // Clear objects to prevent duplication on re-renders (since data is mutable state)
+    // Clear objects to prevent duplication on re-renders (in-place to preserve ref)
+    if (data.objects) data.objects.length = 0
     decorator.decorate(data)
 
     // --- UNIFIED PRUNING PHASE ---
@@ -453,8 +733,9 @@ export class DungeonViewRenderer {
         
         const tributarySet = new Set(tributaryTiles.map(t => `${t.x},${t.y}`))
         
-        // 1. Spine Range Pruning (Critical for Wide Corridors)
-        if ('spine' in data && spineTiles.length > 0) {
+        // 1. Spine Range Pruning (Critical for Wide Corridors - ONLY for spineWidth > 1)
+        const spineWidth = ('spineWidth' in data) ? (data.spineWidth || 1) : 1
+        if ('spine' in data && spineTiles.length > 0 && spineWidth > 1) {
             const spineWidth = data.spineWidth || 1
             const effectiveWidth = Math.max(1, spineWidth - 2)
             const radius = Math.floor((effectiveWidth - 1) / 2)
@@ -604,6 +885,17 @@ export class DungeonViewRenderer {
     // this.renderDoorMarkers(rooms, corridorTiles, size)
     
     // 7. Render grid lines
+    // 7. Render grid lines
+    // Store local corridorTiles into class property for collision logic
+    this.corridorTiles = new Set()
+    // Convert array to Set if it's an array, or if it's already a Set copy it.
+    // Wait, the local 'corridorTiles' (line 541) is Array.
+    // The previous implementation of 'renderGridLines' likely accepts Array?
+    // Let's populate the Set from the Array.
+    for (const t of corridorTiles) {
+        this.corridorTiles.add(`${t.x},${t.y}`)
+    }
+    
     this.renderGridLines(rooms, corridorTiles, size)
     
     // 8. Render room labels (only if enabled)
@@ -648,6 +940,7 @@ export class DungeonViewRenderer {
               this.objectLayer.addChild(sprite)
 
               Assets.load(stairsIcon).then((texture) => {
+                  if (sprite.destroyed) return
                   sprite.texture = texture
                   // Ensure scaling is maintained
                   sprite.width = size
@@ -678,6 +971,7 @@ export class DungeonViewRenderer {
               }
 
               Assets.load(iconPath).then((texture) => {
+                  if (sprite.destroyed) return
                   sprite.texture = texture
                   sprite.width = size
                   sprite.height = size
@@ -1091,6 +1385,10 @@ export class DungeonViewRenderer {
       this.walkmapContainer.visible = visible
   }
 
+  public setPlayerVisibility(visible: boolean): void {
+      this.entityLayer.visible = visible
+  }
+
   /**
    * Calculate heat map scores for all room walls
    */
@@ -1193,6 +1491,17 @@ export class DungeonViewRenderer {
         this.heatMapLayer.rect(x * size, y * size, size, size)
         this.heatMapLayer.fill({ color: scoreToColor(score), alpha: 0.5 })
     }
+    }
+    // Helper to expose walkable tiles for PlayerController
+  public getWalkableTiles(): {x: number, y: number}[] {
+      const tiles: {x: number, y: number}[] = []
+      
+      // 1. Corridors (Already pruned and widened)
+      for (const k of this.corridorTiles) {
+          const [x, y] = k.split(',').map(Number)
+          tiles.push({x, y})
+      }
+      return tiles
   }
 
   // Bind for cleanup

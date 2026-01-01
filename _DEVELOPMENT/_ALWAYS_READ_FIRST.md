@@ -43,3 +43,13 @@ This project unifies the Anvil & Loom VTT shell, the Plough Map Engine, and the 
 ## Files
 
 - `cleanup_notes.md`: See `_DEVELOPMENT/cleanup_notes.md` for details on the migration/cleanup.
+
+SPINE RULES:
+
+1. The Spine PATH is the path the spine takes to eject seeds.
+2. After that, the Spine PATH is only used as a GUIDE or REFERENCE.
+3. ONLY on Spine widths of 3, 5, and 7, the Spine PATH is used to draw the Spine CORRIDOR.
+4. The Spine CORRIDOR is always 2 squares LESS wide than the Spine width (3 = 1 wide, 5 = 3 wide, 7 = 5 wide).
+5. DO NOT TOUCH THE SPINE PATH! DO NOT USE IT FOR ANYTHING UNLESS EXPLICITLY INSTRUCTED TO!
+
+

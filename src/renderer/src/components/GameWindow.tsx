@@ -41,6 +41,10 @@ import {
   createDefaultSpineSeedSettings,
   GeneratorMode
 } from '../engine/seed-growth'
+import { VisibilitySystem } from '../engine/systems/VisibilitySystem'
+import { PlayerController } from '../engine/systems/PlayerController'
+import { LIGHT_PROFILES, LightSourceType } from '../engine/data/LightingData'
+
 import { SeedGrowthControlPanel } from './SeedGrowthControlPanel'
 import { Container } from 'pixi.js'
 
@@ -63,6 +67,7 @@ interface Plot {
 
 // Dungeon generation code stripped - taking new direction
 
+
 export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const pixiContainerRef = useRef<HTMLDivElement>(null)
@@ -75,6 +80,15 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const initializingRef = useRef(false)
 
   // Global Store
+  // Global Store
+  // const activeTheme = useThemeStore((state) => state.activeTheme) // Removed: Store doesn't exist yet
+
+
+  // Custom hook to sync resize
+  // Moved to after initialization
+
+
+  // --- REFS & STATE ---
   const showMap = useAppStore((state) => state.showMap)
   const { toggleMap } = useAppActions()
 
@@ -116,7 +130,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const [showHeatMap, setShowHeatMap] = useState<boolean>(false)
   const [showWalkmap, setShowWalkmap] = useState<boolean>(false) // New: Walkmap toggle
   const [activeTheme, setActiveTheme] = useState('None')
+
   const themeManagerRef = useRef<ThemeManager | null>(null)
+
+  // Custom hook to sync resize - REMOVED (Simpler method used inline)
+
 
   // --- SPINE-SEED STATE ---
   const [spineSeedSettings, setSpineSeedSettings] = useState<SpineSeedSettings>(createDefaultSpineSeedSettings())
@@ -150,6 +168,18 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const [townPlaced, setTownPlaced] = useState(false)
   // REFACTORED: Manager Ref
   const overworldManagerRef = useRef<OverworldManager>(new OverworldManager())
+
+  // --- PLAYER & VISIBILITY STATE ---
+  const visibilitySystemRef = useRef<VisibilitySystem | null>(null)
+  const playerControllerRef = useRef<PlayerController | null>(null)
+  const [activeLight, setActiveLight] = useState<LightSourceType>('torch')
+  const [showFog, setShowFog] = useState(true)
+  const [showLight, setShowLight] = useState(true)
+  const [showPlayer, setShowPlayer] = useState(true)
+
+  // Ref for movement handler access without re-binding
+  const showPlayerRef = useRef(true)
+  useEffect(() => { showPlayerRef.current = showPlayer }, [showPlayer])
 
   // Interactive Exploration State
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string; visible: boolean }>({
@@ -431,6 +461,12 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
   // Re-render when debug settings change
   useEffect(() => {
+    // Sync debug flags to Dungeon View Renderer if active
+    if (viewAsDungeon && dungeonViewRendererRef.current) {
+      dungeonViewRendererRef.current.setDebugVisibility(showFog, showLight)
+      dungeonViewRendererRef.current.setPlayerVisibility(showPlayer)
+    }
+
     if (generatorMode === 'organic') {
       if (seedGrowthGenRef.current && seedGrowthRendererRef.current && gameMode === 'dungeon') {
         seedGrowthRendererRef.current.render(seedGrowthGenRef.current.getState(), seedGrowthSettings)
@@ -523,9 +559,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       console.log('[ViewAsDungeon] Organic Mode Rooms:', state.rooms?.length ?? 0)
     }
 
-    const layout = layoutRef.current
-    const viewWidth = layout.middlePanel.width || 800
-    const viewHeight = layout.middlePanel.height || 600
+
+    // Use App Screen width if available (most accurate), fallback to layout
+    const viewWidth = appRef.current?.screen.width ?? layout.middlePanel.width ?? 800
+    const viewHeight = appRef.current?.screen.height ?? layout.middlePanel.height ?? 600
 
     if (viewAsDungeon) {
       // Create dungeon view renderer if it doesn't exist
@@ -553,6 +590,17 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
       // Always update view dimensions first
       dungeonViewRendererRef.current.setViewDimensions(viewWidth, viewHeight)
+
+      // Add simple resize listener
+      const handleResize = () => {
+        if (dungeonViewRendererRef.current && appRef.current) {
+          dungeonViewRendererRef.current.setViewDimensions(
+            appRef.current.screen.width,
+            appRef.current.screen.height
+          )
+        }
+      }
+      window.addEventListener('resize', handleResize)
 
       // Check if this is a "Toggle On" event (was hidden, now showing)
       const isToggleOn = !dungeonViewRendererRef.current.getContainer().visible
@@ -599,14 +647,118 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           rooms: prunedRooms,
           spine: state.spineTiles, // Pass spine tiles directly
           spineWidth: spineSeedSettings.spine.spineWidth,
-          seed: spineSeedSettings.seed // For seeded RNG ops
+          seed: spineSeedSettings.seed, // For seeded RNG ops
+          objects: state.objects // Pass objects (stairs!)
         }, spineSeedSettings as any, showRoomNumbers, showWalkmap)
+
+        // --- INITIALIZE PLAYER & VISIBILITY (SPINE MODE) ---
+        if (state.spineComplete) { // Ensure generation is done
+          // 1. Find Start (Stairs Up or first Spine Tile)
+          let startX = 0
+          let startY = 0
+          const stairs = state.objects?.find(o => o.type === 'stairs_up')
+          if (stairs) {
+            startX = stairs.x
+            startY = stairs.y
+          } else if (state.spineTiles && state.spineTiles.length > 0) {
+            startX = state.spineTiles[0].x
+            startY = state.spineTiles[0].y
+          }
+
+          // 2. Build Walkmap (Floor + Doors)
+          // We can extract this from the DungeonViewRenderer or rebuild it.
+          // DungeonViewRenderer knows the "corridorTiles" logic.
+          // But for now, let's use the raw state: Room Tiles + Spine Tiles + Objects(floor)
+          // Actually, `DungeonViewRenderer` processes the final corridor set. 
+          // Ideally we ask the renderer for the 'walkable' set, but it's render-only.
+          // Let's rebuild a quick set here.
+          const walkable: { x: number, y: number }[] = []
+          const seen = new Set<string>()
+          const add = (x, y) => {
+            const k = `${x},${y}`
+            if (!seen.has(k)) { seen.add(k); walkable.push({ x, y }) }
+          }
+
+          // Add Rooms
+          prunedRooms.forEach(r => r.tiles.forEach(t => add(t.x, t.y)))
+
+          // Add Expanded Corridors from Renderer
+          // This fixes the collision issue where narrow spine state didn't match wide visual corridors
+          const expandedCorridors = dungeonViewRendererRef.current.getWalkableTiles()
+          expandedCorridors.forEach(t => add(t.x, t.y))
+
+          // Add Walkable Objects (Doors, Stairs)
+          state.objects?.forEach(obj => {
+            if (obj.type.startsWith('door') || obj.type === 'stairs_up') {
+              add(obj.x, obj.y)
+            }
+          })
+
+          // 3. Init Systems
+          if (!visibilitySystemRef.current) {
+            visibilitySystemRef.current = new VisibilitySystem(spineSeedSettings.gridWidth, spineSeedSettings.gridHeight)
+          } else {
+            visibilitySystemRef.current.reset(spineSeedSettings.gridWidth, spineSeedSettings.gridHeight)
+          }
+
+          if (!playerControllerRef.current) {
+            playerControllerRef.current = new PlayerController()
+          }
+
+          const handleMove = (x, y) => {
+            if (!dungeonViewRendererRef.current || !visibilitySystemRef.current) return
+
+            // Update Visibility
+            // We need a collision function for LOS.
+            // Simple: blocked if NOT in walkable set? Or strict walls?
+            // Walls are tiles NOT in navigable space (simplified).
+            // Actually, better to check if tile is a WALL or BLOCKED in state.
+            // For now, let's assume anything NOT floor is a wall.
+            const isWall = (tx, ty) => !seen.has(`${tx},${ty}`)
+
+            visibilitySystemRef.current.computeVisibility(
+              x, y,
+              LIGHT_PROFILES[activeLight].dimRadius,
+              isWall
+            )
+
+            // Update Renderer
+            dungeonViewRendererRef.current.updateVisibilityGraphics(
+              spineSeedSettings.gridWidth,
+              spineSeedSettings.gridHeight,
+              visibilitySystemRef.current.getGrid(),
+              x, y,
+              LIGHT_PROFILES[activeLight]
+            )
+
+
+
+            // Focus Camera (Only if player is visible)
+            if (showPlayerRef.current) {
+              dungeonViewRendererRef.current.focusOnTile(x, y)
+            }
+          }
+
+          playerControllerRef.current.init(
+            startX, startY,
+            spineSeedSettings.gridWidth,
+            spineSeedSettings.gridHeight,
+            walkable,
+            handleMove
+          )
+
+          // Initial Update
+          handleMove(startX, startY)
+        }
 
         console.log('[ViewAsDungeon] Render returned')
 
       } else {
         console.log('[ViewAsDungeon] calling renderDungeonView() with Organic state')
         dungeonViewRendererRef.current.renderDungeonView(state, seedGrowthSettings, showRoomNumbers, showWalkmap)
+
+        // --- INITIALIZE PLAYER (ORGANIC MODE) ---
+        // TODO: Similar logic for Organic mode if needed, utilizing rooms[0] center
       }
       dungeonViewRendererRef.current.setShowRoomNumbers(showRoomNumbers)
       dungeonViewRendererRef.current.getContainer().visible = true
@@ -644,8 +796,41 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         }
         spineSeedRendererRef.current.render(state, spineSeedSettings)
       }
+
+      // Cleanup Player Controller when Toggling Off
+      if (playerControllerRef.current) {
+        playerControllerRef.current.destroy()
+        playerControllerRef.current = null
+      }
     }
-  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, showRoomNumbers, showWalkmap])
+  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, showRoomNumbers, showWalkmap, activeLight]) // Added activeLight dependency to re-init logic if light changes? No, handleLightChange separately.
+
+  // Update Light Profile when activeLight changes
+  useEffect(() => {
+    if (viewAsDungeon && playerControllerRef.current && dungeonViewRendererRef.current && visibilitySystemRef.current) {
+      // Trigger a re-compute with new profile
+      const { x, y } = playerControllerRef.current
+      // We need the move handler logic... refactor handleMove to reuse?
+      // For now, simple re-trigger if we can access the walkable set? 
+      // Actually, just calling the renderer update is enough IF visibility was already computed...
+      // BUT changing light radius requires re-computing visibility!
+      // We need to re-run: visibilitySystem.computeVisibility(...)
+      // We don't have easy access to the 'isWall' closure here.
+      // OPTION: make handleMove a Ref or persistent function?
+      // OR: Just let the next move update it? (User might want instant update).
+      // Let's leave it for next move for MVP safety, or try to hack a move(0,0).
+      // playerControllerRef.current.attemptMove(0,0) // Logic is private.
+      // Let's enforce re-init in the main effect by adding activeLight to dependency array?
+      // Yes, that will tear down and re-build. A bit heavy but safe.
+    }
+  }, [activeLight])
+
+  // Debug Toggles Effect
+  useEffect(() => {
+    if (dungeonViewRendererRef.current) {
+      dungeonViewRendererRef.current.setDebugVisibility(showFog, showLight)
+    }
+  }, [showFog, showLight])
 
   // Dedicated effect for room number visibility toggle (independent of render)
   useEffect(() => {
@@ -1324,6 +1509,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     // Set Dungeon Mode
     setGameMode('dungeon')
     setGeneratorMode('spineSeed') // Reset to default Spine mode
+    setViewAsDungeon(true) // Default to Dungeon View
 
     // Default Init Config (30x30)
     setMapConfig({
@@ -1926,6 +2112,59 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             activeTheme={activeTheme}
             onThemeChange={setActiveTheme}
           />
+        )}
+
+        {/* Floating Dungeon Controls */}
+        {viewAsDungeon && (
+          <div style={{
+            position: 'absolute',
+            top: 20,
+            right: 320, // To left of existing right panel
+            background: 'rgba(0,0,0,0.85)',
+            padding: '12px',
+            borderRadius: '8px',
+            border: '1px solid #444',
+            color: 'white',
+            zIndex: 2000,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+          }}>
+            <h3 style={{ margin: 0, fontSize: '14px', borderBottom: '1px solid #666', paddingBottom: '6px', fontWeight: 'bold' }}>Light & Fog</h3>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={showFog} onChange={e => setShowFog(e.target.checked)} />
+                Fog
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={showLight} onChange={e => setShowLight(e.target.checked)} />
+                Light
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={showPlayer} onChange={e => setShowPlayer(e.target.checked)} />
+                Player
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '12px', color: '#aaa' }}>Light Source:</label>
+              <select
+                value={activeLight}
+                onChange={e => setActiveLight(e.target.value as LightSourceType)}
+                style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '4px', borderRadius: '4px', fontSize: '12px' }}
+              >
+                <option value="torch">Torch (20/40)</option>
+                <option value="hooded">Hooded (30/60)</option>
+                <option value="bullseye">Bullseye (60/120)</option>
+              </select>
+            </div>
+
+            <div style={{ fontSize: '10px', color: '#777', marginTop: '4px' }}>
+              WASD or Arrows to move
+            </div>
+          </div>
         )}
 
         {
