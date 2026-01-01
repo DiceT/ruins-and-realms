@@ -359,8 +359,6 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
     // ---- TABS ----
     const tabs: { id: TabId; label: string }[] = [
         { id: 'main', label: 'Main' },
-        { id: 'animation', label: 'Anim' },
-        { id: 'mask', label: 'Mask' },
         { id: 'fx', label: 'FX' },
         { id: 'debug', label: 'Debug' },
         { id: 'output', label: 'Output' }
@@ -1004,8 +1002,6 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
     const renderTabContent = () => {
         switch (activeTab) {
             case 'main': return renderMainTab()
-            case 'animation': return renderAnimationTab()
-            case 'mask': return renderMaskTab()
             case 'fx': return renderFXTab()
             case 'debug': return renderDebugTab()
             case 'output': return renderOutputTab()

@@ -1,6 +1,7 @@
 
 import { Application, Container } from 'pixi.js'
 import { GameLayout } from '../ui/GameLayout'
+import { DungeonController, DungeonControllerCallbacks } from './controllers'
 
 /**
  * GameOrchestrator
@@ -16,6 +17,9 @@ export class GameOrchestrator {
   // Container for the game view (middle panel)
   private viewContainer: Container | null = null
   
+  // Controllers
+  private dungeonController: DungeonController | null = null
+  
   private constructor() {}
 
   public static getInstance(): GameOrchestrator {
@@ -28,9 +32,13 @@ export class GameOrchestrator {
   /**
    * Initialize the Orchestrator with the PIXI App and Layout
    */
-  public init(app: Application, layout: GameLayout): void {
+  public init(app: Application, layout: GameLayout, callbacks?: DungeonControllerCallbacks): void {
     this.app = app
     this.layout = layout
+    
+    // Create DungeonController (Phase A - skeleton only)
+    this.dungeonController = new DungeonController(callbacks)
+    
     console.log('[GameOrchestrator] Initialized')
   }
 
@@ -40,6 +48,10 @@ export class GameOrchestrator {
 
   public getLayout(): GameLayout | null {
     return this.layout
+  }
+
+  public getDungeonController(): DungeonController | null {
+    return this.dungeonController
   }
 
   // --- Mode Switching ---
@@ -53,6 +65,12 @@ export class GameOrchestrator {
    * Cleanup method
    */
   public destroy(): void {
+    // Cleanup controllers
+    if (this.dungeonController) {
+      this.dungeonController.destroy()
+      this.dungeonController = null
+    }
+    
     this.app = null
     this.layout = null
     this.viewContainer = null
