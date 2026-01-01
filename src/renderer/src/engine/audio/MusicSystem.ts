@@ -1,7 +1,7 @@
 export class MusicSystemClass {
   private currentTrack: HTMLAudioElement | null = null
   private currentTrackId: string | null = null
-  private musicVolume = 0.5
+  private musicVolume = 0
   private masterVolume = 1.0
   private isMuted = false
   private tracks: Map<string, string> = new Map() // ID -> URL
@@ -12,7 +12,7 @@ export class MusicSystemClass {
 
   constructor() {
     // Load volume from storage if available (later)
-    this.musicVolume = 0.5
+    this.musicVolume = 0
   }
 
   private playlist: string[] = []

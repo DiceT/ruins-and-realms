@@ -36,7 +36,7 @@ export const useAppStore = create<AppState>()(
     showMap: false,
     settings: {
       masterVolume: 1.0,
-      musicVolume: 0.5,
+      musicVolume: 0,
       sfxVolume: 1.0,
       fullscreen: false
     },
