@@ -17,6 +17,7 @@ import { SeededRNG } from '../../utils/SeededRNG'
 import { DungeonAnalysis, FurthestRoomResult } from '../analysis/DungeonAnalysis'
 import { ThemeManager } from '../managers/ThemeManager'
 import { RoomLayerConfig } from '../themes/ThemeTypes'
+import { FloorLayer, WallLayer } from './layers'
 import { createNoiseTexture } from '../utils/rendering'
 import stairsIcon from '../../assets/images/icons/stairs.svg'
 import doorIcon from '../../assets/images/icons/door.svg'
@@ -51,9 +52,8 @@ export class DungeonViewRenderer {
   
   // Layers
   private backgroundLayer: Graphics
-  private shadowLayer: Graphics // New: Shadows
-  private floorLayer: Graphics
-  private wallLayer: Graphics
+  private floorLayer: FloorLayer
+  private wallLayer: WallLayer
   private objectLayer: Container // New: Objects (Sprites, Decorations)
   private gridLineLayer: Graphics  // Separate layer for grid lines (re-rendered on zoom)
   private overlayLayer: Graphics
@@ -103,10 +103,8 @@ export class DungeonViewRenderer {
     
     // Create layers
     this.backgroundLayer = new Graphics()
-    this.shadowLayer = new Graphics() 
-    
-    this.floorLayer = new Graphics()
-    this.wallLayer = new Graphics()
+    this.floorLayer = new FloorLayer()
+    this.wallLayer = new WallLayer()
     this.objectLayer = new Container()
     this.gridLineLayer = new Graphics()
     this.overlayLayer = new Graphics()
@@ -139,9 +137,9 @@ export class DungeonViewRenderer {
     
     // LAYER ORDER
     this.contentContainer.addChild(this.backgroundLayer)
-    this.contentContainer.addChild(this.floorLayer)
-    this.contentContainer.addChild(this.shadowLayer)
-    this.contentContainer.addChild(this.wallLayer)
+    this.contentContainer.addChild(this.floorLayer.container)
+    this.contentContainer.addChild(this.wallLayer.shadowContainer)  // Shadows under walls
+    this.contentContainer.addChild(this.wallLayer.container)
     
     this.contentContainer.addChild(this.objectLayer)
     
@@ -856,29 +854,18 @@ export class DungeonViewRenderer {
         ;(data as any).spine = renderedSpinePath
     }
 
-    // 3. Render ROOM floors
+    // 3. Render floors (rooms + corridors) using FloorLayer
     console.log('[DungeonViewRenderer] Rendering Floors for', rooms.length, 'rooms')
-    for (const room of rooms) {
-      this.renderRoomFloor(room, size)
-    }
+    this.floorLayer.render(
+      { rooms, corridorTiles },
+      { tileSize: size, theme: this.config }
+    )
     
-    // 4. Render corridor floors
-    // Color depends on config - maybe distinct corridor color or same as floor
-    // Using theme's floor color for now, unless we want to distinguish
-    for (const pos of corridorTiles) {
-      this.floorLayer.rect(pos.x * size, pos.y * size, size - 1, size - 1)
-      this.floorLayer.fill({ color: this.config.floor.color }) // Use theme floor
-    }
-    
-    // 5. Render walls (around rooms AND corridors)
-    const wallSet = this.renderWalls(rooms, settings, size, corridorTiles)
-    
-    // 5b. Render Shadows
-    // Only if wallRoughness > 0 or specific shadow config exists?
-    // Theme configs usually have shadows defined if they are 'Dungeon' etc.
-    if (this.config.shadow) {
-        this.renderShadows(wallSet, size)
-    }
+    // 4. Render walls and shadows using WallLayer
+    const wallSet = this.wallLayer.render(
+      { rooms, corridorTiles, gridWidth: settings.gridWidth, gridHeight: settings.gridHeight },
+      { tileSize: size, theme: this.config }
+    )
 
     // 6. Render door markers
     // [REMOVED] Obsolete
@@ -982,31 +969,7 @@ export class DungeonViewRenderer {
       }
   }
 
-  private renderShadows(wallPositions: Set<string>, size: number) {
-      if (!this.config.shadow) return
 
-      const { color, x: offX, y: offY } = this.config.shadow
-      
-      // Draw shadow rects at offset position
-      // Simple drop shadow approach
-      this.shadowLayer.clear()
-      
-      for (const key of wallPositions) {
-          const [x, y] = key.split(',').map(Number)
-          // Convert grid pos to pixel pos
-          // Offset by shadow config (pixels? or units? usually pixels)
-          // In ThemeTypes, x:12, y:9 are likely pixels.
-          
-          this.shadowLayer.rect(
-              x * size + offX, 
-              y * size + offY, 
-              size, 
-              size
-          )
-      }
-      this.shadowLayer.fill({ color: color, alpha: 0.5 }) // Opacity?
-  }
-  
   private renderGridLines(rooms: Room[], corridorTiles: { x: number; y: number }[], size: number): void {
     // Build and store set of all floor positions
     this.floorPositions.clear()
@@ -1058,92 +1021,6 @@ export class DungeonViewRenderer {
         this.gridLineLayer.fill({ color: color })
       }
     }
-  }
-  
-  /**
-   * Room Floor rendering
-   */
-  private renderRoomFloor(room: Room, size: number): void {
-    const { x, y, w, h } = room.bounds
-    // console.log('[DungeonView] Rendering room:', { id: room.id, x, y, w, h, isCircular: room.isCircular })
-    
-    if (room.isCircular) {
-      // Draw wall-colored bounding box first (corners will show as walls)
-      // Draw on floorLayer so it's under the circle but above the background
-      this.floorLayer.rect(x * size, y * size, w * size, h * size)
-      this.floorLayer.fill({ color: this.config.walls.color })
-      
-      // Draw circular room on top (same layer, so it covers the center)
-      const centerX = (x + w / 2) * size
-      const centerY = (y + h / 2) * size
-      const radius = (w / 2) * size
-      
-      this.floorLayer.circle(centerX, centerY, radius)
-      this.floorLayer.fill({ color: this.config.floor.color })
-    } else {
-      // Draw rectangular room (full tiles, grid lines drawn separately)
-      for (let dy = 0; dy < h; dy++) {
-        for (let dx = 0; dx < w; dx++) {
-          this.floorLayer.rect((x + dx) * size, (y + dy) * size, size, size)
-          this.floorLayer.fill({ color: this.config.floor.color })
-        }
-      }
-    }
-  }
-  
-  private renderWalls(rooms: Room[], settings: SeedGrowthSettings, size: number, corridorTiles: { x: number; y: number }[] = []): Set<string> {
-    const { gridWidth, gridHeight } = settings
-    
-    // Build a set of floor positions from room bounding boxes
-    const floorSet = new Set<string>()
-    
-    for (const room of rooms) {
-      const { x, y, w, h } = room.bounds
-      for (let dy = 0; dy < h; dy++) {
-        for (let dx = 0; dx < w; dx++) {
-          floorSet.add(`${x + dx},${y + dy}`)
-        }
-      }
-    }
-    
-    // Add corridor tiles to floor set
-    for (const pos of corridorTiles) {
-      floorSet.add(`${pos.x},${pos.y}`)
-    }
-    
-    // Find all tiles adjacent to floor that are not floor themselves
-    const wallSet = new Set<string>()
-    const neighbors = [
-      [0, -1], [0, 1], [-1, 0], [1, 0],
-      [-1, -1], [1, -1], [-1, 1], [1, 1]
-    ]
-    
-    // Just for shadow calculation - we need "external" wall positions
-    for (const key of floorSet) {
-      const [x, y] = key.split(',').map(Number)
-      
-      for (const [dx, dy] of neighbors) {
-        const nx = x + dx
-        const ny = y + dy
-        const neighborKey = `${nx},${ny}`
-        
-        // Relaxed bounds check for expanded border (padding 2)
-        if (nx >= -2 && nx < gridWidth + 2 && ny >= -2 && ny < gridHeight + 2) {
-          if (!floorSet.has(neighborKey)) {
-            wallSet.add(neighborKey)
-          }
-        }
-      }
-    }
-    
-    // Render walls
-    for (const key of wallSet) {
-      const [x, y] = key.split(',').map(Number)
-      this.wallLayer.rect(x * size, y * size, size, size)
-      this.wallLayer.fill({ color: this.config.walls.color })
-    }
-
-    return wallSet
   }
   
   /**
@@ -1311,7 +1188,6 @@ export class DungeonViewRenderer {
   public render(data: SeedGrowthState | DungeonData, settings: SeedGrowthSettings, showRoomNumbers: boolean = true, showWalkmap: boolean = false): void {
     // Clear previous
     this.backgroundLayer.clear()
-    this.shadowLayer.clear()
     this.floorLayer.clear()
     this.wallLayer.clear()
     this.gridLineLayer.clear()
@@ -1336,7 +1212,6 @@ export class DungeonViewRenderer {
     this.backgroundLayer.clear()
     this.floorLayer.clear()
     this.wallLayer.clear()
-    this.shadowLayer.clear()
     this.gridLineLayer.clear()
     this.heatMapLayer.clear()
     this.overlayLayer.clear()
