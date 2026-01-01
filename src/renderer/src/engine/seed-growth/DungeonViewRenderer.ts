@@ -20,6 +20,7 @@ import { RoomLayerConfig } from '../themes/ThemeTypes'
 import { FloorLayer, WallLayer, GridLayer, ObjectLayer, LabelLayer, DebugLayer, VisibilityLayer } from './layers'
 import { PanZoomController } from './controllers/PanZoomController'
 import { createNoiseTexture } from '../utils/rendering'
+import { SpinePruner } from './SpinePruner'
 
 export interface DungeonViewOptions {
   tileSize?: number
@@ -420,144 +421,9 @@ export class DungeonViewRenderer {
     decorator.decorate(data)
 
     // --- UNIFIED PRUNING PHASE ---
-    {
-        const roomTileSet = new Set<string>()
-        for (const r of rooms) for (const t of r.tiles) roomTileSet.add(`${t.x},${t.y}`)
-        
-        const objectTileSet = new Set<string>() // ALL objects (protects these tiles)
-        const objectFloorSet = new Set<string>() // Objects needing floor rendering
-        if (data.objects) {
-            for (const obj of data.objects) {
-                const k = `${obj.x},${obj.y}`
-                objectTileSet.add(k)
-                if (obj.properties?.hasFloor) objectFloorSet.add(k)
-            }
-        }
-        
-        const tributarySet = new Set(tributaryTiles.map(t => `${t.x},${t.y}`))
-        
-        // 1. Spine Range Pruning (Critical for Wide Corridors - ONLY for spineWidth > 1)
-        const spineWidth = ('spineWidth' in data) ? (data.spineWidth || 1) : 1
-        if ('spine' in data && spineTiles.length > 0 && spineWidth > 1) {
-            const spineWidth = data.spineWidth || 1
-            const effectiveWidth = Math.max(1, spineWidth - 2)
-            const radius = Math.floor((effectiveWidth - 1) / 2)
-            
-            const usedIndices: number[] = []
-            for (let i = 0; i < spineTiles.length; i++) {
-                const st = spineTiles[i]
-                const sliceKeys = [`${st.x},${st.y}`]
-                if (radius > 0) {
-                    const dir = st.direction || 'north'
-                    const perps = dir === 'north' || dir === 'south' 
-                        ? [{ x: 1, y: 0 }, { x: -1, y: 0 }] 
-                        : [{ x: 0, y: 1 }, { x: 0, y: -1 }]
-                    for (let r = 1; r <= radius; r++) {
-                        for (const p of perps) sliceKeys.push(`${st.x + p.x * r},${st.y + p.y * r}`)
-                    }
-                }
-                
-                const isUsed = sliceKeys.some(key => {
-                    if (roomTileSet.has(key)) return true
-                    if (tributarySet.has(key)) return true
-                    if (objectTileSet.has(key)) return true
-                    
-                    const [x, y] = key.split(',').map(Number)
-                    const adj = [`${x+1},${y}`, `${x-1},${y}`, `${x},${y+1}`, `${x},${y-1}`]
-                    if (adj.some(k => tributarySet.has(k) || objectTileSet.has(k))) return true
-                    return false
-                })
-                if (isUsed) usedIndices.push(i)
-            }
-            
-            if (usedIndices.length > 0) {
-                const first = usedIndices[0]
-                const last = usedIndices[usedIndices.length - 1]
-                const prunedSpineTiles = spineTiles.slice(first, last + 1)
-                
-                const newFullSpineSet = new Set<string>()
-                const newFullSpineTiles: { x: number, y: number }[] = []
-                for (const t of prunedSpineTiles) {
-                    const key = `${t.x},${t.y}`
-                    if (!newFullSpineSet.has(key)) {
-                        newFullSpineSet.add(key)
-                        newFullSpineTiles.push({ x: t.x, y: t.y })
-                    }
-                    if (radius > 0) {
-                        const dir = t.direction || 'north'
-                        const perps = dir === 'north' || dir === 'south' 
-                            ? [{ x: 1, y: 0 }, { x: -1, y: 0 }] 
-                            : [{ x: 0, y: 1 }, { x: 0, y: -1 }]
-                        for (let r = 1; r <= radius; r++) {
-                            for (const p of perps) {
-                                const px = t.x + p.x * r, py = t.y + p.y * r
-                                const pkey = `${px},${py}`
-                                if (!newFullSpineSet.has(pkey)) {
-                                    newFullSpineSet.add(pkey)
-                                    newFullSpineTiles.push({ x: px, y: py })
-                                }
-                            }
-                        }
-                    }
-                }
-                renderedSpinePath = newFullSpineTiles
-                corridorTiles = [...renderedSpinePath, ...tributaryTiles]
-            }
-        }
-
-        // 2. Iterative Dead-end Erosion (Standard for 1-wide)
-        // Build floor set from rooms, ALL objects, and corridors
-        const allFloor = new Set<string>([...roomTileSet, ...objectTileSet, ...corridorTiles.map(t => `${t.x},${t.y}`)])
-        let currCorridorSet = new Set(corridorTiles.map(t => `${t.x},${t.y}`))
-        
-        let changed = true
-        while (changed) {
-            changed = false
-            const toRemove: string[] = []
-            for (const key of currCorridorSet) {
-                // If this tile HAS an object (stair, door), it is an anchor. PROTECT.
-                if (objectTileSet.has(key)) continue
-                
-                const [x, y] = key.split(',').map(Number)
-                let floorNeighbors = 0
-                if (allFloor.has(`${x+1},${y}`)) floorNeighbors++
-                if (allFloor.has(`${x-1},${y}`)) floorNeighbors++
-                if (allFloor.has(`${x},${y+1}`)) floorNeighbors++
-                if (allFloor.has(`${x},${y-1}`)) floorNeighbors++
-                
-                if (floorNeighbors < 2) toRemove.push(key)
-            }
-            for (const key of toRemove) {
-                currCorridorSet.delete(key)
-                allFloor.delete(key)
-                changed = true
-            }
-        }
-        
-        // Rebuild corridorTiles from pruned set
-        corridorTiles = Array.from(currCorridorSet).map(k => {
-            const [x, y] = k.split(',').map(Number)
-            return { x, y }
-        })
-
-        // Finally, add all objects with 'hasFloor' to corridorTiles if they aren't already there
-        for (const k of objectFloorSet) {
-            if (!currCorridorSet.has(k)) {
-                const [x, y] = k.split(',').map(Number)
-                corridorTiles.push({ x, y })
-            }
-        }
-        
-        // Final Sync to Data
-        ;(data as any).corridors = [{
-            id: 'generated_render_corridors',
-            tiles: corridorTiles.map(t => ({ x: t.x, y: t.y }))
-        }]
-        
-        const prunedSet = new Set(corridorTiles.map(t => `${t.x},${t.y}`))
-        renderedSpinePath = renderedSpinePath.filter(t => prunedSet.has(`${t.x},${t.y}`))
-        ;(data as any).spine = renderedSpinePath
-    }
+    // Delegated to SpinePruner
+    const consolidatedCorridors = SpinePruner.prune(data, tributaryTiles, spineTiles)
+    corridorTiles = consolidatedCorridors.map(t => ({ x: t.x, y: t.y }))
 
     // 3. Render floors (rooms + corridors) using FloorLayer
     console.log('[DungeonViewRenderer] Rendering Floors for', rooms.length, 'rooms')
