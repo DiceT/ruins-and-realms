@@ -3,15 +3,12 @@ import { Application, Graphics, Sprite, Assets } from 'pixi.js'
 import { TerrainAssetLoader } from '../engine/map/TerrainAssetLoader'
 import { useAppStore, useAppActions } from '@/stores/useAppStore'
 import { MapEngine } from '../engine/MapEngine'
-import { HexLogic } from '../engine/systems/HexLogic'
 import { OverworldManager } from '../engine/managers/OverworldManager'
 import { ThemeManager } from '../engine/managers/ThemeManager'
 import { GameLayout } from '../engine/ui/GameLayout'
 import { BackgroundSystem } from '../engine/ui/BackgroundSystem'
-import { TableEngine } from '../engine/tables/TableEngine'
 import { GameOrchestrator } from '../engine/game/GameOrchestrator'
 import { DungeonController, OverworldController } from '../engine/game/controllers'
-import landTable from '../data/tables/land-table.json'
 
 interface GameWindowProps {
   onBack?: () => void
@@ -49,6 +46,8 @@ import { PlayerController } from '../engine/systems/PlayerController'
 import { LIGHT_PROFILES, LightSourceType } from '../engine/data/LightingData'
 
 import { SeedGrowthControlPanel } from './SeedGrowthControlPanel'
+import { UnclaimedLogModal } from './UnclaimedLogModal'
+import { DungeonControlPanel } from './DungeonControlPanel'
 import { Container } from 'pixi.js'
 
 interface LandTypeEntry {
@@ -97,8 +96,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const showMap = useAppStore((state) => state.showMap)
   const { toggleMap } = useAppActions()
 
-  // Local State for New Map Modal
-  const [isNewMapModalOpen, setIsNewMapModalOpen] = useState(false)
+
 
   // Local State for Dice Settings
   const [showDiceSettings, setShowDiceSettings] = useState(false)
@@ -109,9 +107,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     id: 0
   })
 
-  // Temporary state for the modal inputs
-  const [modalWidth, setModalWidth] = useState(mapConfig.width)
-  const [modalHeight, setModalHeight] = useState(mapConfig.height)
+
 
   // Track if core systems are ready
   const [isReady, setIsReady] = useState(false)
@@ -163,11 +159,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
   const [overworldStep, setOverworldStep] = useState<number>(0) // 0=Start, 1=City Placed/Roll Terrain, 2=Terrain Rolled/Roll Count, 3=Placing
   const [currentTerrain, setCurrentTerrain] = useState<string | null>(null)
-  // unused: currentTerrainRow, setCurrentTerrainRow
-  // const [currentTerrainRow, setCurrentTerrainRow] = useState<any | null>(null) (Moved to ref to avoid re-renders if only needed in handler)
-  // Actually, we use row in handleRollCount, so we need state or ref.
-  // Let's use ref to store the row data since it doesn't directly render UI (only logs/logic)
-  const currentTerrainRowRef = useRef<Record<string, any> | null>(null)
   const [tilesToPlace, setTilesToPlace] = useState(0)
   const [townPlaced, setTownPlaced] = useState(false)
   // REFACTORED: Manager Ref
@@ -193,12 +184,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     visible: false
   })
   const validMovesRef = useRef<Set<string>>(new Set())
-
-  // Fix: Stale Terrain Ref
-  const currentTerrainRef = useRef(currentTerrain)
-  useEffect(() => {
-    currentTerrainRef.current = currentTerrain
-  }, [currentTerrain])
 
   // Fix: Stale GameMode and OverworldStep Ref for MapEngine Callbacks
   const gameModeRef = useRef(gameMode)
@@ -842,130 +827,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     }
   }, [])
 
-  const handleExploreTile = useCallback(async (x: number, y: number): Promise<void> => {
-    setIsRolling(true)
-    setLogs((prev) => [...prev, `Exploring tile at ${x},${y}...`])
 
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await TableEngine.rollOnTable(landTable as any)
-      setIsRolling(false)
-
-      const row = result.row
-      const folder = row.folder
-      const hasAssets = folder && TerrainAssetLoader.get(folder).length > 0
-
-      if (!folder || !hasAssets) {
-        addLog(`Explored '${result.result}' but found no assets. Skipping.`)
-        return
-      }
-
-      addLog(`Discovered: ${result.result}`)
-      setCurrentTerrain(folder)
-
-      if (row.type === 'Unique') {
-        // Place IMMEDIATELY
-        currentTerrainRef.current = folder
-
-        if (mapEngineRef.current) {
-          const texture = TerrainAssetLoader.getRandom(folder)
-          if (texture) {
-            const { x: cx, y: cy } = mapEngineRef.current.gridSystem.getPixelCoords(x, y)
-            const sprite = new Sprite(texture)
-            sprite.anchor.set(0.5)
-            sprite.x = cx
-            sprite.y = cy
-            const h = 2 * (mapEngineRef.current.gridSystem.config.size as number)
-            sprite.scale.set(h / texture.height)
-            mapEngineRef.current.layers.live.addChild(sprite)
-
-            // REFACTOR: Use Manager
-            overworldManagerRef.current.registerUniquePlacement(
-              x,
-              y,
-              folder,
-              (row.rank as number) || 0,
-              row.tag
-                ? `${row.tag}${overworldManagerRef.current.currentPlots.length + 1}`
-                : undefined
-            )
-
-            // FLAIR OVERLAY (Unique)
-            const flair = Sprite.from(flairOverlay)
-            flair.anchor.set(0.5)
-            const fh = 2 * (mapEngineRef.current.gridSystem.config.size as number)
-            flair.scale.set(fh / flair.height)
-
-            flair.x = cx
-            flair.y = cy - (mapEngineRef.current.gridSystem.config.size as number) * 0.85 - 15
-
-            mapEngineRef.current.layers.overlay.addChild(flair)
-
-            // Sync Log
-            setUnClaimedLog(overworldManagerRef.current.currentPlots)
-
-            addLog(`Unique terrain placed at ${x},${y}.`)
-
-            // Recalculate neighbors for next turn
-            const allValid = overworldManagerRef.current.getValidMoves()
-            validMovesRef.current = new Set(allValid.map((m) => `${m.x},${m.y}`))
-            mapEngineRef.current.highlightValidMoves(allValid)
-          }
-        }
-      } else {
-        // AREA: Place first tile, then prompt for d8
-        if (mapEngineRef.current) {
-          currentTerrainRef.current = folder
-          currentTerrainRowRef.current = row
-
-          // Sync terrain config to controller for subsequent placements
-          overworldControllerRef.current?.setTerrainConfig(
-            folder,
-            (row.rank as number) || 0,
-            row.type !== 'Unique'
-          )
-
-          // Place the FIRST tile here and now
-          const texture = TerrainAssetLoader.getRandom(folder)
-          if (texture) {
-            const { x: cx, y: cy } = mapEngineRef.current.gridSystem.getPixelCoords(x, y)
-            const sprite = new Sprite(texture)
-            sprite.anchor.set(0.5)
-            sprite.x = cx
-            sprite.y = cy
-            const h = 2 * (mapEngineRef.current.gridSystem.config.size as number)
-            sprite.scale.set(h / texture.height)
-            mapEngineRef.current.layers.live.addChild(sprite)
-
-            // REFACTOR: Manager Area Start
-            overworldManagerRef.current.createAreaPlot(row.result || 'Area', (row.rank as number) || 0, row.tag as string)
-            overworldManagerRef.current.startAreaBatch(row.result || 'Area')
-            overworldManagerRef.current.addTileToBatch(x, y, folder, (row.rank as number) || 0)
-
-            // FLAIR OVERLAY (Area Start)
-            const flair = Sprite.from(flairOverlay)
-            flair.anchor.set(0.5)
-            const fh = 2 * (mapEngineRef.current.gridSystem.config.size as number)
-            flair.scale.set(fh / flair.height)
-
-            flair.x = cx
-            flair.y = cy - (mapEngineRef.current.gridSystem.config.size as number) * 0.85 - 15
-
-            mapEngineRef.current.layers.overlay.addChild(flair)
-
-            // Sync Log
-            setUnClaimedLog(overworldManagerRef.current.currentPlots)
-          }
-        }
-
-        // Prompt d8
-        setOverworldStep(2) // Move to "Roll for Area Size" step
-      }
-    } catch (e) {
-      console.error(e)
-      setIsRolling(false)
-    }
-  }, [])
 
   const handleHexClick = useCallback(
     (x: number, y: number): void => {
@@ -981,10 +843,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       const key = `${x},${y}`
       if (!validMovesRef.current.has(key)) return
 
-      // Trigger Explore Logic
-      handleExploreTile(x, y)
+      // Trigger Explore Logic via controller
+      overworldControllerRef.current?.handleExplore(x, y)
     },
-    [handleExploreTile]
+    []
   )
 
   // Handle Map Engine Logic (Show/Hide)
@@ -1069,7 +931,9 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             onValidMovesChange: (moves) => { validMovesRef.current = moves },
             onLog: addLog,
             onHexHover: handleHexHover,
-            onHexClicked: handleHexClick
+            onHexClicked: handleHexClick,
+            onRollingChange: setIsRolling,
+            onUnclaimedLogChange: setUnClaimedLog
           })
         }
 
@@ -1701,145 +1565,19 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
         {/* Floating Dungeon Controls */}
         {viewAsDungeon && (
-          <div style={{
-            position: 'absolute',
-            top: 20,
-            right: 320, // To left of existing right panel
-            background: 'rgba(0,0,0,0.85)',
-            padding: '12px',
-            borderRadius: '8px',
-            border: '1px solid #444',
-            color: 'white',
-            zIndex: 2000,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
-          }}>
-            <h3 style={{ margin: 0, fontSize: '14px', borderBottom: '1px solid #666', paddingBottom: '6px', fontWeight: 'bold' }}>Light & Fog</h3>
-
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={showFog} onChange={e => setShowFog(e.target.checked)} />
-                Fog
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={showLight} onChange={e => setShowLight(e.target.checked)} />
-                Light
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={showPlayer} onChange={e => setShowPlayer(e.target.checked)} />
-                Player
-              </label>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '12px', color: '#aaa' }}>Light Source:</label>
-              <select
-                value={activeLight}
-                onChange={e => setActiveLight(e.target.value as LightSourceType)}
-                style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '4px', borderRadius: '4px', fontSize: '12px' }}
-              >
-                <option value="torch">Torch (20/40)</option>
-                <option value="hooded">Hooded (30/60)</option>
-                <option value="bullseye">Bullseye (60/120)</option>
-              </select>
-            </div>
-
-            <div style={{ fontSize: '10px', color: '#777', marginTop: '4px' }}>
-              WASD or Arrows to move
-            </div>
-          </div>
+          <DungeonControlPanel
+            showFog={showFog}
+            onShowFogChange={setShowFog}
+            showLight={showLight}
+            onShowLightChange={setShowLight}
+            showPlayer={showPlayer}
+            onShowPlayerChange={setShowPlayer}
+            activeLight={activeLight}
+            onActiveLightChange={setActiveLight}
+          />
         )}
 
-        {
-          isNewMapModalOpen && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 20
-              }}
-            >
-              <div
-                style={{
-                  width: '400px',
-                  backgroundColor: '#141d1f',
-                  border: '2px solid #bcd3d2',
-                  padding: '20px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '20px',
-                  color: '#bcd3d2',
-                  fontFamily: 'IMFellEnglishSC-Regular'
-                }}
-              >
-                <h2 style={{ margin: 0, textAlign: 'center', fontSize: '32px' }}>Create New Map</h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <span>Width (X): {modalWidth}</span>
-                  <input
-                    type="range"
-                    min="26"
-                    max="50"
-                    value={modalWidth}
-                    onChange={(e) => setModalWidth(Number(e.target.value))}
-                    style={{ width: '100%', accentColor: '#2e3f41' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <span>Height (Y): {modalHeight}</span>
-                  <input
-                    type="range"
-                    min="26"
-                    max="50"
-                    value={modalHeight}
-                    onChange={(e) => setModalHeight(Number(e.target.value))}
-                    style={{ width: '100%', accentColor: '#2e3f41' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
-                  <button
-                    onClick={() => setIsNewMapModalOpen(false)}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      backgroundColor: 'transparent',
-                      border: '1px solid #bcd3d2',
-                      color: '#bcd3d2',
-                      fontFamily: 'inherit',
-                      fontSize: '20px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    CANCEL
-                  </button>
-                  <button
-                    onClick={handleCreateNewMap}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      backgroundColor: '#2e3f41',
-                      border: '1px solid #bcd3d2',
-                      color: '#bcd3d2',
-                      fontFamily: 'inherit',
-                      fontSize: '20px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    CREATE
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
-        }
+
 
         <DiceSettingsWrapper isOpen={showDiceSettings} onClose={() => setShowDiceSettings(false)} />
         <SettingsSync />
@@ -1870,97 +1608,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         {/* VIEW LOG BUTTON */}
 
         {/* UNCLAIMED LOG MODAL */}
-        {
-          isLogModalOpen && (
-            <div
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                backgroundColor: 'rgba(0,0,0,0.85)',
-                zIndex: 2000,
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center'
-              }}
-            >
-              <div
-                style={{
-                  width: '80%',
-                  height: '80%',
-                  backgroundColor: '#1a2628',
-                  border: '2px solid #bcd3d2',
-                  padding: '20px',
-                  overflow: 'auto',
-                  color: '#bcd3d2',
-                  fontFamily: 'inherit',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
-                <div
-                  style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}
-                >
-                  <h2 style={{ margin: 0, fontSize: '24px' }}>UNCLAIMED LAND LOG</h2>
-                  <button
-                    onClick={() => setIsLogModalOpen(false)}
-                    style={{
-                      background: 'none',
-                      border: '1px solid #bcd3d2',
-                      color: '#bcd3d2',
-                      cursor: 'pointer',
-                      padding: '5px 10px',
-                      fontSize: '16px'
-                    }}
-                  >
-                    CLOSE
-                  </button>
-                </div>
-
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #bcd3d2' }}>
-                      <th style={{ padding: '10px' }}>TAG</th>
-                      <th style={{ padding: '10px' }}>LAND TYPE</th>
-                      <th style={{ padding: '10px' }}>SIZE</th>
-                      <th style={{ padding: '10px' }}>RANK</th>
-                      <th style={{ padding: '10px' }}>MOD</th>
-                      <th style={{ padding: '10px' }}>COORDS (First)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unClaimedLog.map((plot, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #4a5d5e' }}>
-                        <td style={{ padding: '10px' }}>{plot.plotTag}</td>
-                        <td style={{ padding: '10px' }}>{plot.landType}</td>
-                        <td style={{ padding: '10px' }}>{plot.size}</td>
-                        <td style={{ padding: '10px' }}>{plot.rank}</td>
-                        <td style={{ padding: '10px' }}>{plot.rankModifier}</td>
-                        <td style={{ padding: '10px' }}>
-                          {plot.landTypeList[0]
-                            ? `${plot.landTypeList[0].coordX}, ${plot.landTypeList[0].coordY}`
-                            : 'N/A'}
-                        </td>
-                      </tr>
-                    ))}
-                    {unClaimedLog.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          style={{ padding: '20px', textAlign: 'center', color: '#666' }}
-                        >
-                          No unclaimed land logged yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )
-        }
+        <UnclaimedLogModal
+          isOpen={isLogModalOpen}
+          onClose={() => setIsLogModalOpen(false)}
+          plots={unClaimedLog}
+        />
       </div >
     </SettingsProvider >
   )

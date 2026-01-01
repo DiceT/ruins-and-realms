@@ -1,10 +1,12 @@
 import { Application, Container, Graphics, Sprite } from 'pixi.js'
 import { GameLayout } from '../../ui/GameLayout'
 import { MapEngine } from '../../MapEngine'
-import { OverworldManager } from '../../managers/OverworldManager'
+import { OverworldManager, Plot } from '../../managers/OverworldManager'
 import { TableEngine } from '../../tables/TableEngine'
 import { TerrainAssetLoader } from '../../map/TerrainAssetLoader'
 import { HexLogic } from '../../systems/HexLogic'
+import landTable from '../../../data/tables/land-table.json'
+import flairOverlay from '../../../assets/images/overland-tiles/flair_empty_0.png'
 
 /**
  * Callbacks for OverworldController to notify GameWindow of state changes
@@ -18,6 +20,8 @@ export interface OverworldControllerCallbacks {
   onLog?: (message: string) => void
   onHexClicked?: (x: number, y: number) => void
   onHexHover?: (x: number, y: number) => void
+  onRollingChange?: (rolling: boolean) => void
+  onUnclaimedLogChange?: (plots: Plot[]) => void
 }
 
 /**
@@ -319,6 +323,107 @@ export class OverworldController {
       if (mapContainer) {
         mapContainer.visible = visible
       }
+    }
+  }
+
+  /**
+   * Handle explore tile action - rolls terrain table and places tiles
+   */
+  public async handleExplore(x: number, y: number): Promise<void> {
+    if (!this.mapEngine) return
+
+    this.callbacks.onRollingChange?.(true)
+    this.callbacks.onLog?.(`Exploring tile at ${x},${y}...`)
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await TableEngine.rollOnTable(landTable as any)
+      this.callbacks.onRollingChange?.(false)
+
+      const row = result.row
+      const folder = row.folder
+      const hasAssets = folder && TerrainAssetLoader.get(folder).length > 0
+
+      if (!folder || !hasAssets) {
+        this.callbacks.onLog?.(`Explored '${result.result}' but found no assets. Skipping.`)
+        return
+      }
+
+      this.callbacks.onLog?.(`Discovered: ${result.result}`)
+      this.setCurrentTerrain(folder)
+
+      if (row.type === 'Unique') {
+        // Place IMMEDIATELY
+        const texture = TerrainAssetLoader.getRandom(folder)
+        if (texture) {
+          const { x: cx, y: cy } = this.mapEngine.gridSystem.getPixelCoords(x, y)
+          const sprite = new Sprite(texture)
+          sprite.anchor.set(0.5)
+          sprite.x = cx
+          sprite.y = cy
+          const h = 2 * this.mapEngine.gridSystem.config.size
+          sprite.scale.set(h / texture.height)
+          this.mapEngine.layers.live.addChild(sprite)
+
+          // Register unique placement
+          this.overworldManager.registerUniquePlacement(
+            x, y, folder, (row.rank as number) || 0,
+            row.tag ? `${row.tag}${this.overworldManager.currentPlots.length + 1}` : undefined
+          )
+
+          // Add flair overlay
+          const flair = Sprite.from(flairOverlay)
+          flair.anchor.set(0.5)
+          flair.scale.set((2 * this.mapEngine.gridSystem.config.size) / flair.height)
+          flair.x = cx
+          flair.y = cy - this.mapEngine.gridSystem.config.size * 0.85 - 15
+          this.mapEngine.layers.overlay.addChild(flair)
+
+          // Sync log and valid moves
+          this.callbacks.onUnclaimedLogChange?.(this.overworldManager.currentPlots)
+          this.callbacks.onLog?.(`Unique terrain placed at ${x},${y}.`)
+
+          const allValid = this.overworldManager.getValidMoves()
+          this.setValidMoves(new Set(allValid.map(m => `${m.x},${m.y}`)))
+          this.mapEngine.highlightValidMoves(allValid)
+        }
+      } else {
+        // AREA: Place first tile, then prompt for d8
+        this.setTerrainConfig(folder, (row.rank as number) || 0, true)
+
+        const texture = TerrainAssetLoader.getRandom(folder)
+        if (texture) {
+          const { x: cx, y: cy } = this.mapEngine.gridSystem.getPixelCoords(x, y)
+          const sprite = new Sprite(texture)
+          sprite.anchor.set(0.5)
+          sprite.x = cx
+          sprite.y = cy
+          const h = 2 * this.mapEngine.gridSystem.config.size
+          sprite.scale.set(h / texture.height)
+          this.mapEngine.layers.live.addChild(sprite)
+
+          // Manager Area Start
+          this.overworldManager.createAreaPlot(row.result || 'Area', (row.rank as number) || 0, row.tag as string)
+          this.overworldManager.startAreaBatch(row.result || 'Area')
+          this.overworldManager.addTileToBatch(x, y, folder, (row.rank as number) || 0)
+
+          // Add flair overlay
+          const flair = Sprite.from(flairOverlay)
+          flair.anchor.set(0.5)
+          flair.scale.set((2 * this.mapEngine.gridSystem.config.size) / flair.height)
+          flair.x = cx
+          flair.y = cy - this.mapEngine.gridSystem.config.size * 0.85 - 15
+          this.mapEngine.layers.overlay.addChild(flair)
+
+          this.callbacks.onUnclaimedLogChange?.(this.overworldManager.currentPlots)
+        }
+
+        // Prompt d8
+        this.setOverworldStep(2)
+      }
+    } catch (e) {
+      console.error(e)
+      this.callbacks.onRollingChange?.(false)
     }
   }
 
