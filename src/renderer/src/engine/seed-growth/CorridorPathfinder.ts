@@ -1317,7 +1317,7 @@ export class CorridorPathfinder {
                 if (moveCost < 1) moveCost = 1
             } else {
                 if (!noiseMap.has(nextKey)) {
-                    noiseMap.set(nextKey, Math.floor(Math.random() * this.COST_NOISE_MAX))
+                    noiseMap.set(nextKey, Math.floor(this.rng.next() * this.COST_NOISE_MAX))
                 }
                 moveCost += noiseMap.get(nextKey)!
             }

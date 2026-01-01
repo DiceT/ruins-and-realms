@@ -126,7 +126,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const dungeonViewRendererRef = useRef<DungeonViewRenderer | null>(null)
   const [seedGrowthState, setSeedGrowthState] = useState<SeedGrowthState | null>(null)
   const [isAnimating, setIsAnimating] = useState(false)
-  const animationFrameRef = useRef<number | null>(null)
   // View As Dungeon toggle
   const [viewAsDungeon, setViewAsDungeon] = useState<boolean>(false)
   const [showRoomNumbers, setShowRoomNumbers] = useState<boolean>(true)
