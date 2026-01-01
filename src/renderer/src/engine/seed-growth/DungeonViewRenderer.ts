@@ -17,15 +17,9 @@ import { SeededRNG } from '../../utils/SeededRNG'
 import { DungeonAnalysis, FurthestRoomResult } from '../analysis/DungeonAnalysis'
 import { ThemeManager } from '../managers/ThemeManager'
 import { RoomLayerConfig } from '../themes/ThemeTypes'
-import { FloorLayer, WallLayer } from './layers'
+import { FloorLayer, WallLayer, GridLayer, ObjectLayer, LabelLayer, DebugLayer, VisibilityLayer } from './layers'
+import { PanZoomController } from './controllers/PanZoomController'
 import { createNoiseTexture } from '../utils/rendering'
-import stairsIcon from '../../assets/images/icons/stairs.svg'
-import doorIcon from '../../assets/images/icons/door.svg'
-import doorSecretIcon from '../../assets/images/icons/door-secret.svg'
-import doorArchwayIcon from '../../assets/images/icons/door-archway.svg'
-import doorLockedIcon from '../../assets/images/icons/door-locked.svg'
-import doorPortcullisIcon from '../../assets/images/icons/door-portcullis.svg'
-import doorBarredIcon from '../../assets/images/icons/door-barred.svg'
 
 export interface DungeonViewOptions {
   tileSize?: number
@@ -44,30 +38,23 @@ export class DungeonViewRenderer {
   private config: RoomLayerConfig
 
   // Pan/zoom state
-  private isPanning: boolean = false
-  private lastPanPos: { x: number; y: number } = { x: 0, y: 0 }
-  private zoom: number = 0.25
-  private readonly minZoom = 0.05
-  private readonly maxZoom = 4.0
+  private panZoomController: PanZoomController
   
   // Layers
   private backgroundLayer: Graphics
   private floorLayer: FloorLayer
   private wallLayer: WallLayer
-  private objectLayer: Container // New: Objects (Sprites, Decorations)
-  private gridLineLayer: Graphics  // Separate layer for grid lines (re-rendered on zoom)
+  private objectLayer: ObjectLayer // New: Objects (Sprites, Decorations)
+  private gridLayer: GridLayer  // Separate layer for grid lines (re-rendered on zoom)
+  private labelLayer: LabelLayer
+  private debugLayer: DebugLayer
   private overlayLayer: Graphics
-  private heatMapLayer: Graphics    // Heat map debug layer
-  private walkmapContainer: Container // New: Walkmap overlay
   
   // --- New Visibility Layers ---
-  private fogLayer: Container // Multiplied Fog (Unexplored=Black, Dim=Gray)
-  private darknessLayer: Graphics // Base ambient darkness
-  private lightLayer: Sprite // Additive Light field
-  private entityLayer: Container // Player/Monsters (Masked)
+  private visibilityLayer: VisibilityLayer
   
-  private labelContainer: Container
-
+  // FX
+  
   // FX
   private noiseSprite: Sprite | null = null
   private displacementFilter: DisplacementFilter | null = null
@@ -76,14 +63,11 @@ export class DungeonViewRenderer {
   private viewWidth: number = 800
   private viewHeight: number = 600
   
-  // Grid line state (stored for re-rendering on zoom)
-  private floorPositions: Set<string> = new Set()
   // Accessible corridor tiles for collision
   private corridorTiles: Set<string> = new Set()
 
-  private fogTexture: RenderTexture | null = null
-  private lightTexture: RenderTexture | null = null
-  private playerSprite: Graphics | null = null
+  
+  // Debug flags
   
   // Debug flags
   private showFog: boolean = true
@@ -105,35 +89,14 @@ export class DungeonViewRenderer {
     this.backgroundLayer = new Graphics()
     this.floorLayer = new FloorLayer()
     this.wallLayer = new WallLayer()
-    this.objectLayer = new Container()
-    this.gridLineLayer = new Graphics()
+    this.objectLayer = new ObjectLayer()
+    this.gridLayer = new GridLayer()
+    this.labelLayer = new LabelLayer()
+    this.debugLayer = new DebugLayer()
     this.overlayLayer = new Graphics()
-    this.heatMapLayer = new Graphics()
-    this.heatMapLayer.visible = false  // Default OFF
-    this.walkmapContainer = new Container()
     
     // VISIBILITY INIT
-    this.fogLayer = new Container() 
-    
-    // We will attach the graphics to this container
-    // The Container itself needs the blend mode for its children to composite correctly against the world?
-    // Or we apply blendMode to the child Graphics. 
-    // Usually applying to Container works if children don't override.
-    // Let's apply to the Graphics child to be safe, or direct to container.
-    // Pixi Container supports blendMode.
-    this.fogLayer.blendMode = 'normal'
-    
-    this.darknessLayer = new Graphics()
-    this.darknessLayer.blendMode = 'multiply' // Darkens everything
-    
-    this.lightLayer = new Sprite(Texture.WHITE)
-    this.lightLayer.blendMode = 'screen' // Brightens
-    
-    this.entityLayer = new Container()
-    this.playerSprite = new Graphics()
-    this.entityLayer.addChild(this.playerSprite)
-    
-    this.labelContainer = new Container()
+    this.visibilityLayer = new VisibilityLayer()
     
     // LAYER ORDER
     this.contentContainer.addChild(this.backgroundLayer)
@@ -141,7 +104,7 @@ export class DungeonViewRenderer {
     this.contentContainer.addChild(this.wallLayer.shadowContainer)  // Shadows under walls
     this.contentContainer.addChild(this.wallLayer.container)
     
-    this.contentContainer.addChild(this.objectLayer)
+    this.contentContainer.addChild(this.objectLayer.containerNode)
     
     // VISIBILITY STACK
     // Grid Lines should be affected by Fog? User said "Grid layer should adhere to light rules".
@@ -149,20 +112,16 @@ export class DungeonViewRenderer {
     // If Grid is under Fog, it will get dark. Correct.
     // VISIBILITY STACK
     // Light MUST be below Fog to be occluded by Unexplored areas
-    this.contentContainer.addChild(this.lightLayer)
+    // VISIBILITY STACK
+    // Grid must be BEFORE VisibilityLayer so Fog can occlude it
+    this.contentContainer.addChild(this.gridLayer.container)
+    this.contentContainer.addChild(this.visibilityLayer.containerNode)
     
-    this.contentContainer.addChild(this.gridLineLayer)
-    this.contentContainer.addChild(this.fogLayer) 
-    this.contentContainer.addChild(this.darknessLayer)
     
-    this.contentContainer.addChild(this.entityLayer)
-    
-    // OVERLAYS / DEBUG
-    this.contentContainer.addChild(this.heatMapLayer)
-    // Grid Line Layer was here (150). Removed.
+    // Debug Layers
     this.contentContainer.addChild(this.overlayLayer)
-    this.contentContainer.addChild(this.walkmapContainer)
-    this.contentContainer.addChild(this.labelContainer)
+    this.contentContainer.addChild(this.debugLayer.containerNode)
+    this.contentContainer.addChild(this.labelLayer.containerNode)
     
     if (options.tileSize) {
       this.tileSize = options.tileSize
@@ -180,16 +139,17 @@ export class DungeonViewRenderer {
     // Apply initial theme config (filters only)
     this.updateFilters()
 
-    // Setup pan/zoom
-    this.setupPanZoom()
+    // Setup pan/zoom controller
+    this.panZoomController = new PanZoomController(this.container, this.contentContainer)
+    this.panZoomController.setOnZoomChange((zoom) => {
+        this.gridLayer.updateZoom(zoom)
+    })
   }
 
   public setDebugVisibility(fog: boolean, light: boolean) {
       this.showFog = fog
       this.showLight = light
-      this.fogLayer.visible = fog
-      this.darknessLayer.visible = light
-      this.lightLayer.visible = light
+      this.visibilityLayer.setVisibility(fog, light)
   }
 
   public updateVisibilityState(
@@ -200,206 +160,19 @@ export class DungeonViewRenderer {
       playerY: number,
       lightProfile: LightProfile
   ) {
-      // 1. Resize RTs if needed
-      const viewW = gridWidth * this.tileSize
-      const viewH = gridHeight * this.tileSize
-      
-      if (!this.fogTexture || this.fogTexture.width !== viewW || this.fogTexture.height !== viewH) {
-          this.fogTexture?.destroy(true)
-          this.lightTexture?.destroy(true)
-          this.fogTexture = RenderTexture.create({ width: viewW, height: viewH })
-          this.lightTexture = RenderTexture.create({ width: viewW, height: viewH })
-          this.fogLayer.texture = this.fogTexture
-          this.lightLayer.texture = this.lightTexture
-      }
-
-      const tempG = new Graphics()
-      
-      // 2. Render FOG
-      if (this.showFog) {
-          tempG.clear()
-          // Fill black (unexplored)
-          tempG.rect(0, 0, viewW, viewH).fill(0x000000)
-          
-          for (let y = 0; y < gridHeight; y++) {
-              for (let x = 0; x < gridWidth; x++) {
-                  const idx = y * gridWidth + x
-                  const state = visionGrid[idx]
-                  const px = x * this.tileSize
-                  const py = y * this.tileSize
-                  
-                  if (state === VISION_STATE.VISIBLE) {
-                      // Fully visible (transparent fog) - cut hole
-                      tempG.rect(px, py, this.tileSize, this.tileSize).cut()
-                  } else if (state === VISION_STATE.EXPLORED) {
-                      // Dim (gray fog)
-                      // Actually, we filled black. So we draw a semi-transparent white rect?
-                      // Wait, blend mode multiply. 
-                      // White = Transparent. Black = Dark.
-                      // Explored should be DIM (0.5 visibility). So draw 0x808080
-                      tempG.rect(px, py, this.tileSize, this.tileSize).fill({ color: 0xFFFFFF, alpha: 0.5 }) 
-                  }
-              }
-          }
-          // The base was black (0x000000). Cut makes it 0 alpha (transparent)? 
-          // No, Graphics context..
-          // Better approach for FOG MASK:
-          // Draw the VISIBLE areas as WHITE.
-          // Draw EXPLORED areas as GRAY.
-          // Draw UNEXPLORED as BLACK.
-          // Then use this texture as a mask or multiply? 
-          // Current FogLayer is Multiplied.
-          // So: White = No change (Visible). Gray = Darken (Explored). Black = Black (Unexplored).
-          
-          tempG.clear()
-          tempG.rect(0, 0, viewW, viewH).fill(0x000000) // Unexplored
-          
-          for (let y = 0; y < gridHeight; y++) {
-              for (let x = 0; x < gridWidth; x++) {
-                  const idx = y * gridWidth + x
-                  const state = visionGrid[idx]
-                  
-                  if (state === VISION_STATE.VISIBLE) {
-                      tempG.rect(x * this.tileSize, y * this.tileSize, this.tileSize, this.tileSize).fill(0xFFFFFF)
-                  } else if (state === VISION_STATE.EXPLORED) {
-                      // 0.5 brightness
-                       tempG.rect(x * this.tileSize, y * this.tileSize, this.tileSize, this.tileSize).fill(0x555555)
-                  }
-              }
-          }
-          
-          // Render to texture
-          // We need a renderer instance.. passed in or global?
-          // Pixi v8 handles this via app.renderer... but we don't have app ref here.
-          // We can use the container's transform? No, need renderer.
-          // Actually, we can just leave the Graphics as a child if performance allows.
-          // Optimisation: Render only on change.
-          // For now, let's just use the Graphics directly attached to fogLayer? 
-          // No, separate RT is cleaner for masks.
-          // But without renderer ref, we can't update RT.
-          // We can attach the Graphics to the container and toggle visibility?
-          // Let's replace the sprite logic with direct Graphics for now to avoid RT complexity without App ref.
-      }
+      this.visibilityLayer.update(
+          gridWidth,
+          gridHeight,
+          visionGrid,
+          playerX,
+          playerY,
+          lightProfile,
+          { tileSize: this.tileSize, showFog: this.showFog, showLight: this.showLight }
+      )
   }
   
   // NOTE: Switched to Direct Graphics for Fog to avoid RT overhead
-  private fogGraphics: Graphics = new Graphics()
-  private lightTextureCache: Map<string, Texture> = new Map()
-  
-  public updateVisibilityGraphics(
-      gridWidth: number, 
-      gridHeight: number, 
-      visionGrid: VisionGrid,
-      playerX: number,
-      playerY: number,
-      lightProfile: LightProfile
-  ) {
-      // FOG
-      this.fogLayer.removeChildren() // Clear container
-      this.fogGraphics.clear()
-      
-      if (this.showFog) {
-           // 1. Draw "Border" Fog (Infinite Blackness outside the grid) to prevent light bleed
-           const gloomSize = 10000 
-           const totalW = gridWidth * this.tileSize
-           const totalH = gridHeight * this.tileSize
-
-           // Top
-           this.fogGraphics.rect(-gloomSize, -gloomSize, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
-           // Bottom
-           this.fogGraphics.rect(-gloomSize, totalH, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
-           // Left
-           this.fogGraphics.rect(-gloomSize, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
-           // Right
-           this.fogGraphics.rect(totalW, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
-
-           // Debug counts
-           let visibleCount = 0
-           
-           for (let y = 0; y < gridHeight; y++) {
-              for (let x = 0; x < gridWidth; x++) {
-                  const idx = y * gridWidth + x
-                  const state = visionGrid[idx]
-                  
-                  const px = x * this.tileSize
-                  const py = y * this.tileSize
-                  
-                   if (state === VISION_STATE.VISIBLE) {
-                      visibleCount++
-                      // Draw nothing (transparent)
-                  } else if (state === VISION_STATE.EXPLORED) {
-                       // Dimmed (Explored)
-                       // User requested "Reduce visibility... to 25%". 
-                       // 25% Visibility means 75% Opacity.
-                       this.fogGraphics.rect(px, py, this.tileSize, this.tileSize).fill({ color: 0x000000, alpha: 0.75 })
-                  } else {
-                       // Unexplored (Hidden) - Default
-                       this.fogGraphics.rect(px, py, this.tileSize, this.tileSize).fill({ color: 0x000000, alpha: 1.0 })
-                  }
-              }
-           }
-           console.log(`[DungeonView] Fog Update: ${visibleCount} visible tiles`)
-      }
-      this.fogLayer.addChild(this.fogGraphics)
-
-      // PLAYER
-      if (this.playerSprite) {
-          const cx = (playerX + 0.5) * this.tileSize
-          const cy = (playerY + 0.5) * this.tileSize
-          const r = this.tileSize * 0.4
-          this.playerSprite.clear()
-          this.playerSprite.circle(cx, cy, r).fill(0xFFA500).stroke({ width: 2, color: 0xFFFFFF }) // Orange circle
-      }
-      
-      // LIGHTING (Gradient Texture)
-      if (this.showLight) {
-          let tex = this.lightTextureCache.get(lightProfile.type)
-          if (!tex) {
-              tex = this.generateLightTexture(lightProfile)
-              this.lightTextureCache.set(lightProfile.type, tex)
-          }
-          
-          this.lightLayer.texture = tex
-          this.lightLayer.anchor.set(0.5)
-          this.lightLayer.width = lightProfile.dimRadius * 2 * this.tileSize
-          this.lightLayer.height = lightProfile.dimRadius * 2 * this.tileSize
-          this.lightLayer.x = (playerX + 0.5) * this.tileSize
-          this.lightLayer.y = (playerY + 0.5) * this.tileSize
-          this.lightLayer.visible = true
-      } else {
-          this.lightLayer.visible = false
-      }
-  }
-
-  private generateLightTexture(profile: LightProfile): Texture {
-      const size = 512
-      const canvas = document.createElement('canvas')
-      canvas.width = size
-      canvas.height = size
-      const ctx = canvas.getContext('2d')
-      
-      if (ctx) {
-          const cx = size / 2
-          const cy = size / 2
-          const r = size / 2
-          
-          const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
-          const brightRatio = Math.min(1, profile.brightRadius / profile.dimRadius)
-          
-          // Adjustable Warm Colors
-          // Center: Bright
-          grad.addColorStop(0, 'rgba(255, 240, 200, 1.0)') 
-          // Bright edge: Start fading
-          grad.addColorStop(brightRatio, 'rgba(255, 200, 150, 0.6)') 
-          // Dim edge: Fade to black
-          grad.addColorStop(1, 'rgba(0, 0, 0, 0)')
-          
-          ctx.fillStyle = grad
-          ctx.fillRect(0, 0, size, size)
-      }
-      
-      return Texture.from(canvas)
-  }
+  // [REMOVED] updateVisibilityGraphics and generateLightTexture - moved to VisibilityLayer
 
   private initRoughness() {
     const noiseTexture = createNoiseTexture(64)
@@ -433,65 +206,11 @@ export class DungeonViewRenderer {
       }
   }
   
-  private setupPanZoom(): void {
-    // Hit area for events
-    this.container.hitArea = { contains: () => true }
-    
-    // Pan: right mouse or middle mouse drag
-    this.container.on('pointerdown', (e: FederatedPointerEvent) => {
-      if (e.button === 2 || e.button === 1) {
-        this.isPanning = true
-        this.lastPanPos = { x: e.globalX, y: e.globalY }
-      }
-    })
-    
-    this.container.on('pointermove', (e: FederatedPointerEvent) => {
-      if (this.isPanning) {
-        const dx = e.globalX - this.lastPanPos.x
-        const dy = e.globalY - this.lastPanPos.y
-        this.contentContainer.x += dx
-        this.contentContainer.y += dy
-        this.lastPanPos = { x: e.globalX, y: e.globalY }
-      }
-    })
-    
-    this.container.on('pointerup', () => {
-      this.isPanning = false
-    })
-    
-    this.container.on('pointerupoutside', () => {
-      this.isPanning = false
-    })
-    
-    // Zoom: mouse wheel - zoom towards VIEW CENTER
-    this.container.on('wheel', (e: WheelEvent) => {
-      e.preventDefault()
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1
-      const newZoom = Math.min(this.maxZoom, Math.max(this.minZoom, this.zoom * zoomFactor))
-      
-      if (newZoom !== this.zoom) {
-        const centerX = this.viewWidth / 2
-        const centerY = this.viewHeight / 2
-        
-        const beforeZoomX = (centerX - this.contentContainer.x) / this.zoom
-        const beforeZoomY = (centerY - this.contentContainer.y) / this.zoom
-        
-        this.zoom = newZoom
-        this.contentContainer.scale.set(this.zoom)
-        
-        this.contentContainer.x = centerX - beforeZoomX * this.zoom
-        this.contentContainer.y = centerY - beforeZoomY * this.zoom
-        
-        // Re-render grid lines with constant screen-space width
-        this.updateGridLines()
-      }
-    })
-  }
-  
   /**
    * Set view dimensions for centering
    */
   public setViewDimensions(width: number, height: number): void {
+    this.panZoomController.setViewDimensions(width, height)
     this.viewWidth = width
     this.viewHeight = height
   }
@@ -500,40 +219,28 @@ export class DungeonViewRenderer {
    * Sync position and zoom from another renderer's content container
    */
   public syncTransform(x: number, y: number, scale: number): void {
-    this.contentContainer.x = x
-    this.contentContainer.y = y
-    this.zoom = scale
-    this.contentContainer.scale.set(scale)
+    this.panZoomController.syncTransform(x, y, scale)
   }
   
   /**
    * Get current transform for syncing to another renderer
    */
   public getTransform(): { x: number; y: number; scale: number } {
-    return {
-      x: this.contentContainer.x,
-      y: this.contentContainer.y,
-      scale: this.zoom
-    }
+    return this.panZoomController.getTransform()
   }
   
   /**
-   * Center the view on the dungeon
+   * Center the view on the dungeon (grid center)
    */
   public centerView(gridWidth: number, gridHeight: number): void {
-    const contentWidth = gridWidth * this.tileSize * this.zoom
-    const contentHeight = gridHeight * this.tileSize * this.zoom
-    
-    this.contentContainer.x = (this.viewWidth - contentWidth) / 2
-    this.contentContainer.y = (this.viewHeight - contentHeight) / 2
+      // Calculate center in tiles
+      const cx = (gridWidth - 1) / 2
+      const cy = (gridHeight - 1) / 2
+      this.panZoomController.centerView(cx, cy, this.tileSize)
   }
 
   public focusOnTile(tx: number, ty: number): void {
-      const cx = (tx + 0.5) * this.tileSize * this.zoom
-      const cy = (ty + 0.5) * this.tileSize * this.zoom
-      
-      this.contentContainer.x = (this.viewWidth / 2) - cx
-      this.contentContainer.y = (this.viewHeight / 2) - cy
+      this.panZoomController.centerView(tx, ty, this.tileSize)
   }
   
   /**
@@ -575,7 +282,7 @@ export class DungeonViewRenderer {
         // The spineTiles array only contains CENTER path tiles.
         spineTiles = (data as any).spine || []
         
-        // 0. Calculate Scores
+        // 0. Calculate Scores (Required for generator)
         const heatScores = this.calculateWallHeatScores(rooms, spineTiles)
         
         // --- SPINE PRUNING ---
@@ -689,8 +396,6 @@ export class DungeonViewRenderer {
         
         // Update data.spine to be the PHYSICAL spine corridor (for Analysis)
         ;(data as any).spine = renderedSpinePath
-        
-        this.renderHeatMap(heatScores, size)
         
     } else {
         // --- ORGANIC MODE ---
@@ -872,7 +577,6 @@ export class DungeonViewRenderer {
     // this.renderDoorMarkers(rooms, corridorTiles, size)
     
     // 7. Render grid lines
-    // 7. Render grid lines
     // Store local corridorTiles into class property for collision logic
     this.corridorTiles = new Set()
     // Convert array to Set if it's an array, or if it's already a Set copy it.
@@ -883,7 +587,16 @@ export class DungeonViewRenderer {
         this.corridorTiles.add(`${t.x},${t.y}`)
     }
     
-    this.renderGridLines(rooms, corridorTiles, size)
+    this.gridLayer.render(
+      { rooms, corridorTiles },
+      { tileSize: size, theme: this.config, zoom: this.panZoomController.currentZoom }
+    )
+
+    // 8. Render Objects using ObjectLayer
+    this.objectLayer.render(
+      { objects: data.objects || [] },
+      { tileSize: size }
+    )
     
     // 8. Render room labels (only if enabled)
     // First, analyze "furthest rooms"
@@ -896,219 +609,32 @@ export class DungeonViewRenderer {
     }
 
     if (showRoomNumbers) {
-      this.renderRoomLabels(rooms, size, furthestMap, furthest.length)
+      this.labelLayer.render(
+        { rooms, furthestMap, totalFurthest: furthest.length },
+        { tileSize: size, showRoomNumbers: true }
+      )
+    } else {
+      this.labelLayer.clear()
     }
     
-    // 9. Render heat map (always renders, visibility controlled by toggle)
+    // 9. Render debug overlays (HeatMap, Walkmap)
     const spineTilesForHeat = (data as any).spine ? (data as any).spine : []
-    this.renderHeatMap(rooms, spineTilesForHeat, size)
-
-    // 10. Render Objects
-    this.renderObjects(data.objects || [], size)
+    this.debugLayer.render(
+      { data, rooms, spineTiles: spineTilesForHeat },
+      { tileSize: size, showHeatMap: this.showHeatMap, showWalkmap: showWalkmap }
+    )
     
-    // 11. Render Walkmap (debug overlay)
-    if (showWalkmap) {
-        console.log('[DungeonViewRenderer] Rendering Walkmap')
-        this.renderWalkmap(data, size)
-    }
     console.log('[DungeonViewRenderer] Render Complete')
   }
 
-  private renderObjects(objects: DungeonObject[], size: number): void {
-      this.objectLayer.removeChildren()
-      
-      for (const obj of objects) {
-          if (obj.type === 'stairs_up') {
-              const sprite = new Sprite()
-              sprite.x = obj.x * size
-              sprite.y = obj.y * size
-              sprite.width = size
-              sprite.height = size
-              this.objectLayer.addChild(sprite)
-
-              Assets.load(stairsIcon).then((texture) => {
-                  if (sprite.destroyed) return
-                  sprite.texture = texture
-                  // Ensure scaling is maintained
-                  sprite.width = size
-                  sprite.height = size
-              }).catch(err => {
-                  console.error('Failed to load stairs icon', err)
-              })
-          }
-          else if (obj.type.startsWith('door')) {
-              const sprite = new Sprite()
-              // Center anchor for rotation
-              sprite.anchor.set(0.5)
-              sprite.x = (obj.x + 0.5) * size
-              sprite.y = (obj.y + 0.5) * size
-              sprite.width = size
-              sprite.height = size
-              sprite.angle = obj.rotation || 0
-              
-              this.objectLayer.addChild(sprite)
-              
-              let iconPath = doorIcon
-              switch (obj.type) {
-                  case 'door-secret': iconPath = doorSecretIcon; break;
-                  case 'door-archway': iconPath = doorArchwayIcon; break;
-                  case 'door-locked': iconPath = doorLockedIcon; break;
-                  case 'door-portcullis': iconPath = doorPortcullisIcon; break;
-                  case 'door-barred': iconPath = doorBarredIcon; break;
-              }
-
-              Assets.load(iconPath).then((texture) => {
-                  if (sprite.destroyed) return
-                  sprite.texture = texture
-                  sprite.width = size
-                  sprite.height = size
-              }).catch(err => {
-                  console.error('Failed to load door icon', obj.type, err)
-              })
-          }
-      }
-  }
 
 
-  private renderGridLines(rooms: Room[], corridorTiles: { x: number; y: number }[], size: number): void {
-    // Build and store set of all floor positions
-    this.floorPositions.clear()
-    
-    for (const room of rooms) {
-      const { x, y, w, h } = room.bounds
-      for (let dy = 0; dy < h; dy++) {
-        for (let dx = 0; dx < w; dx++) {
-          this.floorPositions.add(`${x + dx},${y + dy}`)
-        }
-      }
-    }
-    
-    for (const pos of corridorTiles) {
-      this.floorPositions.add(`${pos.x},${pos.y}`)
-    }
-    
-    // Draw grid lines
-    this.updateGridLines()
-  }
+  
   
   /**
-   * Update grid lines with constant 1-screen-pixel width
-   * Called after zoom changes to maintain constant visual weight
+   * Room Floor rendering
    */
-  private updateGridLines(): void {
-    this.gridLineLayer.clear()
-    
-    const size = this.tileSize
-    // Line width in world space = 1 screen pixel / zoom
-    const lineWidth = 1 / this.zoom
-    const color = this.config.grid.color
-    
-    // Draw grid lines ONLY between adjacent floor tiles (not at edges)
-    for (const key of this.floorPositions) {
-      const [x, y] = key.split(',').map(Number)
-      const px = x * size
-      const py = y * size
-      
-      // Right edge - only draw if there's a floor tile to the right
-      if (this.floorPositions.has(`${x + 1},${y}`)) {
-        this.gridLineLayer.rect(px + size - lineWidth, py, lineWidth, size)
-        this.gridLineLayer.fill({ color: color })
-      }
-      
-      // Bottom edge - only draw if there's a floor tile below
-      if (this.floorPositions.has(`${x},${y + 1}`)) {
-        this.gridLineLayer.rect(px, py + size - lineWidth, size, lineWidth)
-        this.gridLineLayer.fill({ color: color })
-      }
-    }
-  }
   
-  /**
-   * Render room number labels at center of each room
-   */
-  private renderRoomLabels(rooms: Room[], size: number, furthestMap: Map<string, FurthestRoomResult>, totalFurthest: number): void {
-    // Label Style Options (Plain Object)
-    const baseStyle = {
-      fontFamily: 'Arial',
-      fontSize: Math.max(12, Math.floor(size / 2)),
-      fontWeight: 'bold',
-      fill: '#000000', // Default black
-      stroke: '#ffffff',
-      strokeThickness: 2,
-      align: 'center'
-    }
-
-    this.labelContainer.removeChildren()
-
-    for (const room of rooms) {
-      const isFurthest = furthestMap.get(room.id)
-      
-      // Calculate color
-      // Default: Black
-      // Furthest: Gradient Red (#FF0000) -> Orange (#FFA500)
-      // Rank 0 = Red
-      // Rank total-1 = Orange
-      
-      let fillColor: string | number = '#000000'
-      
-      if (isFurthest) {
-           const rank = isFurthest.rank
-           const maxRank = Math.max(1, totalFurthest - 1)
-           const t = Math.min(1, rank / maxRank) // 0 to 1
-           
-           // Interpolate RGB
-           // Red: 255, 0, 0
-           // Orange: 255, 165, 0
-           
-           const r1 = 255, g1 = 0, b1 = 0
-           const r2 = 255, g2 = 165, b2 = 0
-           
-           const r = Math.round(r1 + (r2 - r1) * t)
-           const g = Math.round(g1 + (g2 - g1) * t)
-           const b = Math.round(b1 + (b2 - b1) * t)
-           
-           fillColor = `rgb(${r}, ${g}, ${b})`
-      }
-
-      // Parse ID to number
-      let labelText = ''
-      try {
-          const num = parseInt(room.id.replace('room_', ''))
-          labelText = String(num + 1)
-      } catch (e) {
-          labelText = room.id
-      }
-
-      const label = new Text({ 
-          text: labelText, 
-          style: {
-              ...baseStyle,
-              fill: fillColor
-          }
-      })
-      
-      label.anchor.set(0.5)
-      
-      // Calculate center of room
-      let cx = 0, cy = 0
-      
-      if (room.centroid) {
-        cx = room.centroid.x
-        cy = room.centroid.y
-      } else {
-        // Fallback
-        cx = room.bounds.x + room.bounds.w / 2
-        cy = room.bounds.y + room.bounds.h / 2
-      }
-      
-      // Adjust to pixel coordinates (center of tile)
-      label.x = (cx + 0.5) * size
-      label.y = (cy + 0.5) * size
-      
-      this.labelContainer.addChild(label)
-    }
-  }
-
   private renderWalkmap(data: DungeonData, size: number): void {
       const analysis = DungeonAnalysis.analyze(data)
       const { roomCosts, walkableTiles, roomTraversals, doorTraversals } = analysis
@@ -1126,61 +652,51 @@ export class DungeonViewRenderer {
       this.walkmapContainer.addChild(graphics)
       
       // Render Cost Labels
-      // "right one squares from center... put the movement cost... in parenthesis"
-      const style = {
-          fontFamily: 'Arial',
-          fontSize: Math.max(10, Math.floor(size / 2.5)),
-          fontWeight: 'normal',
-          fill: '#000000', // Black
-          align: 'center'
-      }
-      
-      for (const room of data.rooms) {
-          const cost = roomCosts.get(room.id)
-          if (cost !== undefined) {
-              // Center position
-              const cx = room.centroid.x
-              const cy = room.centroid.y
-              
-              // Target: Center + 1 X for cost
-              const tx = cx + 1
-              const ty = cy
-              
-              const text = new Text({
-                  text: `(${cost})`,
-                  style
-              })
-              text.anchor.set(0.5)
-              text.x = (tx + 0.5) * size
-              text.y = (ty + 0.5) * size
-              
-              this.walkmapContainer.addChild(text)
-          }
-          
-          // Render room/door traversal counts one square below center
-          const roomCount = roomTraversals.get(room.id) ?? 0
-          const doorCount = doorTraversals.get(room.id) ?? 0
-          
-          const cx = room.centroid.x
-          const cy = room.centroid.y
-          
-          // Position: Center + 1 Y (below)
-          const labelText = `R:${roomCount} D:${doorCount}`
-          const traversalLabel = new Text({
-              text: labelText,
-              style: {
-                  ...style,
-                  fontSize: Math.max(8, Math.floor(size / 3)),
-                  fill: '#333333'
-              }
-          })
-          traversalLabel.anchor.set(0.5)
-          traversalLabel.x = (cx + 0.5) * size
-          traversalLabel.y = (cy + 1.5) * size
-          
-          this.walkmapContainer.addChild(traversalLabel)
-      }
-  }
+    // User requested: 1/2 square above room number, 1/2 square below for traversals
+    const costStyle = {
+        fontFamily: 'Arial',
+        fontSize: Math.max(10, Math.floor(size / 2.5)),
+        fontWeight: 'normal',
+        fill: '#000000', // Black
+        align: 'center'
+    }
+    
+    for (const room of data.rooms) {
+        // Use bounds center for consistency with room numbers
+        const cx = room.bounds.x + room.bounds.w / 2
+        const cy = room.bounds.y + room.bounds.h / 2
+        
+        const cost = roomCosts.get(room.id)
+        if (cost !== undefined) {
+            // Position: Center - 0.5 Y (above)
+            const text = new Text({
+                text: `(${cost})`,
+                style: costStyle
+            })
+            text.anchor.set(0.5)
+            text.x = cx * size
+            text.y = (cy - 0.5) * size
+            
+            this.walkmapContainer.addChild(text)
+        }
+        
+        // Render room/door traversal counts
+        // Position: Center + 0.5 Y (below)
+        const roomCount = roomTraversals.get(room.id) ?? 0
+        const doorCount = doorTraversals.get(room.id) ?? 0
+        
+        const labelText = `R:${roomCount} D:${doorCount}`
+        const traversalLabel = new Text({
+            text: labelText,
+            style: costStyle // Match font size to movement costs
+        })
+        traversalLabel.anchor.set(0.5)
+        traversalLabel.x = cx * size
+        traversalLabel.y = (cy + 0.5) * size
+        
+        this.walkmapContainer.addChild(traversalLabel)
+    }
+}
   
   /**
    * Main render method for the dungeon.
@@ -1190,10 +706,10 @@ export class DungeonViewRenderer {
     this.backgroundLayer.clear()
     this.floorLayer.clear()
     this.wallLayer.clear()
-    this.gridLineLayer.clear()
+    this.gridLayer.clear()
     this.heatMapLayer.clear()
     this.overlayLayer.clear()
-    this.objectLayer.removeChildren()
+    this.objectLayer.clear()
     this.labelContainer.removeChildren()
     this.walkmapContainer.removeChildren() // Clear Walkmap
 
@@ -1212,12 +728,11 @@ export class DungeonViewRenderer {
     this.backgroundLayer.clear()
     this.floorLayer.clear()
     this.wallLayer.clear()
-    this.gridLineLayer.clear()
-    this.heatMapLayer.clear()
+    this.gridLayer.clear()
+    this.debugLayer.clear()
     this.overlayLayer.clear()
-    this.labelContainer.removeChildren()
-    this.objectLayer.removeChildren()
-    this.walkmapContainer.removeChildren()
+    this.labelLayer.clear()
+    this.objectLayer.clear()
   }
   
   /**
@@ -1246,32 +761,54 @@ export class DungeonViewRenderer {
    * Toggle room number labels visibility
    */
   public setShowRoomNumbers(show: boolean): void {
-    this.labelContainer.visible = show
+    this.labelLayer.setVisible(show)
+  }
+
+  /**
+   * Helper to expose walkable tiles for PlayerController/Visibility
+   */
+  public getWalkableTiles(): {x: number, y: number}[] {
+    const tiles: {x: number, y: number}[] = []
+    for (const k of this.corridorTiles) {
+      const [x, y] = k.split(',').map(Number)
+      tiles.push({x, y})
+    }
+    return tiles
   }
   
   /**
    * Toggle heat map visibility
    */
   public setShowHeatMap(visible: boolean): void {
-      this.heatMapLayer.visible = visible
+      this.showHeatMap = visible
+      this.debugLayer.setVisibility(visible, this.showWalkmap)
   }
 
   public setShowWalkmap(visible: boolean): void {
-      this.walkmapContainer.visible = visible
+      this.showWalkmap = visible
+      this.debugLayer.setVisibility(this.showHeatMap, visible)
   }
 
   public setPlayerVisibility(visible: boolean): void {
       this.entityLayer.visible = visible
   }
 
+
+
+  // Bind for cleanup
+  private onThemeChange = (name: string, config: RoomLayerConfig) => {
+      this.config = config
+      this.updateFilters()
+  }
+
   /**
-   * Calculate heat map scores for all room walls
+   * Calculate heat map scores for all room walls (Used by generation)
+   * TODO: Move to a shared calculator in Phase 4
    */
-  public calculateWallHeatScores(rooms: Room[], spineTiles: { x: number; y: number }[]): Map<string, number> {
+  private calculateWallHeatScores(rooms: Room[], spineTiles: { x: number; y: number }[]): Map<string, number> {
     const heatScores = new Map<string, number>()
     const spineSet = new Set<string>(spineTiles.map(t => `${t.x},${t.y}`))
     
-    // Helper to check spine adjacency
     const checkSpineAdj = (x: number, y: number) => {
         return spineSet.has(`${x},${y-1}`) || 
                spineSet.has(`${x},${y+1}`) || 
@@ -1287,7 +824,6 @@ export class DungeonViewRenderer {
         const wx = x + dx, wy = y - 1
         const dist = Math.abs(dx - Math.floor((w - 1) / 2))
         const isEdge = dx === 0 || dx === w - 1
-        // Bonus: -10 Center, -5 Edge, 0 Other
         let bonus = isEdge ? -5 : (dist === 0 ? -10 : 0)
         if (checkSpineAdj(wx, wy)) bonus += 20
         const key = `${wx},${wy}`
@@ -1328,12 +864,9 @@ export class DungeonViewRenderer {
         heatScores.set(key, current + bonus)
       }
 
-      // Diagonal corners = 500
-       const corners = [
-        { x: x - 1, y: y - 1 },
-        { x: x + w, y: y - 1 },
-        { x: x - 1, y: y + h },
-        { x: x + w, y: y + h }
+      const corners = [
+        { x: x - 1, y: y - 1 }, { x: x + w, y: y - 1 },
+        { x: x - 1, y: y + h }, { x: x + w, y: y + h }
       ]
       for (const c of corners) {
         const key = `${c.x},${c.y}`
@@ -1342,46 +875,5 @@ export class DungeonViewRenderer {
       }
     }
     return heatScores
-  }
-
-  /**
-   * Render heat map using pre-calculated scores
-   * Scoring: Center wall=10, Far edge=15, Others=20, Diagonals=500, Spine-adjacent=+5
-   */
-  public renderHeatMap(scores: Map<string, number>, size: number): void {
-    this.heatMapLayer.clear()
-    
-    // Color scale helper for Additive Scores
-    const scoreToColor = (s: number): number => {
-        if (s <= -20) return 0x00FF00 // Green (Best - Double Shared)
-        if (s < -5) return 0x00FFFF // Cyan (Good - Center/Edge)
-        if (s < 5) return 0xFFFF00 // Yellow (Neutral)
-        if (s < 50) return 0xFF8800 // Orange (Spine Adj)
-        return 0xFF0000 // Red (Corner/Blocked)
-    }
-
-    for (const [key, score] of scores.entries()) {
-        if (typeof key !== 'string') continue
-        const [x, y] = key.split(',').map(Number)
-        this.heatMapLayer.rect(x * size, y * size, size, size)
-        this.heatMapLayer.fill({ color: scoreToColor(score), alpha: 0.5 })
-    }
-    }
-    // Helper to expose walkable tiles for PlayerController
-  public getWalkableTiles(): {x: number, y: number}[] {
-      const tiles: {x: number, y: number}[] = []
-      
-      // 1. Corridors (Already pruned and widened)
-      for (const k of this.corridorTiles) {
-          const [x, y] = k.split(',').map(Number)
-          tiles.push({x, y})
-      }
-      return tiles
-  }
-
-  // Bind for cleanup
-  private onThemeChange = (name: string, config: RoomLayerConfig) => {
-      this.config = config
-      this.updateFilters()
   }
 }

@@ -723,7 +723,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             )
 
             // Update Renderer
-            dungeonViewRendererRef.current.updateVisibilityGraphics(
+            // Update Renderer
+            dungeonViewRendererRef.current.updateVisibilityState(
               spineSeedSettings.gridWidth,
               spineSeedSettings.gridHeight,
               visibilitySystemRef.current.getGrid(),
