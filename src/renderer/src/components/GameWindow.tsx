@@ -918,6 +918,13 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           currentTerrainRef.current = folder
           currentTerrainRowRef.current = row
 
+          // Sync terrain config to controller for subsequent placements
+          overworldControllerRef.current?.setTerrainConfig(
+            folder,
+            (row.rank as number) || 0,
+            row.type !== 'Unique'
+          )
+
           // Place the FIRST tile here and now
           const texture = TerrainAssetLoader.getRandom(folder)
           if (texture) {
@@ -931,7 +938,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             mapEngineRef.current.layers.live.addChild(sprite)
 
             // REFACTOR: Manager Area Start
-            overworldManagerRef.current.createAreaPlot(row.result || 'Area')
+            overworldManagerRef.current.createAreaPlot(row.result || 'Area', (row.rank as number) || 0, row.tag as string)
             overworldManagerRef.current.startAreaBatch(row.result || 'Area')
             overworldManagerRef.current.addTileToBatch(x, y, folder, (row.rank as number) || 0)
 
@@ -1051,253 +1058,34 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         setLogs([`${generatorMode === 'organic' ? 'Organic' : 'Spine-Seed'} Dungeon initialized.`])
 
       } else {
+        // --- OVERWORLD MODE ---
+        // Create and initialize OverworldController
+        if (!overworldControllerRef.current) {
+          overworldControllerRef.current = new OverworldController({
+            onStepChange: setOverworldStep,
+            onTerrainChange: setCurrentTerrain,
+            onTilesToPlaceChange: setTilesToPlace,
+            onTownPlacedChange: setTownPlaced,
+            onValidMovesChange: (moves) => { validMovesRef.current = moves },
+            onLog: addLog,
+            onHexHover: handleHexHover,
+            onHexClicked: handleHexClick
+          })
+        }
 
-        mapEngineRef.current = new MapEngine(app, {
-          viewport: layout.middlePanel,
-          gridType: 'hex',
-          // Use large logical size for infinite-feel hex grid
-          width: 100,
-          height: 100,
+        const controller = overworldControllerRef.current
 
+        // Initialize controller if not already
+        if (!controller.isInitialized()) {
+          controller.init(app, layout)
+          controller.initMapEngine()
+        }
 
+        // Sync refs for backward compatibility (temporary)
+        mapEngineRef.current = controller.getMapEngine()
+        overworldManagerRef.current = controller.getOverworldManager()
 
-          // -- Overworld Callbacks --
-          onValidatePlacement: (x, y) => {
-            // Strict check against validMovesRef if defined
-            // This ensures Ghost matches Highlight
-            // Especially critical for Batch/Area placement constraint
-            const key = `${x},${y}`
-
-            // If in placing_terrain mode, we MUST rely on validMovesRef
-            if (mapEngineRef.current?.interactionState.mode === 'placing_terrain') {
-              return validMovesRef.current.has(key)
-            }
-
-            // Fallback for Town or other modes (though validMovesRef should arguably drive those too)
-
-            // If map is empty, any placement is valid (First City)
-            if (overworldManagerRef.current.placedTilesMap.size === 0) return true
-
-            // Terrain must verify adjacency
-            const isOdd = y % 2 !== 0
-            const neighbors = isOdd
-              ? [
-                [0, -1],
-                [1, -1],
-                [-1, 0],
-                [1, 0],
-                [0, 1],
-                [1, 1]
-              ]
-              : [
-                [-1, -1],
-                [0, -1],
-                [-1, 0],
-                [1, 0],
-                [-1, 1],
-                [0, 1]
-              ]
-
-            // Check if any neighbor is occupied
-            let hasNeighbor = false
-            for (const [dx, dy] of neighbors) {
-              if (overworldManagerRef.current.placedTilesMap.has(`${x + dx},${y + dy}`)) {
-                hasNeighbor = true
-                break
-              }
-            }
-
-            if (!hasNeighbor) return false
-
-            // Check overlap
-            if (overworldManagerRef.current.placedTilesMap.has(`${x},${y}`)) return false
-
-            return true
-          },
-
-          onTownPlaced: (x, y) => {
-            if (!mapEngineRef.current) return
-
-            // 1. Calculate Hex Center
-            const { x: cx, y: cy } = mapEngineRef.current.gridSystem.getPixelCoords(x, y)
-            // Use 2x size for height based scaling logic
-            const h = 2 * mapEngineRef.current.gridSystem.config.size
-
-            // 2. Try Texture
-            const texture = TerrainAssetLoader.getRandom('town')
-
-            if (texture) {
-              const sprite = new Sprite(texture)
-              sprite.anchor.set(0.5)
-              sprite.x = cx
-              sprite.y = cy
-
-              const scale = h / texture.height
-              sprite.scale.set(scale)
-
-              mapEngineRef.current.layers.live.addChild(sprite)
-            } else {
-              // Fallback Shape
-              const g = new Graphics()
-              const r = mapEngineRef.current.gridSystem.config.size - 5
-              const points: number[] = []
-              for (let i = 0; i < 6; i++) {
-                const angle = Math.PI / 6 + (i * Math.PI) / 3
-                points.push(cx + r * Math.cos(angle))
-                points.push(cy + r * Math.sin(angle))
-              }
-              g.poly(points)
-              g.fill({ color: 0x00ffff, alpha: 0.9 })
-              g.stroke({ width: 2, color: 0xffffff })
-              mapEngineRef.current.layers.live.addChild(g)
-            }
-
-            // FLAIR OVERLAY (Town)
-            const flair = Sprite.from(flairOverlay)
-            flair.anchor.set(0.5)
-            const fh = 2 * mapEngineRef.current.gridSystem.config.size
-            flair.scale.set(fh / flair.height)
-
-            flair.x = cx
-            // Move to top of hex (shift up by radius/size) + 15px adjustment
-            flair.y = cy - mapEngineRef.current.gridSystem.config.size * 0.85 - 15
-
-            mapEngineRef.current.layers.overlay.addChild(flair)
-
-            // 3. Update State
-            // 3. Update State via Manager
-            overworldManagerRef.current.registerTownPlacement(x, y)
-            setTownPlaced(true)
-            setOverworldStep(1)
-
-            setUnClaimedLog(overworldManagerRef.current.currentPlots)
-
-            mapEngineRef.current.interactionState.mode = 'idle'
-            addLog(`Town placed at ${x}, ${y}.`)
-
-            // 4. Highlight Valid Moves: Manager knows best
-            const neighbors = overworldManagerRef.current.getValidMoves()
-            mapEngineRef.current.highlightValidMoves(neighbors)
-
-            // Fix: Update validMovesRef so hover/click works!
-            validMovesRef.current = new Set(neighbors.map((m) => `${m.x},${m.y}`))
-          },
-
-          onTerrainPlaced: (x, y) => {
-            // Validation (Ghost Color handled elsewhere, but double check)
-            const isValid = mapEngineRef.current?.options.onValidatePlacement?.(x, y) ?? true
-            if (!isValid) {
-              addLog(`Invalid placement!`)
-              return
-            }
-
-            // 2. Place Visual
-            const type = currentTerrainRef.current || 'fields'
-            const texture = TerrainAssetLoader.getRandom(type)
-            if (texture && mapEngineRef.current) {
-              const sprite = new Sprite(texture)
-              const { x: cx, y: cy } = mapEngineRef.current.gridSystem.getPixelCoords(x, y)
-              const h = 2 * mapEngineRef.current.gridSystem.config.size
-
-              sprite.anchor.set(0.5)
-              sprite.x = cx
-              sprite.y = cy
-
-              const scale = h / texture.height
-              sprite.scale.set(scale)
-
-              mapEngineRef.current.layers.live.addChild(sprite)
-
-              // REFACTORED: Manager Update
-              const rank = currentTerrainRowRef.current?.rank || 0
-              overworldManagerRef.current.addTileToBatch(x, y, type, rank)
-
-              // Sync UI Log
-              setUnClaimedLog(overworldManagerRef.current.currentPlots)
-
-              // 3. Logic: Decrement Tiles
-              setTilesToPlace((prev) => {
-                const newVal = prev - 1
-
-                // CHECK FOR AREA SEED (Transition to Roll Count)
-                const isUnique = currentTerrainRowRef.current?.type === 'Unique'
-                const batchSize = overworldManagerRef.current.currentBatch.size
-
-                if (newVal <= 0) {
-                  if (!isUnique && batchSize === 1) {
-                    // We just placed the first tile of an Area.
-                    // Transition to Roll Count.
-                    addLog('First tile placed. Rolling for area size...')
-                    setOverworldStep(2)
-                    // Do NOT reset idle mode, we want to stay engaged?
-                    // Actually, we usually roll automatically?
-                    // setOverworldStep(2) maps to UI showing "Roll D8" button?
-                    // Or we auto-roll?
-                    // UI usually has a button for rolling.
-                    if (mapEngineRef.current) mapEngineRef.current.interactionState.mode = 'idle'
-                    return 0
-                  }
-
-                  // Batch Complete (Unique OR Area finished)
-                  setOverworldStep(1) // Back to Explore
-                  overworldManagerRef.current.finishBatch()
-
-                  if (mapEngineRef.current) {
-                    mapEngineRef.current.interactionState.mode = 'idle'
-                    // Recalculate global valid moves
-                    const allValid = overworldManagerRef.current.getValidMoves()
-                    validMovesRef.current = new Set(allValid.map((m) => `${m.x},${m.y}`))
-                    mapEngineRef.current.highlightValidMoves(allValid)
-                  }
-                  addLog('Batch complete. Ready to explore.')
-                  return 0
-                }
-
-                // If we still have tiles, update Valid Moves (Batch Adjacency)
-                if (mapEngineRef.current) {
-                  // We need 'getValidBatchMoves' exposed or handled by Manager.
-                  // For now, use HexLogic with Manager's data.
-                  const batchMoves = HexLogic.getValidBatchMoves(
-                    overworldManagerRef.current.currentBatch,
-                    overworldManagerRef.current.placedTilesMap
-                  )
-
-                  if (batchMoves.length === 0) {
-                    addLog('No more space! Ending batch early.')
-                    setOverworldStep(1)
-                    mapEngineRef.current.interactionState.mode = 'idle'
-                    overworldManagerRef.current.finishBatch()
-
-                    // Revert to global valid
-                    const allValid = overworldManagerRef.current.getValidMoves()
-                    validMovesRef.current = new Set(allValid.map((m) => `${m.x},${m.y}`))
-                    mapEngineRef.current.highlightValidMoves(allValid)
-                    return 0
-                  }
-
-                  mapEngineRef.current.highlightValidMoves(batchMoves)
-                  validMovesRef.current = new Set(batchMoves.map((m) => `${m.x},${m.y}`))
-                }
-
-                return newVal
-              })
-            }
-          },
-          onHexHover: handleHexHover,
-          onHexClicked: handleHexClick
-        })
-
-          // Expose to window for UI/Shader access
-          ; (window as any).__MAP_ENGINE__ = mapEngineRef.current
-
-        // Initial Center for Overworld
-        setTimeout(() => {
-          if (mapEngineRef.current && !mapEngineRef.current.destroyed) {
-            mapEngineRef.current.camera.container.scale.set(1.0)
-            const { x, y } = mapEngineRef.current.gridSystem.getPixelCoords(0, 0)
-            mapEngineRef.current.camera.centerAt(x, y)
-          }
-        }, 100)
+        setLogs(['Overworld initialized.'])
       }
     } else {
       bg?.setVisible(true)
@@ -1376,56 +1164,23 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       const result = await diceEngine.roll('1d8')
       setIsRolling(false)
 
-      // Area Logic: Min 2
       const count = result.total
-      // if (currentTerrainRowRef.current?.type === 'Area') {
-      //   count = Math.max(count, 2)
-      // }
-      // User requested pure D8 roll for Additional tiles.
-      // So if roll is 1, we place 1 additional tile.
 
-      setTilesToPlace(count)
-      setOverworldStep(3) // Move to Placement
       setLogs((prev) => [...prev, `Rolled ${count}: Place ${count} tile(s).`])
 
-      // Fix: Strictly highlight ONLY valid batch neighbors for Area Placement
-      if (mapEngineRef.current && currentTerrainRef.current) {
+      // Use controller if available, otherwise fallback to direct refs
+      const controller = overworldControllerRef.current
+      if (controller && gameMode === 'overworld') {
+        controller.startTerrainPlacement(count)
+      } else if (mapEngineRef.current && currentTerrainRef.current) {
+        // Legacy path (shouldn't be reached in overworld mode)
+        setTilesToPlace(count)
+        setOverworldStep(3)
         mapEngineRef.current.interactionState.mode = 'placing_terrain'
 
-        // Determine Valid Moves for THIS step
-        let validNextMoves: { x: number; y: number }[] = []
-
-        const batchSize = overworldManagerRef.current.currentBatch.size
-        // Logic: if batch has started (size >= 1 for Area start?), use batch moves.
-        // Wait, if we are rolling count, we ALREADY placed the first tile (Seed).
-        // So batchSize should be >= 1.
-
-        if (batchSize === 0) {
-          // Should not happen if we placed seed? But safe fallback:
-          validNextMoves = overworldManagerRef.current.getValidMoves()
-        } else {
-          // Use Batch Logic
-          validNextMoves = HexLogic.getValidBatchMoves(
-            overworldManagerRef.current.currentBatch,
-            overworldManagerRef.current.placedTilesMap
-          )
-        }
-
-        // Highlight AND Update Ref for interaction validation
+        const validNextMoves = overworldManagerRef.current.getValidMoves()
         mapEngineRef.current.highlightValidMoves(validNextMoves)
         validMovesRef.current = new Set(validNextMoves.map((m) => `${m.x},${m.y}`))
-
-        if (validNextMoves.length === 0) {
-          addLog('No valid adjacent spots for area placement! Ending batch.')
-          setOverworldStep(1)
-          mapEngineRef.current.interactionState.mode = 'idle'
-          overworldManagerRef.current.finishBatch()
-
-          // Revert to global valid
-          const allValid = overworldManagerRef.current.getValidMoves()
-          validMovesRef.current = new Set(allValid.map((m) => `${m.x},${m.y}`))
-          mapEngineRef.current.highlightValidMoves(allValid)
-        }
       }
     } catch (e) {
       console.error(e)

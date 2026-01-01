@@ -113,12 +113,12 @@ export class OverworldManager {
     // So we should expose method to Create Plot
   }
 
-  createAreaPlot(landType: string): void {
+  createAreaPlot(landType: string, rank: number = 0, tag?: string): void {
     const newPlot: Plot = {
-      plotTag: `P${this.plots.length + 1}`, // Or distinct tag logic
+      plotTag: tag ? `${tag}${this.plots.length + 1}` : `P${this.plots.length + 1}`,
       landType: landType,
       size: 0, // Will grow
-      rank: 0, // Need rank logic? passed in?
+      rank: rank,
       rankModifier: 0,
       ownerAndDetails: 'Unclaimed',
       landTypeList: []

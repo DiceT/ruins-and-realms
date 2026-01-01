@@ -1,8 +1,10 @@
-import { Application, Container } from 'pixi.js'
+import { Application, Container, Graphics, Sprite } from 'pixi.js'
 import { GameLayout } from '../../ui/GameLayout'
 import { MapEngine } from '../../MapEngine'
 import { OverworldManager } from '../../managers/OverworldManager'
 import { TableEngine } from '../../tables/TableEngine'
+import { TerrainAssetLoader } from '../../map/TerrainAssetLoader'
+import { HexLogic } from '../../systems/HexLogic'
 
 /**
  * Callbacks for OverworldController to notify GameWindow of state changes
@@ -14,6 +16,8 @@ export interface OverworldControllerCallbacks {
   onTownPlacedChange?: (placed: boolean) => void
   onValidMovesChange?: (moves: Set<string>) => void
   onLog?: (message: string) => void
+  onHexClicked?: (x: number, y: number) => void
+  onHexHover?: (x: number, y: number) => void
 }
 
 /**
@@ -39,6 +43,8 @@ export class OverworldController {
   // State
   private overworldStep: number = 0
   private currentTerrain: string | null = null
+  private currentTerrainRank: number = 0
+  private isTerrainUnique: boolean = false
   private tilesToPlace: number = 0
   private townPlaced: boolean = false
   private validMoves: Set<string> = new Set()
@@ -99,6 +105,9 @@ export class OverworldController {
       onValidatePlacement: (x, y) => this.validatePlacement(x, y),
       onTownPlaced: (x, y) => this.handleTownPlaced(x, y),
       onTerrainPlaced: (x, y) => this.handleTerrainPlaced(x, y),
+      // Forward hex events to GameWindow for UI interaction
+      onHexHover: (x, y) => this.callbacks.onHexHover?.(x, y),
+      onHexClicked: (x, y) => this.callbacks.onHexClicked?.(x, y),
     })
 
     // Expose to window for debugging
@@ -158,9 +167,40 @@ export class OverworldController {
   private handleTownPlaced(x: number, y: number): void {
     if (!this.mapEngine) return
 
-    // TODO: Move sprite creation logic here
-    // For now, this is a stub - the actual logic will be moved from GameWindow
+    // 1. Calculate Hex Center
+    const { x: cx, y: cy } = this.mapEngine.gridSystem.getPixelCoords(x, y)
+    const h = 2 * this.mapEngine.gridSystem.config.size
 
+    // 2. Try Texture
+    const texture = TerrainAssetLoader.getRandom('town')
+
+    if (texture) {
+      const sprite = new Sprite(texture)
+      sprite.anchor.set(0.5)
+      sprite.x = cx
+      sprite.y = cy
+
+      const scale = h / texture.height
+      sprite.scale.set(scale)
+
+      this.mapEngine.layers.live.addChild(sprite)
+    } else {
+      // Fallback Shape
+      const g = new Graphics()
+      const r = this.mapEngine.gridSystem.config.size - 5
+      const points: number[] = []
+      for (let i = 0; i < 6; i++) {
+        const angle = Math.PI / 6 + (i * Math.PI) / 3
+        points.push(cx + r * Math.cos(angle))
+        points.push(cy + r * Math.sin(angle))
+      }
+      g.poly(points)
+      g.fill({ color: 0x00ffff, alpha: 0.9 })
+      g.stroke({ width: 2, color: 0xffffff })
+      this.mapEngine.layers.live.addChild(g)
+    }
+
+    // 3. Update State via Manager
     this.overworldManager.registerTownPlacement(x, y)
     this.setTownPlaced(true)
     this.setOverworldStep(1)
@@ -168,7 +208,7 @@ export class OverworldController {
     this.mapEngine.interactionState.mode = 'idle'
     this.callbacks.onLog?.(`Town placed at ${x}, ${y}.`)
 
-    // Update valid moves
+    // 4. Highlight Valid Moves
     const neighbors = this.overworldManager.getValidMoves()
     this.mapEngine.highlightValidMoves(neighbors)
     this.setValidMoves(new Set(neighbors.map(m => `${m.x},${m.y}`)))
@@ -187,10 +227,83 @@ export class OverworldController {
       return
     }
 
-    // TODO: Move sprite creation and batch logic here
-    // For now, this is a stub - the actual logic will be moved from GameWindow
+    // 1. Place Visual
+    const type = this.currentTerrain || 'fields'
+    const texture = TerrainAssetLoader.getRandom(type)
+    
+    if (texture) {
+      const sprite = new Sprite(texture)
+      const { x: cx, y: cy } = this.mapEngine.gridSystem.getPixelCoords(x, y)
+      const h = 2 * this.mapEngine.gridSystem.config.size
 
-    this.callbacks.onLog?.(`Terrain placed at ${x}, ${y}.`)
+      sprite.anchor.set(0.5)
+      sprite.x = cx
+      sprite.y = cy
+
+      const scale = h / texture.height
+      sprite.scale.set(scale)
+
+      this.mapEngine.layers.live.addChild(sprite)
+
+      // 2. Manager Update
+      this.overworldManager.addTileToBatch(x, y, type, this.currentTerrainRank)
+
+      // 3. Update tiles count
+      const newTilesCount = this.tilesToPlace - 1
+      
+      // Check for Area Seed (transition to Roll Count)
+      const batchSize = this.overworldManager.currentBatch.size
+
+      if (newTilesCount <= 0) {
+        if (!this.isTerrainUnique && batchSize === 1) {
+          // First tile of Area placed - transition to Roll Count
+          this.callbacks.onLog?.('First tile placed. Rolling for area size...')
+          this.setOverworldStep(2)
+          this.mapEngine.interactionState.mode = 'idle'
+          this.setTilesToPlace(0)
+          return
+        }
+
+        // Batch Complete
+        this.setOverworldStep(1)
+        this.overworldManager.finishBatch()
+
+        this.mapEngine.interactionState.mode = 'idle'
+        
+        // Recalculate global valid moves
+        const allValid = this.overworldManager.getValidMoves()
+        this.setValidMoves(new Set(allValid.map(m => `${m.x},${m.y}`)))
+        this.mapEngine.highlightValidMoves(allValid)
+        
+        this.callbacks.onLog?.('Batch complete. Ready to explore.')
+        this.setTilesToPlace(0)
+        return
+      }
+
+      // Still have tiles - update Valid Moves (Batch Adjacency)
+      const batchMoves = HexLogic.getValidBatchMoves(
+        this.overworldManager.currentBatch,
+        this.overworldManager.placedTilesMap
+      )
+
+      if (batchMoves.length === 0) {
+        this.callbacks.onLog?.('No more space! Ending batch early.')
+        this.setOverworldStep(1)
+        this.mapEngine.interactionState.mode = 'idle'
+        this.overworldManager.finishBatch()
+
+        // Revert to global valid
+        const allValid = this.overworldManager.getValidMoves()
+        this.setValidMoves(new Set(allValid.map(m => `${m.x},${m.y}`)))
+        this.mapEngine.highlightValidMoves(allValid)
+        this.setTilesToPlace(0)
+        return
+      }
+
+      this.mapEngine.highlightValidMoves(batchMoves)
+      this.setValidMoves(new Set(batchMoves.map(m => `${m.x},${m.y}`)))
+      this.setTilesToPlace(newTilesCount)
+    }
   }
 
   /**
@@ -264,6 +377,61 @@ export class OverworldController {
   public setValidMoves(moves: Set<string>): void {
     this.validMoves = moves
     this.callbacks.onValidMovesChange?.(moves)
+  }
+
+  /**
+   * Configure terrain for next placement batch
+   */
+  public setTerrainConfig(terrain: string, rank: number, isUnique: boolean): void {
+    this.currentTerrain = terrain
+    this.currentTerrainRank = rank
+    this.isTerrainUnique = isUnique
+    this.callbacks.onTerrainChange?.(terrain)
+  }
+
+  /**
+   * Start town placement mode
+   */
+  public startTownPlacement(): void {
+    if (!this.mapEngine) return
+    this.mapEngine.interactionState.mode = 'placing_town'
+    this.callbacks.onLog?.('Click on a hex to place your town.')
+  }
+
+  /**
+   * Start terrain placement mode
+   */
+  public startTerrainPlacement(count: number): void {
+    if (!this.mapEngine) return
+    
+    this.setTilesToPlace(count)
+    this.setOverworldStep(3)
+    this.mapEngine.interactionState.mode = 'placing_terrain'
+    
+    // Calculate valid batch moves (adjacent to current batch, not on occupied tiles)
+    const batchMoves = HexLogic.getValidBatchMoves(
+      this.overworldManager.currentBatch,
+      this.overworldManager.placedTilesMap
+    )
+    
+    // Highlight and update valid moves
+    this.mapEngine.highlightValidMoves(batchMoves)
+    this.setValidMoves(new Set(batchMoves.map(m => `${m.x},${m.y}`)))
+    
+    if (batchMoves.length === 0) {
+      this.callbacks.onLog?.('No valid adjacent spots! Ending batch.')
+      this.setOverworldStep(1)
+      this.mapEngine.interactionState.mode = 'idle'
+      this.overworldManager.finishBatch()
+      
+      // Revert to global valid moves
+      const allValid = this.overworldManager.getValidMoves()
+      this.setValidMoves(new Set(allValid.map(m => `${m.x},${m.y}`)))
+      this.mapEngine.highlightValidMoves(allValid)
+      return
+    }
+    
+    this.callbacks.onLog?.(`Placing ${count} ${this.currentTerrain} tiles...`)
   }
 
   // --- Lifecycle ---
