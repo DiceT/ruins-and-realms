@@ -25,9 +25,12 @@ import {
     GrowthDirection,
     CollisionBehavior
 } from '../engine/seed-growth/types'
+import { SpineSeedGenerator } from '../engine/seed-growth/SpineSeedGenerator'
+import { settingsToSeedConfig } from '../engine/seed-growth/ManualSeedSystem'
 import { SeedGrowthDataModal } from './SeedGrowthDataModal'
+import { SeedPouchTab } from './SeedPouchTab'
 
-type TabId = 'main' | 'animation' | 'mask' | 'debug' | 'output' | 'fx'
+type TabId = 'main' | 'pouch' | 'animation' | 'mask' | 'debug' | 'output' | 'fx'
 
 interface SeedGrowthControlPanelProps {
     // Generator mode
@@ -294,6 +297,9 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
         const newSettings = { ...spineSeedSettings, [key]: value }
         onSpineSeedSettingsChange(newSettings)
 
+        // Do not auto-regenerate for manual seed queue updates (user wants to see list first)
+        if (key === 'manualSeedQueue') return
+
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             onRegenerate()
@@ -336,6 +342,12 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
         await navigator.clipboard.writeText(json)
     }, [generatorMode, settings, spineSeedSettings])
 
+    const handleCopyAsSeed = useCallback(async () => {
+        // Only valid for spine mode really, but safe to call
+        const config = settingsToSeedConfig(spineSeedSettings)
+        await navigator.clipboard.writeText(JSON.stringify(config, null, 2))
+    }, [spineSeedSettings])
+
     const pasteFromClipboard = useCallback(async () => {
         try {
             const text = await navigator.clipboard.readText()
@@ -359,6 +371,7 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
     // ---- TABS ----
     const tabs: { id: TabId; label: string }[] = [
         { id: 'main', label: 'Main' },
+        { id: 'pouch', label: 'Pouch' },
         { id: 'fx', label: 'FX' },
         { id: 'debug', label: 'Debug' },
         { id: 'output', label: 'Output' }
@@ -434,9 +447,10 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
                 </div>
                 <div style={{ ...rowStyle, justifyContent: 'flex-start' }}>
                     <button style={buttonStyle} onClick={randomizeSeed}>🎲</button>
-                    <button style={buttonStyle} onClick={onRegenerate}>Regen</button>
+                    <button style={buttonStyle} onClick={onRegenerate}>Grow</button>
                     <button style={buttonStyle} onClick={resetDefaults}>Reset</button>
-                    <button style={buttonStyle} onClick={copyToClipboard}>📋 Copy</button>
+                    <button style={buttonStyle} onClick={copyToClipboard}>📋 All</button>
+                    <button style={buttonStyle} onClick={handleCopyAsSeed}>📋 Seed</button>
                     <button style={buttonStyle} onClick={pasteFromClipboard}>📥 Paste</button>
                 </div>
             </div>
@@ -1002,6 +1016,13 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
     const renderTabContent = () => {
         switch (activeTab) {
             case 'main': return renderMainTab()
+            case 'pouch': return (
+                <SeedPouchTab
+                    queue={spineSeedSettings.manualSeedQueue || []}
+                    onQueueChange={(q) => updateSpineSetting('manualSeedQueue', q)}
+                    onGrow={onRegenerate}
+                />
+            )
             case 'fx': return renderFXTab()
             case 'debug': return renderDebugTab()
             case 'output': return renderOutputTab()

@@ -27,6 +27,7 @@ export interface DungeonViewOptions {
   showGrid?: boolean
   showRoomLabels?: boolean
   themeManager?: ThemeManager
+  onRoomHover?: (room: Room | null, x: number, y: number) => void
 }
 
 export class DungeonViewRenderer {
@@ -63,6 +64,9 @@ export class DungeonViewRenderer {
   // View state
   private viewWidth: number = 800
   private viewHeight: number = 600
+  private renderedRooms: Room[] = []
+  private onRoomHover?: (room: Room | null, x: number, y: number) => void
+  private lastHoveredRoom: string | null = null
   
   // Accessible corridor tiles for collision
   private corridorTiles: Set<string> = new Set()
@@ -81,6 +85,49 @@ export class DungeonViewRenderer {
     
     this.contentContainer = new Container()
     this.container.addChild(this.contentContainer)
+    
+    this.onRoomHover = options.onRoomHover
+
+    // Interaction Handling
+    if (this.onRoomHover) {
+       this.container.addEventListener('pointermove', (e) => {
+           // Convert global to local
+           const global = e.global
+           const local = this.contentContainer.toLocal(global)
+           
+           // Convert Local Pixel to Grid Coords
+           // Room bounds are in Grid Coords. FloorLayer scales them by tileSize.
+           // So check: room.bounds * tileSize vs local pixel
+           
+           let hovered: Room | null = null
+           
+           // Inverse iterate to check top-most (though rooms don't overlap much here)
+           for (let i = this.renderedRooms.length - 1; i >= 0; i--) {
+               const room = this.renderedRooms[i]
+               const { x, y, w, h } = room.bounds
+               
+               const minX = x * this.tileSize
+               const minY = y * this.tileSize
+               const maxX = (x + w) * this.tileSize
+               const maxY = (y + h) * this.tileSize
+               
+               if (local.x >= minX && local.x < maxX && local.y >= minY && local.y < maxY) {
+                   hovered = room
+                   break
+               }
+           }
+           
+           // Debounce / Trigger
+           if (hovered?.id !== this.lastHoveredRoom) {
+               this.lastHoveredRoom = hovered ? hovered.id : null
+               this.onRoomHover!(hovered, global.x, global.y)
+           } else if (!hovered && this.lastHoveredRoom !== null) {
+               // Exit
+               this.lastHoveredRoom = null
+               this.onRoomHover!(null, global.x, global.y)
+           }
+       })
+    }
     
     // Theme Manager
     this.themeManager = options.themeManager || new ThemeManager()
@@ -279,6 +326,7 @@ export class DungeonViewRenderer {
         // --- SPINE MODE ---
         // Use passed rooms (already pruned)
         rooms = data.rooms
+        this.renderedRooms = rooms // Update interaction target list
         
         // The spineTiles array only contains CENTER path tiles.
         spineTiles = (data as any).spine || []
@@ -401,6 +449,7 @@ export class DungeonViewRenderer {
     } else {
         // --- ORGANIC MODE ---
         rooms = (data as any).rooms || []
+        this.renderedRooms = rooms // Update interaction target list
         const pathfinder = new CorridorPathfinder(settings.seed)
         corridorTiles = pathfinder.generate(data, rooms)
         // Set tributaryTiles for organic mode too so cleanup works

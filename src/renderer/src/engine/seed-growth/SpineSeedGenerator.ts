@@ -19,6 +19,8 @@ import {
   Direction,
   createDefaultSpineSeedSettings
 } from './types'
+import { ManualSeedConfig, SeedSide, RangeOrNumber } from './SeedDefinitions'
+import { createVirtualConfig, expandRepeats } from './ManualSeedSystem'
 
 // Direction vectors
 const DIRECTIONS: { [key in Direction]: GridCoord } = {
@@ -50,10 +52,12 @@ export class SpineSeedGenerator {
   private settings: SpineSeedSettings
   private rng: SeededRNG
   private state: SpineSeedState
+  private localSeedQueue: ManualSeedConfig[] = []
 
   constructor(settings?: SpineSeedSettings) {
     this.settings = settings ? { ...settings } : createDefaultSpineSeedSettings()
     this.rng = new SeededRNG(this.settings.seed)
+    this.localSeedQueue = expandRepeats(this.settings.manualSeedQueue || [])
     this.state = this.createInitialState()
   }
 
@@ -68,6 +72,7 @@ export class SpineSeedGenerator {
 
     this.settings = { ...settings }
     this.rng = new SeededRNG(settings.seed)
+    this.localSeedQueue = expandRepeats(this.settings.manualSeedQueue || [])
     this.state = this.createInitialState()
 
     // Restore mask if requested and sizes match
@@ -714,7 +719,7 @@ export class SpineSeedGenerator {
     return this.rng.nextInt(minInterval, maxInterval)
   }
 
-  private ejectSeed(spineTile: SpineTile): void {
+  private ejectSeed__OLD(spineTile: SpineTile): void {
     const { ejectionSide, pairedEjection, minDistance, maxDistance, dudChance, wallSeedChance } = this.settings.ejection
     const { minWidth, maxWidth, minHeight, maxHeight } = this.settings.roomGrowth
 
@@ -809,15 +814,312 @@ export class SpineSeedGenerator {
       }
     }
 
-    // Link symmetric partners (Linkage exists regardless of strictness; strictness is checked during growth)
-    if (primarySeeds.length === 2) {
-        primarySeeds[0].partnerId = primarySeeds[1].id
-        primarySeeds[1].partnerId = primarySeeds[0].id
+    // If strict symmetric matches needed, link them here
+    if (isSymmetric) {
+        // Link primaries
+        if (primarySeeds.length === 2) {
+             primarySeeds[0].partnerId = primarySeeds[1].id
+             primarySeeds[1].partnerId = primarySeeds[0].id
+        }
+        // Link secondaries
+         if (secondarySeeds.length === 2) {
+             secondarySeeds[0].partnerId = secondarySeeds[1].id
+             secondarySeeds[1].partnerId = secondarySeeds[0].id
+        }
     }
-    if (secondarySeeds.length === 2) {
-        secondarySeeds[0].partnerId = secondarySeeds[1].id
-        secondarySeeds[1].partnerId = secondarySeeds[0].id
+  }
+
+  private ejectSeed(spineTile: SpineTile): void {
+      const { ejection, seedCount } = this.settings
+      
+      // Helper: Dequeue next available manual seed or create virtual
+      const getNextSeed = (): { config: ManualSeedConfig, isManual: boolean } => {
+          if (this.localSeedQueue.length > 0) {
+              const config = this.localSeedQueue.shift()!
+              return { config, isManual: true }
+          }
+          return { config: createVirtualConfig(this.settings, this.rng), isManual: false }
+      }
+
+      // 1. Get Primary Seed for Side 1 (Target Side)
+      // We look at the first seed to determine target side preferences, but we consume it.
+      // Wait, we need to know the 'side' before we loop.
+      // But the first seed dictating the side is only relevant if it's manual.
+      // So we peek? No, we just get it.
+      
+      // Actually, we must determine SIDES first.
+      // If the first seed in queue says "Left", we do Left.
+      // If it says "Both", we do Both.
+      // If it says "Any", we resolve global.
+      
+      // So we MUST peek or shift the first seed to plan the ejection.
+      // Let's shift it. This is "Seed 1".
+      const seed1 = getNextSeed()
+      const primaryConfig = seed1.config
+      const isManual = seed1.isManual
+
+      // Basic Symmetry Logic (random mirror)
+      const allowMirror = primaryConfig.allowMirror !== false
+      const symmetryChanceHit = (this.settings.symmetry > 0) && (this.rng.next() < this.settings.symmetry / 100)
+      const enforceMirror = allowMirror && (symmetryChanceHit || this.settings.symmetryStrictPrimary)
+
+      // Determine Sides based on Seed 1
+      let sides: SeedSide[] = []
+      const perps = PERPENDICULAR[spineTile.direction]
+
+      // Resolve 'side' from config
+      let targetSide: SeedSide = primaryConfig.side || 'any'
+      
+      if (targetSide === 'any' || targetSide === 'random') {
+          const globalSide = this.settings.ejection.ejectionSide
+          if (globalSide === 'both' || globalSide === 'left' || globalSide === 'right') {
+              targetSide = globalSide
+          } 
+      }
+
+      if (enforceMirror) {
+         sides = ['left', 'right'] 
+      } else {
+           switch (targetSide) {
+             case 'both':
+               sides = ['left', 'right']
+               break
+             case 'left':
+               sides = ['left']
+               break
+             case 'right':
+               sides = ['right']
+               break
+             case 'random':
+             case 'any':
+             default:
+               sides = [this.rng.next() < 0.5 ? 'left' : 'right']
+               break
+           }
+      }
+
+      // Pre-resolve Symmetry Values
+      let sharedDist: number | undefined
+      let sharedW: number | undefined
+      let sharedH: number | undefined
+      
+      let sharedSecOffset: number | undefined
+      let sharedSecW: number | undefined
+      let sharedSecH: number | undefined
+      
+      if (enforceMirror) {
+          sharedDist = this.resolveValue(primaryConfig.distance)
+          sharedW = this.resolveValue(primaryConfig.width)
+          sharedH = this.resolveValue(primaryConfig.height)
+          
+          if (this.settings.symmetryStrictSecondary) {
+               const { minDistance, maxDistance } = this.settings.ejection
+               sharedSecOffset = this.rng.nextInt(minDistance, maxDistance)
+               sharedSecW = this.resolveValue(primaryConfig.width)
+               sharedSecH = this.resolveValue(primaryConfig.height)
+          }
+      }
+
+      // Create Seeds
+      const createdSeeds: RoomSeed[] = []
+      const secondarySeeds: RoomSeed[] = []
+
+      // Store the secondary config from the first side for potential mirroring
+      let firstSecondaryConfig: ManualSeedConfig | null = null;
+
+      for (let i = 0; i < sides.length; i++) {
+        const side = sides[i]
+        
+        if (this.state.roomSeeds.length >= seedCount) break
+  
+        // Direction Map
+        const dir = side === 'left' ? perps[0] : perps[1]
+        
+        // Determine Config for this side
+        let currentConfig: ManualSeedConfig
+        let currentIsManual: boolean
+
+        if (i === 0) {
+            // First side uses the seed we already shifted (Seed 1)
+            currentConfig = primaryConfig
+            currentIsManual = isManual
+        } else {
+            // Second side (e.g. Right when Both)
+            if (enforceMirror) {
+                // MIRROR: Reuse Seed 1 (Cloned effectively by creating new RoomSeed from same config)
+                // This means we DO NOT consume Seed 2 from queue.
+                currentConfig = primaryConfig
+                currentIsManual = isManual
+            } else {
+                // NOT MIRROR: Consume next seed from queue! (Seed 2)
+                const next = getNextSeed()
+                currentConfig = next.config
+                currentIsManual = next.isManual
+            }
+        }
+
+        // Resolve Dimensions
+        let dist: number
+        let w: number
+        let h: number
+
+        // If reusing primary config (first side OR mirror), use shared if applicable
+        if (currentConfig === primaryConfig && enforceMirror) {
+             dist = sharedDist ?? this.resolveValue(currentConfig.distance)
+             w = sharedW ?? this.resolveValue(currentConfig.width)
+             h = sharedH ?? this.resolveValue(currentConfig.height)
+        } else {
+             dist = this.resolveValue(currentConfig.distance)
+             w = this.resolveValue(currentConfig.width)
+             h = this.resolveValue(currentConfig.height)
+        }
+        
+        const primary = this.createRoomSeedFromConfig(spineTile, dir, currentConfig, 'primary', dist, w, h)
+        
+        if (primary) {
+            createdSeeds.push(primary)
+            
+            // 2. Secondary Seed (Paired)
+            if (this.settings.ejection.pairedEjection && this.state.roomSeeds.length < seedCount) {
+                let secConfig: ManualSeedConfig;
+                let secIsManual: boolean;
+
+                // Determine if we need a new seed or reuse from the first side's secondary
+                if (i > 0 && enforceMirror && this.settings.symmetryStrictSecondary && firstSecondaryConfig) {
+                    // Reuse the secondary config from side 0 if strict secondary mirroring is active
+                    secConfig = firstSecondaryConfig;
+                    secIsManual = false; // Reused config is not "newly manual"
+                } else {
+                    // Consume a new seed for secondary
+                    const nextSec = getNextSeed();
+                    secConfig = nextSec.config;
+                    secIsManual = nextSec.isManual;
+                }
+                
+                // offset
+                const { minDistance, maxDistance } = this.settings.ejection
+                const offset = sharedSecOffset ?? this.rng.nextInt(minDistance, maxDistance)
+                
+                const secDist = dist + offset
+                 
+                // Dimensions
+                let secW = this.resolveValue(secConfig.width)
+                let secH = this.resolveValue(secConfig.height)
+                
+                // If strict secondary mirroring is active, and we are mirroring, use shared dimensions
+                if (enforceMirror && this.settings.symmetryStrictSecondary) {
+                    secW = sharedSecW ?? this.resolveValue(secConfig.width);
+                    secH = sharedSecH ?? this.resolveValue(secConfig.height);
+                }
+
+                const s2 = this.createRoomSeedFromConfig(spineTile, dir, secConfig, 'secondary', secDist, secW, secH)
+                if (s2) {
+                    secondarySeeds.push(s2)
+                    createdSeeds.push(s2) // Add to list for internal return/tracking if needed
+                    
+                    if (i === 0) {
+                        // Store for potential mirror
+                        firstSecondaryConfig = secConfig
+                    }
+                }
+            }
+        }
+      }
+      
+      // Link partners if symmetric pair created
+      if (enforceMirror) {
+          if (createdSeeds.length === 2) {
+              createdSeeds[0].partnerId = createdSeeds[1].id
+              createdSeeds[1].partnerId = createdSeeds[0].id
+          }
+           if (secondarySeeds.length === 2) {
+              secondarySeeds[0].partnerId = secondarySeeds[1].id
+              secondarySeeds[1].partnerId = secondarySeeds[0].id
+          }
+      }
+  }
+
+  // Removed generateRandomConfig -> moved to ManualSeedSystem.createVirtualConfig
+
+  private resolveValue(val: RangeOrNumber | undefined): number {
+      if (val === undefined) return 1
+      if (typeof val === 'number') return val
+      return this.rng.nextInt(val.min, val.max)
+  }
+
+  private createRoomSeedFromConfig(
+    spineTile: SpineTile,
+    direction: Direction,
+    config: ManualSeedConfig,
+    generation: 'primary' | 'secondary',
+    distanceOverride?: number,
+    widthOverride?: number,
+    heightOverride?: number
+  ): RoomSeed | null {
+    
+    // Resolve Dimensions
+    const targetWidth = widthOverride !== undefined ? widthOverride : this.resolveValue(config.width)
+    const targetHeight = heightOverride !== undefined ? heightOverride : this.resolveValue(config.height)
+    const distance = distanceOverride !== undefined ? distanceOverride : this.resolveValue(config.distance)
+    
+    const pos: GridCoord = {
+      x: spineTile.x + DIRECTIONS[direction].x * distance,
+      y: spineTile.y + DIRECTIONS[direction].y * distance
     }
+
+    // Check if position is valid
+    if (!this.inBounds(pos.x, pos.y)) return null
+    if (this.state.blocked[pos.y]?.[pos.x]) return null
+
+    // Check if landing on existing room or spine
+    const tile = this.state.grid[pos.y][pos.x]
+    
+    // Start overlap check
+    const isOccupied = tile.state !== 'empty'
+    const allowOverlap = tile.isCorridor && !this.settings.spine.spineActsAsWall
+
+    // Dud check
+    const isDud = (isOccupied && !allowOverlap) || (this.rng.next() < this.settings.ejection.dudChance)
+    
+    // Wall Seed check
+    const isWallSeed = config.type === 'wall'
+
+    const roomSeed: RoomSeed = {
+      id: config.id || `${config.type || 'seed'}-${this.state.roomSeeds.length}`,
+      position: pos,
+      sourceSpineTile: { x: spineTile.x, y: spineTile.y },
+      ejectionDirection: direction,
+      targetWidth,
+      targetHeight,
+      isWallSeed,
+      isDead: isDud,
+      currentBounds: { x: pos.x, y: pos.y, w: 1, h: 1 },
+      tiles: isDud ? [] : [pos],
+      birthOrder: this.state.roomSeeds.length,
+      isComplete: isDud,
+      generation,
+      
+      // Metadata (Locked Scope v1)
+      configSource: config,
+      tags: config.tags,
+      content: config.metadata // Mapping config.metadata to RoomSeed.content (ManualSeedContent interface in types needs update if strictly typed?)
+                               // Actually types.ts imports ManualSeedConfig which has 'metadata'. 
+                               // RoomSeed interface in types.ts has 'content?: ManualSeedContent'.
+                               // ManualSeedContent was removed in types.ts step? No, wait. 
+                               // SeedDefinitions defines ManualSeedMetadata.
+                               // We need to ensure RoomSeed uses ManualSeedMetadata.
+    }
+
+    this.state.roomSeeds.push(roomSeed)
+
+    // If not dead, mark initial tile
+    if (!isDud) {
+      tile.state = 'floor'
+      tile.regionId = this.state.roomSeeds.length // Use seed index as region ID
+      tile.growthOrder = this.state.tilesGrown++
+    }
+    
+    return roomSeed
   }
 
   private createRoomSeed(

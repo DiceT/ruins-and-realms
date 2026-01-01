@@ -13,7 +13,18 @@ export type TileState = 'empty' | 'floor' | 'blocked'
 
 export type SeedPlacement = 'center' | 'random' | 'symmetricPairs'
 
-export type SymmetryAxis = 'vertical' | 'horizontal'
+// =============================================================================
+// Imports
+// =============================================================================
+import type { ManualSeedConfig, SeedShape, SeedSide, ManualSeedMetadata } from './SeedDefinitions'
+
+// Re-export for convenience if needed, or consumers should import directly.
+// For now, we use them in Settings.
+export type { ManualSeedConfig, SeedShape, SeedSide, ManualSeedMetadata }
+
+// =============================================================================
+// Core Types
+// =============================================================================
 
 export type RoomClassificationMode = 'floodFill' | 'thickness'
 
@@ -85,6 +96,8 @@ export interface Room {
   subRooms?: Room[]
   /** True if this room was created by merging overlapping rooms */
   isMerged?: boolean
+  /** Identifying type string for this room (e.g. "Boss Room", "Manual Seed") */
+  type?: string
 }
 
 export interface Corridor {
@@ -282,7 +295,8 @@ export function createDefaultSettings(): SeedGrowthSettings {
 
 export type GeneratorMode = 'organic' | 'spineSeed'
 
-export type EjectionSide = 'both' | 'left' | 'right' | 'random'
+// EjectionSide moved to top for wider reuse, but kept here for reference compat if needed
+// export type EjectionSide = ...
 
 export type IntervalMode = 'random' | 'fixed'
 
@@ -363,6 +377,12 @@ export interface RoomGrowthSettings {
 }
 
 // -----------------------------------------------------------------------------
+// Manual Seed Configuration (Moved to SeedDefinitions.ts)
+// -----------------------------------------------------------------------------
+
+// Removed local definitions (MinMax, ManualSeedConfig, etc) to use imports.
+
+// -----------------------------------------------------------------------------
 // Spine-Seed Debug Flags
 // -----------------------------------------------------------------------------
 
@@ -409,6 +429,9 @@ export interface SpineSeedSettings {
 
   // --- Room Growth ---
   roomGrowth: RoomGrowthSettings
+
+  // --- Manual Control ---
+  manualSeedQueue?: ManualSeedConfig[]
 
   // --- Symmetry (same as organic) ---
   symmetry: number
@@ -536,6 +559,11 @@ export interface RoomSeed {
   partnerId?: string
   /** Generation type: primary or secondary (paired) */
   generation: 'primary' | 'secondary'
+  
+  /** Source configuration used to create this seed */
+  configSource?: ManualSeedConfig
+  tags?: string[]
+  content?: ManualSeedMetadata
 }
 
 // -----------------------------------------------------------------------------

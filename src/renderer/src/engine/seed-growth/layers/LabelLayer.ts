@@ -73,7 +73,8 @@ export class LabelLayer {
       align: 'center'
     }
 
-    for (const room of rooms) {
+    for (let i = 0; i < rooms.length; i++) {
+      const room = rooms[i]
       const isFurthest = furthestMap.get(room.id)
       
       let fillColor: string | number = '#000000'
@@ -96,14 +97,9 @@ export class LabelLayer {
         fillColor = `rgb(${r}, ${g}, ${b})`
       }
 
-      // Parse ID to number
-      let labelText = ''
-      try {
-        const num = parseInt(room.id.replace('room_', ''))
-        labelText = String(num + 1)
-      } catch (e) {
-        labelText = room.id
-      }
+      // Use sequential number based on index (1-based)
+      // This solves the off-by-one issue and duplicate numbers for repeated seeds
+      const labelText = String(i + 1)
 
       const label = new Text({ 
         text: labelText, 

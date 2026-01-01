@@ -10,7 +10,7 @@ import { GameLayout } from '../engine/ui/GameLayout'
 import { BackgroundSystem } from '../engine/ui/BackgroundSystem'
 import { TableEngine } from '../engine/tables/TableEngine'
 import { GameOrchestrator } from '../engine/game/GameOrchestrator'
-import { DungeonController } from '../engine/game/controllers'
+import { DungeonController, OverworldController } from '../engine/game/controllers'
 import landTable from '../data/tables/land-table.json'
 
 interface GameWindowProps {
@@ -43,6 +43,7 @@ import {
   createDefaultSpineSeedSettings,
   GeneratorMode
 } from '../engine/seed-growth'
+import { getSeedLabel } from '../engine/seed-growth/ManualSeedSystem'
 import { VisibilitySystem } from '../engine/systems/VisibilitySystem'
 import { PlayerController } from '../engine/systems/PlayerController'
 import { LIGHT_PROFILES, LightSourceType } from '../engine/data/LightingData'
@@ -81,6 +82,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const mapEngineRef = useRef<MapEngine | null>(null)
   const initializingRef = useRef(false)
   const dungeonControllerRef = useRef<DungeonController | null>(null)
+  const overworldControllerRef = useRef<OverworldController | null>(null)
 
   // Global Store
   // Global Store
@@ -379,7 +381,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
         dungeonViewRendererRef.current = new DungeonViewRenderer(
           appRef.current.stage,
-          { tileSize: 50, themeManager: themeManagerRef.current }
+          {
+            tileSize: 50,
+            themeManager: themeManagerRef.current,
+            onRoomHover: (room, x, y) => handleRoomHover(room, x, y)
+          }
         )
       }
 
@@ -439,7 +445,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             centroid: {
               x: seed.currentBounds.x + Math.floor(seed.currentBounds.w / 2),
               y: seed.currentBounds.y + Math.floor(seed.currentBounds.h / 2)
-            }
+            },
+            type: getSeedLabel(seed)
           }))
 
         console.log('[ViewAsDungeon] Pruned rooms count:', prunedRooms.length)
@@ -816,6 +823,24 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     },
     []
   )
+
+  // ROOM HOVER HANDLER
+  const handleRoomHover = useCallback((room: any | null, x: number, y: number) => {
+    if (room) {
+      let text = 'Room'
+      if (room.type) text = room.type
+      else if (room.id) text = `Room ${room.id}`
+
+      setTooltip({
+        x: x + 15,
+        y: y + 15, // Offset slightly
+        text: text,
+        visible: true
+      })
+    } else {
+      setTooltip(prev => prev.visible ? { ...prev, visible: false } : prev)
+    }
+  }, [])
 
   const handleExploreTile = useCallback(async (x: number, y: number): Promise<void> => {
     setIsRolling(true)
