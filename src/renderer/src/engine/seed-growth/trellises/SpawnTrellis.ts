@@ -1,85 +1,68 @@
+/**
+ * # Spawn Trellis (#spawn)
+ * 
+ * DESCRIPTION:
+ * This trellis handles "Burst Ejection." It allows a single logical seed configuration 
+ * to expand into multiple physical seeds (a cluster) along the spine. It is the primary 
+ * mechanism for creating corridors of rooms or complex environmental features from a 
+ * single manual seed entry.
+ * 
+ * SEED-ENGINE TERMINOLOGY:
+ * - Phase [EJECTION]: Executes during the pouch-expansion stage or initial ejection to resolve "extra" configs.
+ * - Burst: The group of rooms created from this single trellis call.
+ * - Spacing: The fixed tiles between each member of the burst along the spine.
+ */
+
 import { ITrellis, TrellisPhase, TrellisContext } from './ITrellis'
-import { RoomSeed, Direction, Room } from '../types'
+import { RoomSeed, Room, ManualSeedConfig } from '../types'
 
 export class SpawnTrellis implements ITrellis {
   id = 'spawn'
   phases: TrellisPhase[] = ['ejection']
 
-  execute(phase: TrellisPhase, context: TrellisContext, subject?: RoomSeed | Room, args?: any[]): void {
-    const seed = subject as RoomSeed
-    if (phase === 'ejection' && seed && args && args.length >= 2) {
-      const count = args[0] as number
-      const spacing = args[1] as number
+  execute(phase: TrellisPhase, context: TrellisContext, subject?: RoomSeed | Room | ManualSeedConfig, args?: any[]): any {
+    if (phase === 'ejection') {
+      const config = subject as ManualSeedConfig
+      if (!config || !args || args.length === 0) return
       
-      if (count <= 1) return // count includes original
-
-      // We need to clone the seed X-1 times
-      const { state } = context
+      const { rng } = context
       
-      // Calculate growth direction vector
-      // Usually spawns extend in the direction of ejection relative to the spine?
-      // Or maybe strictly linear? 
-      // Markdown: "Spawns X-1 additional copies in a straight line"
-      // "Orientation inherited from original"
+      // #spawn(range, spacing)
+      // args[0] is range (e.g. {min: 2, max: 8} or 5)
+      // args[1] is spacing (default 1)
       
-      // If seed was ejected 'north', we assume spacing moves further north?
-      // Or does it move along the spine? 
-      // Context: "Prison Cell Row". Usually parallel to spine if ejected sideways?
-      // Or perpendicular? 
-      // "Y: spacing in tiles between room origins... (or height if the spawn is ejected vertically)"
-      // Let's assume it continues in the ejection direction for now.
+      const burstCountTarget = this.resolveValue(args[0], rng);
+      const burstCount = Math.max(1, burstCountTarget);
+      const burstSpacing = (args[1] !== undefined) ? this.resolveValue(args[1], rng) : 1;
       
-      const dir = seed.ejectionDirection
-      let dx = 0
-      let dy = 0
+      const results: ManualSeedConfig[] = [];
       
-      switch (dir) {
-        case 'north': dy = -1; break
-        case 'south': dy = 1; break
-        case 'east': dx = 1; break
-        case 'west': dx = -1; break
-      }
-
-      for (let i = 1; i < count; i++) {
-        const cx = seed.position.x + (dx * spacing * i)
-        const cy = seed.position.y + (dy * spacing * i)
+      // We return N-1 "extra" seeds to be ejected at intervals.
+      // The generator will handle the actual spine indexing.
+      for (let i = 1; i < burstCount; i++) {
+        const clone = { ...config };
+        // We'll mark these with metadata so the generator knows they are part of a burst
+        // and which offset/spacing to apply from the lead spine tile.
+        (clone as any)._burstIndex = i;
+        (clone as any)._burstSpacing = burstSpacing;
         
-        // Bounds check
-        if (cx < 0 || cx >= context.state.grid[0].length || cy < 0 || cy >= context.state.grid.length) continue
-
-        // Check if occupied? For now, we force overwrite or skip?
-        // Let's check for floor/wall
-        const tile = context.state.grid[cy][cx]
-        if (tile.state !== 'empty' && tile.state !== 'floor') continue // Don't spawn in walls?
-        // If it's another room (floor and regionId != -1), we might overlap.
-        // Let's assume valid placement for now or force it.
-
-        const newLength = state.roomSeeds.length
-        
-        // Create Clone
-        const newSeed: RoomSeed = {
-          ...seed,
-          id: `${seed.id}_spawn_${i}`,
-          position: { x: cx, y: cy },
-          currentBounds: { x: cx, y: cy, w: 1, h: 1 },
-          tiles: [{ x: cx, y: cy }],
-          birthOrder: newLength,
-          regionId: newLength + 1, // Usually seed index + 1
-          generation: 'secondary', 
-          // Remove #spawn tag
-          trellis: seed.trellis?.filter(t => !t.startsWith('#spawn')),
-          content: seed.content ? { ...seed.content } : undefined
+        // Strip the #spawn tag from clones to prevent infinite recursion
+        if (clone.trellis) {
+            clone.trellis = clone.trellis.filter(t => !t.startsWith('#spawn'))
         }
-
-        // Mark Grid
-        tile.state = 'floor'
-        tile.regionId = newLength + 1
-        tile.growthOrder = context.state.tilesGrown ? context.state.tilesGrown++ : 0
-
-        // Add to state
-        state.roomSeeds.push(newSeed)
-        console.warn(`[SpawnTrellis] 🌱 SPROUTING CLONE ${newSeed.id} at ${cx},${cy} [1x1]. Trellis: ${newSeed.trellis?.join(',') || 'none'}`)
+        results.push(clone)
       }
+      
+      return results
     }
+  }
+
+  private resolveValue(val: any, rng: any): number {
+      if (val === undefined) return 1
+      if (typeof val === 'number') return val
+      if (typeof val === 'object' && val.min !== undefined && val.max !== undefined) {
+          return rng.nextInt(val.min, val.max)
+      }
+      return 1
   }
 }

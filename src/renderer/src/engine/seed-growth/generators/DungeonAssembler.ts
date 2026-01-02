@@ -11,11 +11,12 @@
  * complete DungeonData (rooms + corridors + objects + pruned spine).
  */
 
-import { DungeonData, SeedGrowthState, SeedGrowthSettings, Room } from '../types'
+import { DungeonData, SeedGrowthState, SeedGrowthSettings, SpineSeedState, SpineSeedSettings, Room } from '../types'
 import { HeatMapCalculator } from '../processors/HeatMapCalculator'
 import { CorridorPathfinder } from '../processors/CorridorPathfinder'
 import { DungeonDecorator } from '../processors/DungeonDecorator'
 import { SpinePruner } from '../processors/SpinePruner'
+import { SpineSeedClassifierFixed } from '../classifiers/SpineSeedClassifier'
 import { SeededRNG } from '../../../utils/SeededRNG'
 import { TrellisManager } from '../TrellisManager'
 import { TrellisContext } from '../trellises/ITrellis'
@@ -25,12 +26,19 @@ export class DungeonAssembler {
   /**
    * Assemble a Spine-based dungeon.
    * This is the main entry point for spine mode generation.
+   * 
+   * Accepts raw SpineSeedState and handles classification internally.
+   * Returns fully processed DungeonData ready for rendering.
    */
-  public static assembleSpine(data: DungeonData, settings: SeedGrowthSettings): DungeonData {
+  public static assembleSpine(state: SpineSeedState, settings: SpineSeedSettings): DungeonData {
+    // --- STEP 1: CLASSIFY (prune seeds + map to rooms) ---
+    const classifier = new SpineSeedClassifierFixed()
+    const data = classifier.classify(state, settings)
+    
     const rooms = data.rooms
     
     // The spineTiles array only contains CENTER path tiles.
-    const spineTiles: any[] = (data as any).spine || []
+    const spineTiles: any[] = data.spine || []
     
     // 0. Calculate Scores (Required for generator)
     const heatScores = HeatMapCalculator.calculate(rooms, spineTiles)

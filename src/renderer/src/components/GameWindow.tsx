@@ -40,7 +40,6 @@ import {
   createDefaultSpineSeedSettings,
   GeneratorMode
 } from '../engine/seed-growth'
-import { DungeonAssembler } from '../engine/seed-growth/generators/DungeonAssembler'
 import { getSeedLabel } from '../engine/seed-growth/ManualSeedSystem'
 import { VisibilitySystem } from '../engine/systems/VisibilitySystem'
 import { PlayerController } from '../engine/systems/PlayerController'
@@ -359,59 +358,13 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         }
       }
 
-      // --- ADAPTER LOGIC ---
+      // --- SPINE MODE RENDERING ---
+      // All classification, pruning, and corridor assembly is handled by DungeonController/DungeonAssembler
       if (generatorMode === 'spineSeed' && state.spineTiles) {
-        // Adapter logic
-        // Convert SpineSeedState to DungeonData
-        const rawSeeds = (state.roomSeeds || []) as any[]
-
-        // Prune small rooms (1x1 or 1xN)
-        const prunedRooms = rawSeeds
-          .filter(seed => seed.currentBounds.w > 1 && seed.currentBounds.h > 1)
-          .map(seed => ({
-            id: seed.id,
-            regionId: 0, // Mock
-            tiles: seed.tiles,
-            bounds: seed.currentBounds,
-            area: seed.tiles.length,
-            centroid: {
-              x: seed.currentBounds.x + Math.floor(seed.currentBounds.w / 2),
-              y: seed.currentBounds.y + Math.floor(seed.currentBounds.h / 2)
-            },
-            type: getSeedLabel(seed)
-          }))
-
-
-        // Build raw DungeonData
-        const rawDungeonData = {
-          gridWidth: spineSeedSettings.gridWidth,
-          gridHeight: spineSeedSettings.gridHeight,
-          rooms: prunedRooms,
-          spine: state.spineTiles, // Pass spine tiles directly
-          spineWidth: spineSeedSettings.spine.spineWidth,
-          seed: spineSeedSettings.seed, // For seeded RNG ops
-          objects: state.objects // Pass objects (stairs!)
-        }
-
-        // Assemble corridors, decorations, and prune
-        const dungeonData = DungeonAssembler.assembleSpine(rawDungeonData as any, spineSeedSettings as any)
-
-        // Pass assembled DungeonData
-        dungeonViewRendererRef.current.renderDungeonView(
-          dungeonData,
-          spineSeedSettings as any,
-          showRoomNumbers,
-          showWalkmap
-        )
+        dungeonControllerRef.current.renderSpineDungeonView(state as any, spineSeedSettings)
 
         // --- INITIALIZE PLAYER & VISIBILITY (SPINE MODE) ---
         if (state.spineComplete) { // Ensure generation is done
-          console.error(`[GameWindow] Spine Complete! Mode: ${generatorMode}`)
-          // CRITICAL FIX: Ensure final render uses Controller logic (Classification/Pruning)
-          if (generatorMode === 'spineSeed') {
-            console.error('[GameWindow] Triggering Controller Render...')
-            dungeonControllerRef.current.renderSpineDungeonView(state as any)
-          }
           // 1. Find Start (Stairs Up or first Spine Tile)
           let startX = 0
           let startY = 0
@@ -438,8 +391,9 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             if (!seen.has(k)) { seen.add(k); walkable.push({ x, y }) }
           }
 
-          // Add Rooms
-          prunedRooms.forEach(r => r.tiles.forEach(t => add(t.x, t.y)))
+          // Add Rooms (get from renderer which was just updated by renderSpineDungeonView)
+          const renderedRooms = dungeonViewRendererRef.current.getRenderedRooms() || []
+          renderedRooms.forEach(r => r.tiles.forEach(t => add(t.x, t.y)))
 
           // Add Expanded Corridors from Renderer
           // This fixes the collision issue where narrow spine state didn't match wide visual corridors
@@ -590,29 +544,33 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
   // Debug Toggles Effect
   useEffect(() => {
-    if (dungeonViewRendererRef.current) {
-      dungeonViewRendererRef.current.setDebugVisibility(showFog, showLight)
+    const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
+    if (renderer) {
+      renderer.setDebugVisibility(showFog, showLight)
     }
   }, [showFog, showLight])
 
   // Dedicated effect for room number visibility toggle (independent of render)
   useEffect(() => {
-    if (dungeonViewRendererRef.current) {
-      dungeonViewRendererRef.current.setShowRoomNumbers(showRoomNumbers)
+    const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
+    if (renderer) {
+      renderer.setShowRoomNumbers(showRoomNumbers)
     }
   }, [showRoomNumbers])
 
   // Dedicated effect for heat map visibility (independent of render)
   useEffect(() => {
-    if (dungeonViewRendererRef.current) {
-      dungeonViewRendererRef.current.setShowHeatMap(showHeatMap)
+    const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
+    if (renderer) {
+      renderer.setShowHeatMap(showHeatMap)
     }
   }, [showHeatMap])
 
   // Dedicated effect for walkmap visibility (independent of render)
   useEffect(() => {
-    if (dungeonViewRendererRef.current) {
-      dungeonViewRendererRef.current.setShowWalkmap(showWalkmap)
+    const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
+    if (renderer) {
+      renderer.setShowWalkmap(showWalkmap)
     }
   }, [showWalkmap])
 
@@ -1257,10 +1215,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                   showSpineDebug={showSpineDebug}
                   onToggleSpineDebug={(val) => {
                     setShowSpineDebug(val)
-                    if (dungeonViewRendererRef.current) {
-                      dungeonViewRendererRef.current.setShowSpineDebug(val)
+                    const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
+                    if (renderer) {
+                      renderer.setShowSpineDebug(val)
                       if (val && spineSeedState) {
-                        dungeonViewRendererRef.current.setSpineState(spineSeedState)
+                        renderer.setSpineState(spineSeedState)
                       }
                     }
                   }}
@@ -1471,10 +1430,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             showSpineDebug={showSpineDebug}
             onToggleSpineDebug={(val) => {
               setShowSpineDebug(val)
-              if (dungeonViewRendererRef.current) {
-                dungeonViewRendererRef.current.setShowSpineDebug(val)
+              const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
+              if (renderer) {
+                renderer.setShowSpineDebug(val)
                 if (val && spineSeedState) {
-                  dungeonViewRendererRef.current.setSpineState(spineSeedState)
+                  renderer.setSpineState(spineSeedState)
                 }
               }
             }}

@@ -12,9 +12,8 @@ export { SeedGrowthRenderer } from './renderers/SeedGrowthRenderer'
 export { SpineSeedRenderer } from './renderers/SpineSeedRenderer'
 export { DungeonViewRenderer } from './renderers/DungeonViewRenderer'
 
-// Classifiers
+// Classifiers (RoomClassifier is public; SpineSeedClassifier is internal)
 export { RoomClassifier } from './classifiers/RoomClassifier'
-export { SpineSeedClassifierFixed } from './classifiers/SpineSeedClassifier'
 
 // Processors
 export { CorridorPathfinder } from './processors/CorridorPathfinder'

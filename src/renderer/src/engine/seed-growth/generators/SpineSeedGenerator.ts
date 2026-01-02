@@ -940,72 +940,112 @@ export class SpineSeedGenerator {
             }
         }
 
-        // Resolve Dimensions
-        let dist: number
-        let w: number
-        let h: number
-
-        // If reusing primary config (first side OR mirror), use shared if applicable
-        if (currentConfig === primaryConfig && enforceMirror) {
-             dist = sharedDist ?? this.resolveValue(currentConfig.distance)
-             w = sharedW ?? this.resolveValue(currentConfig.width)
-             h = sharedH ?? this.resolveValue(currentConfig.height)
-        } else {
-             dist = this.resolveValue(currentConfig.distance)
-             w = this.resolveValue(currentConfig.width)
-             h = this.resolveValue(currentConfig.height)
-        }
+        // Resolve extra seeds from generic Trellis ejection phase
+        // WE DO NOT HARD CODE ANY TRELLISES. EVER.
+        const trellisContext: TrellisContext = { rng: this.rng, state: this.state }
+        const extraConfigs: ManualSeedConfig[] = []
         
-        const primary = this.createRoomSeedFromConfig(spineTile, dir, currentConfig, 'primary', dist, w, h)
-        
-        if (primary) {
-            createdSeeds.push(primary)
-            
-            // 2. Secondary Seed (Paired)
-            if (this.settings.ejection.pairedEjection && this.state.roomSeeds.length < seedCount) {
-                let secConfig: ManualSeedConfig;
-                let secIsManual: boolean;
-
-                // Determine if we need a new seed or reuse from the first side's secondary
-                if (i > 0 && enforceMirror && this.settings.symmetryStrictSecondary && firstSecondaryConfig) {
-                    // Reuse the secondary config from side 0 if strict secondary mirroring is active
-                    secConfig = firstSecondaryConfig;
-                    secIsManual = false; // Reused config is not "newly manual"
-                } else {
-                    // Consume a new seed for secondary
-                    const nextSec = getNextSeed();
-                    secConfig = nextSec.config;
-                    secIsManual = nextSec.isManual;
-                }
-                
-                // offset
-                const { minDistance, maxDistance } = this.settings.ejection
-                const offset = sharedSecOffset ?? this.rng.nextInt(minDistance, maxDistance)
-                
-                const secDist = dist + offset
-                 
-                // Dimensions
-                let secW = this.resolveValue(secConfig.width)
-                let secH = this.resolveValue(secConfig.height)
-                
-                // If strict secondary mirroring is active, and we are mirroring, use shared dimensions
-                if (enforceMirror && this.settings.symmetryStrictSecondary) {
-                    secW = sharedSecW ?? this.resolveValue(secConfig.width);
-                    secH = sharedSecH ?? this.resolveValue(secConfig.height);
-                }
-
-                const s2 = this.createRoomSeedFromConfig(spineTile, dir, secConfig, 'secondary', secDist, secW, secH)
-                if (s2) {
-                    secondarySeeds.push(s2)
-                    createdSeeds.push(s2) // Add to list for internal return/tracking if needed
-                    
-                    if (i === 0) {
-                        // Store for potential mirror
-                        firstSecondaryConfig = secConfig
+        if (currentConfig.trellis) {
+            for (const t of currentConfig.trellis) {
+                const parsed = TrellisManager.getInstance().parseTrellisString(t)
+                if (parsed) {
+                    const trellisItem = TrellisManager.getInstance().getTrellis(parsed.id)
+                    if (trellisItem && trellisItem.phases.includes('ejection')) {
+                        const results = trellisItem.execute('ejection', trellisContext, currentConfig, parsed.args)
+                        if (Array.isArray(results)) {
+                            extraConfigs.push(...results)
+                        }
                     }
                 }
             }
         }
+
+        // Determine Cluster ID if we have extra burst seeds
+        const clusterId = extraConfigs.length > 0 ? (currentConfig.id || `cluster_${this.state.roomSeeds.length}`) : undefined
+        
+        // Final list of seeds to spawn for this ejection step
+        const allBurstConfigs = [
+            { config: currentConfig, burstIndex: 0, burstSpacing: 0 },
+            ...extraConfigs.map(c => ({
+                config: c,
+                burstIndex: (c as any)._burstIndex || 0,
+                burstSpacing: (c as any)._burstSpacing || 0
+            }))
+        ]
+
+        for (const burstEntry of allBurstConfigs) {
+            const { config, burstIndex, burstSpacing } = burstEntry
+            
+            // Limit check: Only the first seed of a cluster (or non-clustered seeds) counts against limit
+            const isClusterMember = clusterId !== undefined && burstIndex > 0
+            if (!isClusterMember && this.state.roomSeeds.length >= seedCount) break
+
+            // Find spine tile for this burst index
+            const spineIndex = (this.state.ejectionIndex - 1) + (burstIndex * burstSpacing)
+            if (spineIndex >= this.state.spineTiles.length) break
+            
+            const burstTile = this.state.spineTiles[spineIndex]
+
+            // Resolve Dimensions for this specific seed
+            let dist: number
+            let w: number
+            let h: number
+
+            if (config === primaryConfig && enforceMirror) {
+                 dist = sharedDist ?? this.resolveValue(config.distance)
+                 w = sharedW ?? this.resolveValue(config.width)
+                 h = sharedH ?? this.resolveValue(config.height)
+            } else {
+                 dist = this.resolveValue(config.distance)
+                 w = this.resolveValue(config.width)
+                 h = this.resolveValue(config.height)
+            }
+            
+            const seed = this.createRoomSeedFromConfig(burstTile, dir, config, 'primary', dist, w, h)
+            
+            if (seed) {
+                seed.clusterId = clusterId
+                createdSeeds.push(seed)
+                
+                // 2. Secondary Seed (Paired)
+                // Paired ejection only applies to the lead burst seed (index 0)
+                if (burstIndex === 0 && this.settings.ejection.pairedEjection && this.state.roomSeeds.length < seedCount) {
+                    let secConfig: ManualSeedConfig;
+                    const hasStrictSecSymmetry = this.settings.symmetryStrictSecondary && firstSecondaryConfig;
+
+                    if (i > 0 && enforceMirror && hasStrictSecSymmetry) {
+                        secConfig = firstSecondaryConfig!;
+                    } else {
+                        const nextSec = getNextSeed();
+                        secConfig = nextSec.config;
+                    }
+                    
+                    const { minDistance, maxDistance } = this.settings.ejection
+                    const offset = sharedSecOffset ?? this.rng.nextInt(minDistance, maxDistance)
+                    const secDist = dist + offset
+                    
+                    let secW = this.resolveValue(secConfig.width)
+                    let secH = this.resolveValue(secConfig.height)
+                    
+                    if (enforceMirror && this.settings.symmetryStrictSecondary) {
+                        secW = sharedSecW ?? this.resolveValue(secConfig.width);
+                        secH = sharedSecH ?? this.resolveValue(secConfig.height);
+                    }
+
+                    const s2 = this.createRoomSeedFromConfig(burstTile, dir, secConfig, 'secondary', secDist, secW, secH)
+                    if (s2) {
+                        s2.clusterId = clusterId // Mirror also shares cluster ID
+                        secondarySeeds.push(s2)
+                        createdSeeds.push(s2)
+                        
+                        if (i === 0) {
+                            firstSecondaryConfig = secConfig
+                        }
+                    }
+                }
+            }
+        }
+
       }
       
       // Link partners if symmetric pair created
@@ -1098,8 +1138,6 @@ export class SpineSeedGenerator {
       tile.state = 'floor'
       tile.regionId = this.state.roomSeeds.length // Use seed index as region ID
       tile.growthOrder = this.state.tilesGrown++
-      
-      console.warn(`[SpineSeedGenerator] 🌱 SPROUTING ${roomSeed.id} at ${pos.x},${pos.y} [1x1]. Tags: ${roomSeed.tags?.join(',') || 'none'}`)
     }
     
     return roomSeed
@@ -1429,10 +1467,6 @@ export class SpineSeedGenerator {
     this.state.isComplete = true
     this.state.spineComplete = true // Required for GameWindow detection
     this.state.phase = 'complete'
-    
-    // DEBUG: Check persistence
-    const seedIds = this.state.roomSeeds.map(s => s.id).join(',')
-    console.warn(`[SpineSeedGenerator] COMPLETE. Final Seeds (${this.state.roomSeeds.length}): ${seedIds}`)
     
     return false
   }

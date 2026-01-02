@@ -100,6 +100,22 @@ export interface Room {
   type?: string
   /** Active trellis tags for this room */
   trellis?: string[]
+  /** ID of the cluster this room belongs to (if any) */
+  clusterId?: string
+}
+
+// Assuming TrellisPhase, TrellisContext, and RoomSeed are defined elsewhere or will be added.
+// This interface definition is added based on the provided snippet.
+export interface ITrellis {
+  /**
+   * Executes the trellis logic for a given phase.
+   * @param phase The current phase of trellis execution.
+   * @param context The current generation context.
+   * @param subject The room or seed being processed (optional).
+   * @param args Parsed arguments from the tag string (e.g., #spawn(4,3) -> [4, 3])
+   * @returns Dynamic results based on phase (e.g. ManualSeedConfig[] for 'ejection')
+   */
+  execute(phase: TrellisPhase, context: TrellisContext, subject?: RoomSeed | Room, args?: any[]): ManualSeedConfig[] | void
 }
 
 export interface Corridor {
@@ -559,6 +575,8 @@ export interface RoomSeed {
   configSource?: ManualSeedConfig
   tags?: string[]
   content?: ManualSeedMetadata
+  /** Grouping for multiple seeds that form a single logical unit */
+  clusterId?: string
 }
 
 // -----------------------------------------------------------------------------

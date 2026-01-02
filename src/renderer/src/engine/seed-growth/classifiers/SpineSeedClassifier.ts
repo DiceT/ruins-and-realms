@@ -25,7 +25,20 @@ export class SpineSeedClassifierFixed {
     const prunedRooms = this.pruneRooms(rawSeeds)
     
     // 2. Map RoomSeed to Room interface
-    const rooms = prunedRooms.map(seed => this.mapSeedToRoom(seed))
+    const clusterRegionMap = new Map<string, number>()
+    const rooms = prunedRooms.map(seed => {
+        let regionId: number | undefined
+        if (seed.clusterId) {
+            regionId = clusterRegionMap.get(seed.clusterId)
+            if (regionId === undefined) {
+                regionId = seed.birthOrder + 1
+                clusterRegionMap.set(seed.clusterId, regionId)
+            }
+        } else {
+            regionId = seed.birthOrder + 1
+        }
+        return this.mapSeedToRoom(seed, regionId)
+    })
     
     return {
       gridWidth: settings.gridWidth,
@@ -61,10 +74,10 @@ export class SpineSeedClassifierFixed {
   /**
    * Transform a RoomSeed into a rendering-compatible Room object
    */
-  private mapSeedToRoom(seed: RoomSeed): Room {
+  private mapSeedToRoom(seed: RoomSeed, regionId: number): Room {
     return {
       id: seed.id,
-      regionId: seed.birthOrder + 1, // Use valid region ID (1-based)
+      regionId: regionId, // Use valid region ID (1-based)
       tiles: [...seed.tiles],
       bounds: { ...seed.currentBounds },
       area: seed.tiles.length,
@@ -73,7 +86,8 @@ export class SpineSeedClassifierFixed {
         y: seed.currentBounds.y + Math.floor(seed.currentBounds.h / 2)
       },
       type: seed.configSource?.type, // Carry over room type if available
-      trellis: seed.trellis
+      trellis: seed.trellis,
+      clusterId: seed.clusterId
     }
   }
 }

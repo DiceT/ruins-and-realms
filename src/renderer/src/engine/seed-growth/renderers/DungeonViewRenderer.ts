@@ -573,6 +573,13 @@ export class DungeonViewRenderer {
   }
   
   /**
+   * Get rooms that were rendered (for walkmap building)
+   */
+  public getRenderedRooms(): Room[] {
+    return this.renderedRooms
+  }
+  
+  /**
    * Toggle heat map visibility
    */
   public setShowHeatMap(visible: boolean): void {

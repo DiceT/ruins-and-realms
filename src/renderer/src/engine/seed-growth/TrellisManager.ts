@@ -5,6 +5,7 @@ import { SeededRNG } from '../../utils/SeededRNG'
 import { CellTrellis } from './trellises/CellTrellis' 
 import { SpawnTrellis } from './trellises/SpawnTrellis'
 import { TinyTitanTrellis } from './trellises/TinyTitanTrellis'
+import { AlcoveTrellis } from './trellises/AlcoveTrellis' 
 
 export class TrellisManager {
   private static instance: TrellisManager
@@ -14,6 +15,7 @@ export class TrellisManager {
     this.registerTrellis(new CellTrellis())
     this.registerTrellis(new SpawnTrellis())
     this.registerTrellis(new TinyTitanTrellis())
+    this.registerTrellis(new AlcoveTrellis())
   }
 
   public static getInstance(): TrellisManager {
@@ -38,6 +40,7 @@ export class TrellisManager {
    * Parse a raw trellis string into ID and arguments.
    * Example: "#spawn(4, 3)" -> { id: "spawn", args: [4, 3] }
    * Example: "#cell" -> { id: "cell", args: [] }
+   * Example: "#spawn({min: 2, max: 8}, 2)" -> { id: "spawn", args: [{min: 2, max: 8}, 2] }
    */
   public parseTrellisString(raw: string): { id: string, args: any[] } | null {
     const trimmed = raw.trim()
@@ -50,23 +53,70 @@ export class TrellisManager {
     const id = match[1]
     const argsStr = match[2]
 
-    let args: any[] = []
-    if (argsStr) {
-      // Split by comma, trim, and adjust types
-      args = argsStr.split(',').map(s => {
-        const sTrim = s.trim()
-        // Try parsing as number
-        const num = parseFloat(sTrim)
-        if (!isNaN(num)) return num
-        // Try boolean
-        if (sTrim === 'true') return true
-        if (sTrim === 'false') return false
-        // Return string (remove quotes if present)
-        return sTrim.replace(/^["']|["']$/g, '')
-      })
+    if (!argsStr) return { id, args: [] }
+
+    // Smart splitting that respects { } and [ ]
+    const args: any[] = []
+    let current = ''
+    let depth = 0
+    
+    for (let i = 0; i < argsStr.length; i++) {
+        const char = argsStr[i]
+        if (char === '{' || char === '[') depth++
+        if (char === '}' || char === ']') depth--
+        
+        if (char === ',' && depth === 0) {
+            args.push(this.parseArgValue(current.trim()))
+            current = ''
+        } else {
+            current += char
+        }
+    }
+    if (current.trim()) {
+        args.push(this.parseArgValue(current.trim()))
     }
 
     return { id, args }
+  }
+
+  private parseArgValue(s: string): any {
+    // 0. Try JSON parse for objects/arrays
+    if (s.startsWith('{') || s.startsWith('[')) {
+        try {
+            // Lensient match for {min: 2, max: 8}
+            if (s.includes('min') && s.includes('max')) {
+                const minMatch = s.match(/min\s*:\s*(\d+)/)
+                const maxMatch = s.match(/max\s*:\s*(\d+)/)
+                if (minMatch && maxMatch) {
+                    return { min: parseInt(minMatch[1]), max: parseInt(maxMatch[1]) }
+                }
+            }
+            
+            // Try standard JSON with quoted keys
+            return JSON.parse(s.replace(/([{,])\s*([a-zA-Z0-9_]+)\s*:/g, '$1"$2":'))
+        } catch (e) {
+            // Fallback
+        }
+    }
+
+    // 1. Try parsing as range (e.g. "2-8")
+    if (s.includes('-')) {
+        const parts = s.split('-').map(p => parseFloat(p.trim()))
+        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            return { min: parts[0], max: parts[1] }
+        }
+    }
+
+    // 2. Try parsing as number
+    const num = parseFloat(s)
+    if (!isNaN(num)) return num
+
+    // 3. Try boolean
+    if (s === 'true') return true
+    if (s === 'false') return false
+
+    // 4. Return string (remove quotes if present)
+    return s.replace(/^["']|["']$/g, '')
   }
 
   /**

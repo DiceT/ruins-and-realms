@@ -20,7 +20,6 @@ import {
   SpineSeedRenderer,
   DungeonViewRenderer,
   RoomClassifier,
-  SpineSeedClassifierFixed,
   SeedGrowthSettings,
   SpineSeedSettings,
   SeedGrowthState,
@@ -59,7 +58,6 @@ export class DungeonController {
   private seedGrowthRenderer: SeedGrowthRenderer | null = null
   private spineSeedRenderer: SpineSeedRenderer | null = null
   private dungeonViewRenderer: DungeonViewRenderer | null = null
-  private spineSeedClassifier: SpineSeedClassifierFixed = new SpineSeedClassifierFixed()
   
   // Theme
   private themeManager: ThemeManager | null = null
@@ -296,11 +294,18 @@ export class DungeonController {
     
     this.stopAnimation()
     
+    // Clear dungeon view to prevent stale graphics
+    if (this.dungeonViewRenderer) {
+      this.dungeonViewRenderer.clear()
+    }
+    
     if (this.generatorMode === 'organic' && this.seedGrowthGen && this.seedGrowthRenderer && this.seedSettings) {
       this.seedGrowthGen.reset(this.seedSettings)
+      this.seedGrowthRenderer.render(this.seedGrowthGen.getState(), this.seedSettings)
       this.runChunkedGeneration('organic')
     } else if (this.spineSeedGen && this.spineSeedRenderer && this.spineSettings) {
       this.spineSeedGen.reset(this.spineSettings)
+      this.spineSeedRenderer.render(this.spineSeedGen.getState(), this.spineSettings)
       this.runChunkedGeneration('spineSeed')
     }
   }
@@ -551,51 +556,63 @@ export class DungeonController {
    * Render spine-seed state as dungeon view
    * Public to allow GameWindow to trigger re-renders with correct pipeline
    */
-  public renderSpineDungeonView(state: SpineSeedState): void {
-    if (!this.dungeonViewRenderer || !this.spineSettings) return
+  public renderSpineDungeonView(state: SpineSeedState, settings?: SpineSeedSettings): void {
+    const effectiveSettings = settings || this.spineSettings
+    if (!effectiveSettings || !this.app) return
     
-    // Use Classifier to get clean DungeonData
-    // Instantiate fresh to ensure latest code is used (HMR fix)
-    const classifier = new SpineSeedClassifierFixed()
-    const rawData = classifier.classify(state, this.spineSettings)
+    // Create DungeonViewRenderer on demand if needed
+    if (!this.dungeonViewRenderer) {
+      if (!this.themeManager) {
+        this.themeManager = new ThemeManager()
+      }
+      this.dungeonViewRenderer = new DungeonViewRenderer(
+        this.app.stage,
+        { tileSize: 50, themeManager: this.themeManager }
+      )
+      
+      // Ensure view dimensions are set for correct centering math
+      if (this.layout) {
+        const bounds = this.layout.getMiddleBounds()
+        this.dungeonViewRenderer.setViewDimensions(
+          bounds.width,
+          bounds.height
+        )
+      }
+    }
     
-    console.warn(`[DungeonController] Seeds: ${state.roomSeeds.length}, Rooms after Classify: ${rawData.rooms.length}`)
-    const spawnRooms = rawData.rooms.filter(r => r.trellis?.some(t => t.includes('tinytitan')))
-    console.warn(`[DungeonController] TinyTitan Rooms: ${spawnRooms.length} (IDs: ${spawnRooms.map(r => r.id).join(',')})`)
-
-    // Assemble corridors, decorations, and prune
-    const dungeonData = DungeonAssembler.assembleSpine(rawData, this.spineSettings)
+    // DungeonAssembler now handles classification internally
+    const dungeonData = DungeonAssembler.assembleSpine(state, effectiveSettings)
     
     // Pass assembled dungeon data to renderer
     this.dungeonViewRenderer.renderDungeonView(
       dungeonData, 
-      this.spineSettings as any, 
+      effectiveSettings as any, 
       this.showRoomNumbers, 
       this.showWalkmap
     )
     
     // Initialize player if generation is complete
     if (state.spineComplete) {
-      this.initializePlayer(state, dungeonData.rooms)
+      this.initializePlayer(dungeonData, state.spineTiles)
     }
   }
 
   /**
    * Initialize player and visibility systems
    */
-  private initializePlayer(state: SpineSeedState, prunedRooms: { tiles: { x: number; y: number }[] }[]): void {
+  private initializePlayer(dungeonData: DungeonData, spineTiles?: any[]): void {
     if (!this.dungeonViewRenderer || !this.spineSettings) return
     
-    // Find start position
+    // Find start position (stairs are in dungeonData.objects from DungeonDecorator)
     let startX = 0
     let startY = 0
-    const stairs = state.objects?.find(o => o.type === 'stairs_up')
+    const stairs = dungeonData.objects?.find(o => o.type === 'stairs_up')
     if (stairs) {
       startX = stairs.x
       startY = stairs.y
-    } else if (state.spineTiles && state.spineTiles.length > 0) {
-      startX = state.spineTiles[0].x
-      startY = state.spineTiles[0].y
+    } else if (spineTiles && spineTiles.length > 0) {
+      startX = spineTiles[0].x
+      startY = spineTiles[0].y
     }
     
     // Build walkmap
@@ -605,14 +622,14 @@ export class DungeonController {
     }
     
     // Add room tiles
-    prunedRooms.forEach(r => r.tiles.forEach(t => add(t.x, t.y)))
+    dungeonData.rooms.forEach(r => r.tiles.forEach(t => add(t.x, t.y)))
     
     // Add expanded corridors from renderer
     const expandedCorridors = this.dungeonViewRenderer.getWalkableTiles()
     expandedCorridors.forEach(t => add(t.x, t.y))
     
-    // Add walkable objects
-    state.objects?.forEach(obj => {
+    // Add walkable objects (use dungeonData.objects which has decorated stairs)
+    dungeonData.objects?.forEach(obj => {
       if (obj.type.startsWith('door') || obj.type === 'stairs_up') {
         add(obj.x, obj.y)
       }
@@ -632,6 +649,9 @@ export class DungeonController {
       walkableTiles: walkableArray,
       renderer: this.dungeonViewRenderer
     })
+    
+    // Focus camera on player start position
+    this.dungeonViewRenderer.focusOnTile(startX, startY)
   }
 
   /**

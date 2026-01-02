@@ -1133,6 +1133,46 @@ export class CorridorPathfinder {
                 newCorridors.push(p)
             }
         }
+        
+        // --- CELL SPECIAL LOGIC ---
+        // If this is a #cell room, and we just found its exit, block the opposing wall.
+        // Also block ALL other walls if we want STRICTLY one exit (user said "Cells can only have one exit").
+        if (room.trellis?.some(t => t.startsWith('#cell'))) {
+            const { x, y, w, h } = room.bounds
+            const door = path[0] // First tile of path is the startPoint (the door)
+            
+            // Determine exit direction
+            let exitDir: Direction | undefined
+            if (door.y < y) exitDir = 'north'
+            else if (door.y >= y + h) exitDir = 'south'
+            else if (door.x < x) exitDir = 'west'
+            else if (door.x >= x + w) exitDir = 'east'
+            
+            if (exitDir) {
+                const opposite = OPPOSITE_DIR[exitDir]
+                const wallTiles: string[] = []
+                if (opposite === 'north') for (let dx = 0; dx < w; dx++) wallTiles.push(`${x + dx},${y - 1}`)
+                else if (opposite === 'south') for (let dx = 0; dx < w; dx++) wallTiles.push(`${x + dx},${y + h}`)
+                else if (opposite === 'west') for (let dy = 0; dy < h; dy++) wallTiles.push(`${x - 1},${y + dy}`)
+                else if (opposite === 'east') for (let dy = 0; dy < h; dy++) wallTiles.push(`${x + w},${y + dy}`)
+                
+                for (const k of wallTiles) heatMap.set(k, 500)
+                
+                // CRITICAL: To ensure "ONLY one exit", we should actually block ALL OTHER walls
+                // to prevent other corridors from connecting TO this room later.
+                const sides: Direction[] = ['north', 'south', 'west', 'east']
+                for (const side of sides) {
+                    if (side === exitDir) continue
+                    const sWall: string[] = []
+                    if (side === 'north') for (let dx = 0; dx < w; dx++) sWall.push(`${x + dx},${y - 1}`)
+                    else if (side === 'south') for (let dx = 0; dx < w; dx++) sWall.push(`${x + dx},${y + h}`)
+                    else if (side === 'west') for (let dy = 0; dy < h; dy++) sWall.push(`${x - 1},${y + dy}`)
+                    else if (side === 'east') for (let dy = 0; dy < h; dy++) sWall.push(`${x + w},${y + dy}`)
+                    
+                    for (const k of sWall) heatMap.set(k, 500)
+                }
+            }
+        }
       }
     }
 
