@@ -1102,13 +1102,11 @@ export class SpineSeedGenerator {
       // Metadata (Locked Scope v1)
       configSource: config,
       tags: config.tags,
-      content: config.metadata // Mapping config.metadata to RoomSeed.content (ManualSeedContent interface in types needs update if strictly typed?)
-                               // Actually types.ts imports ManualSeedConfig which has 'metadata'. 
-                               // RoomSeed interface in types.ts has 'content?: ManualSeedContent'.
-                               // ManualSeedContent was removed in types.ts step? No, wait. 
-                               // SeedDefinitions defines ManualSeedMetadata.
-                               // We need to ensure RoomSeed uses ManualSeedMetadata.
+      content: config.metadata
     }
+
+    // Apply Tags: onSeedEjected hook
+    TagManager.getInstance().applyOnSeedEjected(roomSeed, this.state)
 
     this.state.roomSeeds.push(roomSeed)
 
