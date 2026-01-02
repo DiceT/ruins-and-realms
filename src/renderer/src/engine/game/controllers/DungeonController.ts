@@ -297,7 +297,7 @@ export class DungeonController {
     this.stopAnimation()
     
     if (this.generatorMode === 'organic' && this.seedGrowthGen && this.seedGrowthRenderer && this.seedSettings) {
-      this.seedGrowthGen.reset(this.seedSettings, true)
+      this.seedGrowthGen.reset(this.seedSettings)
       this.runChunkedGeneration('organic')
     } else if (this.spineSeedGen && this.spineSeedRenderer && this.spineSettings) {
       this.spineSeedGen.reset(this.spineSettings)

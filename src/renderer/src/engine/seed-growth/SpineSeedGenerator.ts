@@ -21,6 +21,7 @@ import {
 } from './types'
 import { ManualSeedConfig, SeedSide, RangeOrNumber } from './SeedDefinitions'
 import { createVirtualConfig, expandRepeats } from './ManualSeedSystem'
+import { TagManager } from './TagManager'
 
 // Direction vectors
 const DIRECTIONS: { [key in Direction]: GridCoord } = {
@@ -65,21 +66,11 @@ export class SpineSeedGenerator {
   // Public API
   // ===========================================================================
 
-  /** Reset generator with new settings */
-  public reset(settings: SpineSeedSettings, preserveMask: boolean = false): void {
-    const oldBlocked = preserveMask ? this.state?.blocked : null
-    const oldMaskVersion = preserveMask ? this.state?.maskVersion : 0
-
+  public reset(settings: SpineSeedSettings): void {
     this.settings = { ...settings }
     this.rng = new SeededRNG(settings.seed)
     this.localSeedQueue = expandRepeats(this.settings.manualSeedQueue || [])
     this.state = this.createInitialState()
-
-    // Restore mask if requested and sizes match
-    if (oldBlocked && oldBlocked.length === this.state.blocked.length) {
-      this.state.blocked = oldBlocked
-      this.state.maskVersion = oldMaskVersion ?? 0
-    }
   }
 
   /** Get current state (for rendering) */
@@ -159,16 +150,8 @@ export class SpineSeedGenerator {
       grid.push(row)
     }
 
-    // Create empty blocked mask
-    const blocked: boolean[][] = []
-    for (let y = 0; y < gridHeight; y++) {
-      blocked.push(new Array(gridWidth).fill(false))
-    }
-
     const state: SpineSeedState = {
       grid,
-      blocked,
-      maskVersion: 0,
 
       phase: 'spine',
 
@@ -579,7 +562,6 @@ export class SpineSeedGenerator {
 
   private validateSpinePlacement(pos: GridCoord): boolean {
     if (!this.inBounds(pos.x, pos.y)) return false
-    if (this.state.blocked[pos.y]?.[pos.x]) return false
     
     const tile = this.state.grid[pos.y][pos.x]
     
@@ -596,7 +578,6 @@ export class SpineSeedGenerator {
       const nx = pos.x + DIRECTIONS[d].x
       const ny = pos.y + DIRECTIONS[d].y
       if (this.inBounds(nx, ny)) {
-        if (state.blocked[ny]?.[nx]) continue
         const neighbor = state.grid[ny][nx]
         if (neighbor.state === 'empty') {
           state.spineFrontier.add(this.tileIndex({ x: nx, y: ny }))
@@ -1069,7 +1050,6 @@ export class SpineSeedGenerator {
 
     // Check if position is valid
     if (!this.inBounds(pos.x, pos.y)) return null
-    if (this.state.blocked[pos.y]?.[pos.x]) return null
 
     // Check if landing on existing room or spine
     const tile = this.state.grid[pos.y][pos.x]
@@ -1134,7 +1114,6 @@ export class SpineSeedGenerator {
 
     // Check if position is valid
     if (!this.inBounds(pos.x, pos.y)) return null
-    if (this.state.blocked[pos.y]?.[pos.x]) return null
 
     // Check if landing on existing room or spine
     const tile = this.state.grid[pos.y][pos.x]
@@ -1337,7 +1316,6 @@ export class SpineSeedGenerator {
 
         // Basic checks
         if (!this.inBounds(px, py)) return false
-        if (this.state.blocked[py]?.[px]) return false
         
         // Must be empty (or valid spine overlap)
         const tile = this.state.grid[py][px]

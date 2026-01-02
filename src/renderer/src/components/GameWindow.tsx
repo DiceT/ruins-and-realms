@@ -143,9 +143,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const spineSeedRendererRef = useRef<SpineSeedRenderer | null>(null)
   const [spineSeedState, setSpineSeedState] = useState<SpineSeedState | null>(null)
 
-  // Mask Tool State
-  const [maskToolMode, setMaskToolMode] = useState<MaskToolMode>('off')
-  const [brushSize, setBrushSize] = useState(1)
 
   // Rolling State
   const [isRolling, setIsRolling] = useState(false)
@@ -248,48 +245,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     dungeonControllerRef.current?.toggleAnimation()
   }, [])
 
-  const handleClearMask = useCallback(() => {
-    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
-    const state = seedGrowthGenRef.current.getState()
-    // Clear all blocked cells
-    for (let y = 0; y < state.blocked.length; y++) {
-      for (let x = 0; x < state.blocked[y].length; x++) {
-        state.blocked[y][x] = false
-      }
-    }
-    state.maskVersion++
-    seedGrowthRendererRef.current.render(state, seedGrowthSettings)
-    setSeedGrowthState({ ...state })
-  }, [seedGrowthSettings])
 
-  // Paint stroke state
-  const isPaintingRef = useRef(false)
-
-  const handleMaskPaint = useCallback((screenX: number, screenY: number) => {
-    if (maskToolMode === 'off') return
-    if (!seedGrowthGenRef.current || !seedGrowthRendererRef.current) return
-
-    const gridPos = seedGrowthRendererRef.current.screenToGrid(screenX, screenY)
-    if (!gridPos) return
-
-    const state = seedGrowthGenRef.current.getState()
-    const isErase = maskToolMode === 'erase'
-
-    const changed = seedGrowthRendererRef.current.paintTile(
-      state,
-      gridPos.x,
-      gridPos.y,
-      brushSize,
-      isErase,
-      seedGrowthSettings.gridWidth,
-      seedGrowthSettings.gridHeight
-    )
-
-    if (changed) {
-      seedGrowthRendererRef.current.render(state, seedGrowthSettings)
-      setSeedGrowthState({ ...state })
-    }
-  }, [maskToolMode, brushSize, seedGrowthSettings])
 
   // Re-render when debug settings change
   useEffect(() => {
@@ -660,47 +616,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     }
   }, [activeTheme])
 
-  // Wire up mask paint events on Pixi container
-  useEffect(() => {
-    if (maskToolMode === 'off' || gameMode !== 'dungeon') return
-
-    const container = pixiContainerRef.current
-    if (!container) return
-
-    const handleMouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return // Left click only
-      isPaintingRef.current = true
-      // Get position relative to container
-      const rect = container.getBoundingClientRect()
-      handleMaskPaint(e.clientX - rect.left, e.clientY - rect.top)
-    }
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isPaintingRef.current) return
-      const rect = container.getBoundingClientRect()
-      handleMaskPaint(e.clientX - rect.left, e.clientY - rect.top)
-    }
-
-    const handleMouseUp = () => {
-      isPaintingRef.current = false
-    }
-
-    container.addEventListener('mousedown', handleMouseDown)
-    container.addEventListener('mousemove', handleMouseMove)
-    container.addEventListener('mouseup', handleMouseUp)
-    container.addEventListener('mouseleave', handleMouseUp)
-
-    // Change cursor when mask tool is active
-    container.style.cursor = maskToolMode === 'paint' ? 'crosshair' : 'cell'
-
-    return () => {
-      container.removeEventListener('mousedown', handleMouseDown)
-      container.removeEventListener('mousemove', handleMouseMove)
-      container.removeEventListener('mouseup', handleMouseUp)
-      container.removeEventListener('mouseleave', handleMouseUp)
-      container.style.cursor = ''
-    }
-  }, [maskToolMode, gameMode, handleMaskPaint])
 
   /**
    * Initializes the entire Game View (Pixi App, Layout, Backgrounds)
@@ -1323,16 +1238,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                   isAnimating={isAnimating}
                   onToggleAnimation={handleSeedGrowthToggleAnimation}
                   spineSeedPhase={spineSeedState?.phase}
-                  maskToolMode={maskToolMode}
-                  onMaskToolModeChange={setMaskToolMode}
-                  brushSize={brushSize}
-                  onBrushSizeChange={setBrushSize}
-                  onClearMask={handleClearMask}
-                  blockedCount={
-                    generatorMode === 'organic'
-                      ? (seedGrowthState?.blocked?.flat().filter(Boolean).length ?? 0)
-                      : (spineSeedState?.blocked?.flat().filter(Boolean).length ?? 0)
-                  }
                   seedGrowthState={seedGrowthState}
                   spineSeedState={spineSeedState}
                   viewAsDungeon={viewAsDungeon}
@@ -1542,14 +1447,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             isAnimating={isAnimating}
             onToggleAnimation={handleSeedGrowthToggleAnimation}
             spineSeedPhase={spineSeedState?.phase}
-            maskToolMode={maskToolMode}
-            onMaskToolModeChange={setMaskToolMode}
-            brushSize={brushSize}
-            onBrushSizeChange={setBrushSize}
-            onClearMask={handleClearMask}
-            blockedCount={generatorMode === 'organic'
-              ? seedGrowthState.blocked.flat().filter(b => b).length
-              : (spineSeedState?.blocked?.flat().filter(Boolean).length ?? 0)}
             seedGrowthState={seedGrowthState}
             spineSeedState={spineSeedState}
             viewAsDungeon={viewAsDungeon}

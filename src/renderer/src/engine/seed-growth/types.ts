@@ -125,7 +125,6 @@ export interface DebugFlags {
   showCorridors: boolean
   showConnectionsGraph: boolean
   showGrowthOrder: boolean
-  showMask: boolean
 }
 
 // =============================================================================
@@ -200,12 +199,7 @@ export interface SeedGrowthSettings {
 // =============================================================================
 
 export interface SeedGrowthState {
-  /** 2D grid of tiles */
   grid: GridTile[][]
-  /** 2D blocked mask - true = forbidden cells that growth cannot claim */
-  blocked: boolean[][]
-  /** Mask version counter for change tracking */
-  maskVersion: number
   /** Active regions */
   regions: Map<number, Region>
   /** Placed seeds */
@@ -283,8 +277,7 @@ export function createDefaultSettings(): SeedGrowthSettings {
       showRoomBounds: false,
       showCorridors: false,
       showConnectionsGraph: false,
-      showGrowthOrder: false,
-      showMask: true
+      showGrowthOrder: false
     }
   }
 }
@@ -581,10 +574,6 @@ export interface SpineHead {
 export interface SpineSeedState {
   /** 2D grid of tiles (shared format with organic) */
   grid: GridTile[][]
-  /** 2D blocked mask */
-  blocked: boolean[][]
-  /** Mask version counter */
-  maskVersion: number
 
   /** Current generation phase */
   phase: SpineSeedPhase

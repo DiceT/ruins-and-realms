@@ -61,7 +61,6 @@ export class SpineSeedRenderer {
   private wallLayer: Graphics       // Layer 4: Walls
   private collisionLayer: Graphics  // Debug: collision points
   private gridLineLayer: Graphics
-  private maskLayer: Graphics
   private statusText: Text
 
   // Grid line state
@@ -84,7 +83,6 @@ export class SpineSeedRenderer {
     this.wallLayer = new Graphics()
     this.collisionLayer = new Graphics()
     this.gridLineLayer = new Graphics()
-    this.maskLayer = new Graphics()
     
     this.contentContainer.addChild(this.backgroundLayer)
     this.contentContainer.addChild(this.spineLayer)
@@ -93,7 +91,6 @@ export class SpineSeedRenderer {
     this.contentContainer.addChild(this.wallLayer)
     this.contentContainer.addChild(this.collisionLayer)
     this.contentContainer.addChild(this.gridLineLayer)
-    this.contentContainer.addChild(this.maskLayer)
 
     // Status text
     const style = new TextStyle({
@@ -251,7 +248,6 @@ export class SpineSeedRenderer {
     this.wallLayer.clear()
     this.collisionLayer.clear()
     this.gridLineLayer.clear()
-    this.maskLayer.clear()
   }
 
   /** Render background grid */
@@ -274,15 +270,6 @@ export class SpineSeedRenderer {
       }
     }
 
-    // Render blocked mask
-    for (let y = 0; y < gridHeight; y++) {
-      for (let x = 0; x < gridWidth; x++) {
-        if (state.blocked[y]?.[x]) {
-          this.maskLayer.rect(x * size, y * size, size, size)
-          this.maskLayer.fill({ color: 0x1a1a2e, alpha: 0.85 })
-        }
-      }
-    }
 
     this.updateGridLines()
   }
@@ -431,7 +418,7 @@ export class SpineSeedRenderer {
     for (let y = 0; y < gridHeight; y++) {
       for (let x = 0; x < gridWidth; x++) {
         const tile = state.grid[y]?.[x]
-        if (tile?.state === 'empty' && !state.blocked[y]?.[x]) {
+        if (tile?.state === 'empty') {
           // Check if adjacent to floor
           let hasFloorNeighbor = false
           const neighbors = [

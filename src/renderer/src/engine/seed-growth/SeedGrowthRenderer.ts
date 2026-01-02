@@ -43,7 +43,6 @@ export class SeedGrowthRenderer {
   
   // Graphics layers
   private gridLayer: Graphics
-  private maskLayer: Graphics
   private regionLayer: Graphics
   private corridorLayer: Graphics
   private frontierLayer: Graphics
@@ -66,7 +65,6 @@ export class SeedGrowthRenderer {
 
     // Create layers in order (bottom to top)
     this.gridLayer = new Graphics()
-    this.maskLayer = new Graphics()
     this.regionLayer = new Graphics()
     this.corridorLayer = new Graphics()
     this.frontierLayer = new Graphics()
@@ -75,7 +73,6 @@ export class SeedGrowthRenderer {
     this.gridLineLayer = new Graphics()
     
     this.contentContainer.addChild(this.gridLayer)
-    this.contentContainer.addChild(this.maskLayer)
     this.contentContainer.addChild(this.regionLayer)
     this.contentContainer.addChild(this.corridorLayer)
     this.contentContainer.addChild(this.frontierLayer)
@@ -213,40 +210,6 @@ export class SeedGrowthRenderer {
     return { x: gridX, y: gridY }
   }
 
-  /** Paint or erase tiles with given brush size */
-  public paintTile(
-    state: SeedGrowthState, 
-    gridX: number, 
-    gridY: number, 
-    brushSize: number, 
-    isErase: boolean,
-    gridWidth: number,
-    gridHeight: number
-  ): boolean {
-    let changed = false
-    const halfBrush = Math.floor(brushSize / 2)
-    
-    for (let dy = -halfBrush; dy < brushSize - halfBrush; dy++) {
-      for (let dx = -halfBrush; dx < brushSize - halfBrush; dx++) {
-        const tx = gridX + dx
-        const ty = gridY + dy
-        
-        if (tx >= 0 && tx < gridWidth && ty >= 0 && ty < gridHeight) {
-          const newValue = !isErase
-          if (state.blocked[ty][tx] !== newValue) {
-            state.blocked[ty][tx] = newValue
-            changed = true
-          }
-        }
-      }
-    }
-    
-    if (changed) {
-      state.maskVersion++
-    }
-    
-    return changed
-  }
 
   /** Full render of current state */
   public render(state: SeedGrowthState, settings: SeedGrowthSettings): void {
@@ -273,9 +236,6 @@ export class SeedGrowthRenderer {
       this.renderSymmetryAxis(settings)
     }
 
-    if (settings.debug.showMask) {
-      this.renderMask(state, settings)
-    }
 
     this.renderStatus(state, settings)
   }
@@ -283,7 +243,6 @@ export class SeedGrowthRenderer {
   /** Clear all layers */
   public clear(): void {
     this.gridLayer.clear()
-    this.maskLayer.clear()
     this.regionLayer.clear()
     this.frontierLayer.clear()
     this.roomBoundsLayer.clear()
@@ -468,22 +427,6 @@ export class SeedGrowthRenderer {
     this.statusText.text = lines.join('\n')
   }
 
-  /** Render blocked mask overlay */
-  private renderMask(state: SeedGrowthState, settings: SeedGrowthSettings): void {
-    const { gridWidth, gridHeight } = settings
-    const size = this.tileSize
-    const blockedColor = 0x1a1a2e // Dark rocky color
-    const blockedAlpha = 0.85
-
-    for (let y = 0; y < gridHeight; y++) {
-      for (let x = 0; x < gridWidth; x++) {
-        if (state.blocked[y]?.[x]) {
-          this.maskLayer.rect(x * size, y * size, size, size)
-            .fill({ color: blockedColor, alpha: blockedAlpha })
-        }
-      }
-    }
-  }
 
   /** Convert 0-1 value to heatmap color */
   private heatmapColor(t: number): number {

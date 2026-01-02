@@ -49,20 +49,10 @@ export class SeedGrowthGenerator {
   // Public API
   // ===========================================================================
 
-  /** Reset generator with new settings. Optionally preserves the blocked mask. */
-  public reset(settings: SeedGrowthSettings, preserveMask: boolean = false): void {
-    const oldBlocked = preserveMask ? this.state?.blocked : null
-    const oldMaskVersion = preserveMask ? this.state?.maskVersion : 0
-    
+  public reset(settings: SeedGrowthSettings): void {
     this.settings = { ...settings }
     this.rng = new SeededRNG(settings.seed)
     this.state = this.createInitialState()
-    
-    // Restore mask if requested and sizes match
-    if (oldBlocked && oldBlocked.length === this.state.blocked.length) {
-      this.state.blocked = oldBlocked
-      this.state.maskVersion = oldMaskVersion ?? 0
-    }
   }
 
   /** Get current state (for rendering) */
@@ -145,16 +135,9 @@ export class SeedGrowthGenerator {
       grid.push(row)
     }
 
-    // Create empty blocked mask
-    const blocked: boolean[][] = []
-    for (let y = 0; y < gridHeight; y++) {
-      blocked.push(new Array(gridWidth).fill(false))
-    }
 
     const state: SeedGrowthState = {
       grid,
-      blocked,
-      maskVersion: 0,
       regions: new Map(),
       seeds: [],
       tilesGrown: 0,
@@ -205,7 +188,7 @@ export class SeedGrowthGenerator {
           // Mirror position
           const mirrorPos = this.getMirrorPosition(pos)
           // Don't add if it's the same (on axis) or too close to existing
-          if (!this.isSamePosition(pos, mirrorPos) && this.isValidSeedPosition(mirrorPos, positions, minSeedDistance, state.blocked)) {
+          if (!this.isSamePosition(pos, mirrorPos) && this.isValidSeedPosition(mirrorPos, positions, minSeedDistance)) {
             positions.push(mirrorPos)
           }
         }
@@ -276,7 +259,7 @@ export class SeedGrowthGenerator {
       }
 
       const pos = { x, y }
-      if (this.isValidSeedPosition(pos, existing, minDistance, state.blocked)) {
+      if (this.isValidSeedPosition(pos, existing, minDistance)) {
         return pos
       }
     }
@@ -284,9 +267,8 @@ export class SeedGrowthGenerator {
     return null
   }
 
-  private isValidSeedPosition(pos: GridCoord, existing: GridCoord[], minDistance: number, blocked: boolean[][]): boolean {
-    // Check if blocked
-    if (blocked[pos.y]?.[pos.x]) return false
+  private isValidSeedPosition(pos: GridCoord, existing: GridCoord[], minDistance: number): boolean {
+    const { gridWidth, gridHeight } = this.settings
     
     for (const other of existing) {
       const dist = Math.abs(pos.x - other.x) + Math.abs(pos.y - other.y) // Manhattan distance
@@ -470,8 +452,6 @@ export class SeedGrowthGenerator {
 
   private validatePlacement(pos: GridCoord, region: Region): boolean {
     if (!this.inBounds(pos.x, pos.y)) return false
-    // Check if blocked by mask
-    if (this.state.blocked[pos.y]?.[pos.x]) return false
     const tile = this.state.grid[pos.y][pos.x]
     if (tile.state !== 'empty') return false
     
@@ -515,8 +495,6 @@ export class SeedGrowthGenerator {
       const nx = pos.x + DIRECTIONS[d].x
       const ny = pos.y + DIRECTIONS[d].y
       if (this.inBounds(nx, ny)) {
-        // Skip blocked cells - they can never be claimed
-        if (state.blocked[ny]?.[nx]) continue
         const neighbor = state.grid[ny][nx]
         if (neighbor.state === 'empty') {
           region.frontier.add(this.tileIndex({ x: nx, y: ny }))

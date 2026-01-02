@@ -30,7 +30,7 @@ import { settingsToSeedConfig } from '../engine/seed-growth/ManualSeedSystem'
 import { SeedGrowthDataModal } from './SeedGrowthDataModal'
 import { SeedPouchTab } from './SeedPouchTab'
 
-type TabId = 'main' | 'pouch' | 'animation' | 'mask' | 'debug' | 'output' | 'fx'
+type TabId = 'main' | 'pouch' | 'animation' | 'debug' | 'output' | 'fx'
 
 interface SeedGrowthControlPanelProps {
     // Generator mode
@@ -60,13 +60,6 @@ interface SeedGrowthControlPanelProps {
     // Spine-seed specific status
     spineSeedPhase?: string
 
-    // Mask tool props
-    maskToolMode: MaskToolMode
-    onMaskToolModeChange: (mode: MaskToolMode) => void
-    brushSize: number
-    onBrushSizeChange: (size: number) => void
-    onClearMask: () => void
-    blockedCount: number
 
     // State for output modals
     seedGrowthState: SeedGrowthState | null
@@ -226,12 +219,6 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
     isAnimating,
     onToggleAnimation,
     spineSeedPhase,
-    maskToolMode,
-    onMaskToolModeChange,
-    brushSize,
-    onBrushSizeChange,
-    onClearMask,
-    blockedCount,
     seedGrowthState,
     spineSeedState,
     viewAsDungeon,
@@ -870,36 +857,6 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
         </div>
     )
 
-    const renderMaskTab = () => (
-        <div style={sectionStyle}>
-            <div style={rowStyle}>
-                <span style={labelStyle}>Tool:</span>
-                <div style={toggleGroupStyle}>
-                    <ToggleButton active={maskToolMode === 'off'} onClick={() => onMaskToolModeChange('off')}>Off</ToggleButton>
-                    <ToggleButton active={maskToolMode === 'paint'} onClick={() => onMaskToolModeChange('paint')}>🖌️ Paint</ToggleButton>
-                    <ToggleButton active={maskToolMode === 'erase'} onClick={() => onMaskToolModeChange('erase')}>🧹 Erase</ToggleButton>
-                </div>
-            </div>
-            <div style={rowStyle}>
-                <span style={labelStyle}>Brush:</span>
-                {[1, 2, 3, 5].map(size => (
-                    <ToggleButton key={size} active={brushSize === size} onClick={() => onBrushSizeChange(size)}>
-                        {size}
-                    </ToggleButton>
-                ))}
-            </div>
-            <div style={rowStyle}>
-                <button style={buttonStyle} onClick={onClearMask}>Clear Mask</button>
-                <label style={checkboxLabelStyle}>
-                    <input type="checkbox" checked={settings.debug.showMask} onChange={(e) => updateDebug('showMask', e.target.checked)} />
-                    Show Mask
-                </label>
-            </div>
-            <div style={{ ...rowStyle, color: '#666' }}>
-                Blocked: {blockedCount} ({Math.round(blockedCount / (settings.gridWidth * settings.gridHeight) * 100)}%)
-            </div>
-        </div>
-    )
 
     const renderDebugTab = () => (
         <div style={sectionStyle}>
