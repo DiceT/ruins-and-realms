@@ -40,6 +40,7 @@ import {
   createDefaultSpineSeedSettings,
   GeneratorMode
 } from '../engine/seed-growth'
+import { DungeonAssembler } from '../engine/seed-growth/DungeonAssembler'
 import { getSeedLabel } from '../engine/seed-growth/ManualSeedSystem'
 import { VisibilitySystem } from '../engine/systems/VisibilitySystem'
 import { PlayerController } from '../engine/systems/PlayerController'
@@ -393,8 +394,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         console.log('[ViewAsDungeon] Pruned rooms count:', prunedRooms.length)
         console.log('[ViewAsDungeon] Calling renderDungeonView() with spine settings')
 
-        // Pass explicit DungeonData
-        dungeonViewRendererRef.current.renderDungeonView({
+        // Build raw DungeonData
+        const rawDungeonData = {
           gridWidth: spineSeedSettings.gridWidth,
           gridHeight: spineSeedSettings.gridHeight,
           rooms: prunedRooms,
@@ -402,7 +403,18 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           spineWidth: spineSeedSettings.spine.spineWidth,
           seed: spineSeedSettings.seed, // For seeded RNG ops
           objects: state.objects // Pass objects (stairs!)
-        }, spineSeedSettings as any, showRoomNumbers, showWalkmap)
+        }
+
+        // Assemble corridors, decorations, and prune
+        const dungeonData = DungeonAssembler.assembleSpine(rawDungeonData as any, spineSeedSettings as any)
+
+        // Pass assembled DungeonData
+        dungeonViewRendererRef.current.renderDungeonView(
+          dungeonData,
+          spineSeedSettings as any,
+          showRoomNumbers,
+          showWalkmap
+        )
 
         // --- INITIALIZE PLAYER & VISIBILITY (SPINE MODE) ---
         if (state.spineComplete) { // Ensure generation is done
