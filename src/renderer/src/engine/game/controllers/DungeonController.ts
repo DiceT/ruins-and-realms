@@ -10,8 +10,8 @@
 import { Container, Application } from 'pixi.js'
 import { GameLayout } from '../../ui/GameLayout'
 import { ThemeManager } from '../../managers/ThemeManager'
-import { VisibilitySystem } from '../../systems/VisibilitySystem'
 import { PlayerController } from '../../systems/PlayerController'
+import { DungeonExplorationManager } from '../../systems/DungeonExplorationManager'
 import { LIGHT_PROFILES, LightSourceType, LightProfile } from '../../data/LightingData'
 import {
   SeedGrowthGenerator,
@@ -62,10 +62,7 @@ export class DungeonController {
   private themeManager: ThemeManager | null = null
   
   // Player & Visibility (Phase E)
-  private visibilitySystem: VisibilitySystem | null = null
-  private playerController: PlayerController | null = null
-  private activeLight: LightSourceType = 'torch'
-  private walkableSet: Set<string> = new Set()
+  private explorationManager: DungeonExplorationManager | null = null
   
   // View Options
   private showRoomNumbers: boolean = true
@@ -608,9 +605,9 @@ export class DungeonController {
     }
     
     // Build walkmap
-    this.walkableSet.clear()
+    const walkableSet = new Set<string>()
     const add = (x: number, y: number) => {
-      this.walkableSet.add(`${x},${y}`)
+      walkableSet.add(`${x},${y}`)
     }
     
     // Add room tiles
@@ -626,60 +623,26 @@ export class DungeonController {
         add(obj.x, obj.y)
       }
     })
-    
-    // Init visibility system
-    if (!this.visibilitySystem) {
-      this.visibilitySystem = new VisibilitySystem(this.spineSettings.gridWidth, this.spineSettings.gridHeight)
-    } else {
-      this.visibilitySystem.reset(this.spineSettings.gridWidth, this.spineSettings.gridHeight)
-    }
-    
-    // Init player controller
-    if (!this.playerController) {
-      this.playerController = new PlayerController()
-    }
-    
-    const walkableArray = Array.from(this.walkableSet).map(k => {
+
+    const walkableArray = Array.from(walkableSet).map(k => {
       const [x, y] = k.split(',').map(Number)
       return { x, y }
     })
     
-    this.playerController.init(
-      startX, startY,
-      this.spineSettings.gridWidth,
-      this.spineSettings.gridHeight,
-      walkableArray,
-      (x, y) => this.handlePlayerMove(x, y)
-    )
-    
-    // Initial visibility update
-    this.handlePlayerMove(startX, startY)
+    // Init Exploration Manager
+    this.explorationManager = new DungeonExplorationManager({
+      gridWidth: this.spineSettings.gridWidth,
+      gridHeight: this.spineSettings.gridHeight,
+      startX,
+      startY,
+      walkableTiles: walkableArray,
+      renderer: this.dungeonViewRenderer
+    })
   }
 
   /**
    * Handle player movement - update visibility
    */
-  private handlePlayerMove(x: number, y: number): void {
-    if (!this.dungeonViewRenderer || !this.visibilitySystem || !this.spineSettings) return
-    
-    const lightProfile = LIGHT_PROFILES[this.activeLight]
-    const isWall = (tx: number, ty: number) => !this.walkableSet.has(`${tx},${ty}`)
-    
-    this.visibilitySystem.computeVisibility(x, y, lightProfile.dimRadius, isWall)
-    
-    this.dungeonViewRenderer.updateVisibilityState(
-      this.spineSettings.gridWidth,
-      this.spineSettings.gridHeight,
-      this.visibilitySystem.getGrid(),
-      x, y,
-      lightProfile
-    )
-    
-    // Focus camera on player
-    if (this.showPlayer) {
-      this.dungeonViewRenderer.focusOnTile(x, y)
-    }
-  }
 
   /**
    * Disable dungeon view mode
@@ -716,10 +679,10 @@ export class DungeonController {
       }
     }
     
-    // Cleanup player controller
-    if (this.playerController) {
-      this.playerController.destroy()
-      this.playerController = null
+    // Cleanup exploration manager
+    if (this.explorationManager) {
+      this.explorationManager.destroy()
+      this.explorationManager = null
     }
   }
 
@@ -727,12 +690,7 @@ export class DungeonController {
    * Set active light source
    */
   public setActiveLight(light: LightSourceType): void {
-    this.activeLight = light
-    
-    // Re-compute visibility if in dungeon view
-    if (this.viewAsDungeon && this.playerController) {
-      this.handlePlayerMove(this.playerController.x, this.playerController.y)
-    }
+    this.explorationManager?.setActiveLight(light)
   }
 
   public setShowRoomNumbers(enabled: boolean): void {
@@ -762,7 +720,7 @@ export class DungeonController {
 
   public setShowPlayer(enabled: boolean): void {
     this.showPlayer = enabled
-    this.dungeonViewRenderer?.setPlayerVisibility(enabled)
+    this.explorationManager?.setShowPlayer(enabled)
   }
 
   public setTheme(themeName: string): void {
@@ -811,12 +769,8 @@ export class DungeonController {
     return this.themeManager
   }
 
-  public getVisibilitySystem(): VisibilitySystem | null {
-    return this.visibilitySystem
-  }
-
-  public getPlayerController(): PlayerController | null {
-    return this.playerController
+  public getExplorationManager(): DungeonExplorationManager | null {
+    return this.explorationManager
   }
 
   public getCurrentState(): SeedGrowthState | SpineSeedState | null {
@@ -834,12 +788,10 @@ export class DungeonController {
     this.stopAnimation()
     
     // Cleanup player/visibility
-    if (this.playerController) {
-      this.playerController.destroy()
-      this.playerController = null
+    if (this.explorationManager) {
+      this.explorationManager.destroy()
+      this.explorationManager = null
     }
-    this.visibilitySystem = null
-    this.walkableSet.clear()
     
     // Destroy renderers
     if (this.seedGrowthRenderer) {
