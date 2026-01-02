@@ -20,7 +20,7 @@ import {
   SpineSeedRenderer,
   DungeonViewRenderer,
   RoomClassifier,
-  SpineSeedClassifier,
+  SpineSeedClassifierFixed,
   SeedGrowthSettings,
   SpineSeedSettings,
   SeedGrowthState,
@@ -59,7 +59,7 @@ export class DungeonController {
   private seedGrowthRenderer: SeedGrowthRenderer | null = null
   private spineSeedRenderer: SpineSeedRenderer | null = null
   private dungeonViewRenderer: DungeonViewRenderer | null = null
-  private spineSeedClassifier: SpineSeedClassifier = new SpineSeedClassifier()
+  private spineSeedClassifier: SpineSeedClassifierFixed = new SpineSeedClassifierFixed()
   
   // Theme
   private themeManager: ThemeManager | null = null
@@ -549,13 +549,20 @@ export class DungeonController {
 
   /**
    * Render spine-seed state as dungeon view
+   * Public to allow GameWindow to trigger re-renders with correct pipeline
    */
-  private renderSpineDungeonView(state: SpineSeedState): void {
+  public renderSpineDungeonView(state: SpineSeedState): void {
     if (!this.dungeonViewRenderer || !this.spineSettings) return
     
     // Use Classifier to get clean DungeonData
-    const rawData = this.spineSeedClassifier.classify(state, this.spineSettings)
+    // Instantiate fresh to ensure latest code is used (HMR fix)
+    const classifier = new SpineSeedClassifierFixed()
+    const rawData = classifier.classify(state, this.spineSettings)
     
+    console.warn(`[DungeonController] Seeds: ${state.roomSeeds.length}, Rooms after Classify: ${rawData.rooms.length}`)
+    const spawnRooms = rawData.rooms.filter(r => r.trellis?.some(t => t.includes('tinytitan')))
+    console.warn(`[DungeonController] TinyTitan Rooms: ${spawnRooms.length} (IDs: ${spawnRooms.map(r => r.id).join(',')})`)
+
     // Assemble corridors, decorations, and prune
     const dungeonData = DungeonAssembler.assembleSpine(rawData, this.spineSettings)
     

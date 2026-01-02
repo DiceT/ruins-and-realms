@@ -17,6 +17,8 @@ import { CorridorPathfinder } from '../processors/CorridorPathfinder'
 import { DungeonDecorator } from '../processors/DungeonDecorator'
 import { SpinePruner } from '../processors/SpinePruner'
 import { SeededRNG } from '../../../utils/SeededRNG'
+import { TrellisManager } from '../TrellisManager'
+import { TrellisContext } from '../trellises/ITrellis'
 
 export class DungeonAssembler {
 
@@ -32,6 +34,14 @@ export class DungeonAssembler {
     
     // 0. Calculate Scores (Required for generator)
     const heatScores = HeatMapCalculator.calculate(rooms, spineTiles)
+
+    // --- TRELLIS PHASE: corridorAssembly ---
+    const context: TrellisContext = { 
+      rng: new SeededRNG(settings.seed),
+      heatMap: heatScores,
+      rooms: rooms
+    }
+    TrellisManager.getInstance().processPhaseForRooms('corridorAssembly', context, rooms)
     
     // --- SPINE PRUNING ---
     // Determine active range of the spine

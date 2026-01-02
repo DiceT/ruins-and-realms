@@ -98,6 +98,8 @@ export interface Room {
   isMerged?: boolean
   /** Identifying type string for this room (e.g. "Boss Room", "Manual Seed") */
   type?: string
+  /** Active trellis tags for this room */
+  trellis?: string[]
 }
 
 export interface Corridor {

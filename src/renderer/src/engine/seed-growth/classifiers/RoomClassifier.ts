@@ -63,7 +63,14 @@ export class RoomClassifier {
           
           console.log(`[RoomClassifier] Found blob size: ${blob.length}, minRoomArea: ${minRoomArea}, isRoom: ${blob.length >= minRoomArea}`)
 
-          if (blob.length >= minRoomArea) {
+          // Check for immunity
+          let isImmune = false
+          if (tile.regionId && tile.regionId > 0 && state.roomSeeds && state.roomSeeds[tile.regionId - 1]) {
+            const seed = state.roomSeeds[tile.regionId - 1]
+            if (seed.content?.immuneToPruning) isImmune = true
+          }
+          
+          if (blob.length >= minRoomArea || isImmune) {
             // This is a room
             const room = this.createRoom(blob, tile.regionId || 0, roomIdCounter++)
             rooms.push(room)
@@ -174,7 +181,17 @@ export class RoomClassifier {
       // Flood fill only room tiles
       const blob = this.floodFillRoomTiles(grid, pos.x, pos.y, visited, maxCorridorWidth)
       
-      if (blob.length >= minRoomArea) {
+      // Check for immunity
+      const tile = grid[pos.x][pos.y] // Wait, pos is {x,y}
+      // Actually iterate blob or just pick one tile? They should share regionId.
+      let isImmune = false
+      const firstTile = grid[blob[0].y][blob[0].x]
+      if (firstTile.regionId && firstTile.regionId > 0 && state.roomSeeds && state.roomSeeds[firstTile.regionId - 1]) {
+         const seed = state.roomSeeds[firstTile.regionId - 1]
+         if (seed.content?.immuneToPruning) isImmune = true
+      }
+
+      if (blob.length >= minRoomArea || isImmune) {
         const tile = grid[pos.y][pos.x]
         const room = this.createRoom(blob, tile.regionId || 0, roomIdCounter++)
         rooms.push(room)

@@ -27,7 +27,6 @@ export class DiceEngine {
     if (this.engineCore) {
       // If already initialized, just update the container if it changed
       if (this.container !== container) {
-        console.log('DiceEngine re-parenting to new container.')
         this.container = container
         // Move the canvas to the new container
         if (this.engineCore.getRenderer().domElement.parentElement !== container) {
@@ -58,7 +57,6 @@ export class DiceEngine {
     }
 
     this.engineCore.start()
-    console.log('DiceEngine initialized.')
   }
 
   /**

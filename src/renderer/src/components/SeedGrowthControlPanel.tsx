@@ -84,6 +84,10 @@ interface SeedGrowthControlPanelProps {
     // Walkmap toggle
     showWalkmap: boolean
     onToggleWalkmap: (enabled: boolean) => void
+
+    // Spine Debug overlay toggle
+    showSpineDebug?: boolean
+    onToggleSpineDebug?: (enabled: boolean) => void
 }
 
 // ============================================================================
@@ -230,7 +234,9 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
     activeTheme,
     onThemeChange,
     showWalkmap,
-    onToggleWalkmap
+    onToggleWalkmap,
+    showSpineDebug,
+    onToggleSpineDebug
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>('main')
     const [modalData, setModalData] = useState<{ title: string; data: unknown } | null>(null)
@@ -885,6 +891,16 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
                         onChange={(e) => onToggleWalkmap(e.target.checked)}
                     />
                     Show Walkmap (Cost)
+                </label>
+
+
+                <label style={rowStyle}>
+                    <input
+                        type="checkbox"
+                        checked={showSpineDebug ?? false}
+                        onChange={(e) => onToggleSpineDebug?.(e.target.checked)}
+                    />
+                    Show Spine/Seeds
                 </label>
             </div>
         </div>

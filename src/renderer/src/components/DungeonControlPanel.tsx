@@ -8,6 +8,8 @@ interface DungeonControlPanelProps {
     onShowLightChange: (show: boolean) => void
     showPlayer: boolean
     onShowPlayerChange: (show: boolean) => void
+    showSpineDebug?: boolean
+    onShowSpineDebugChange?: (show: boolean) => void
     activeLight: LightSourceType
     onActiveLightChange: (type: LightSourceType) => void
 }
@@ -19,6 +21,8 @@ export const DungeonControlPanel: React.FC<DungeonControlPanelProps> = ({
     onShowLightChange,
     showPlayer,
     onShowPlayerChange,
+    showSpineDebug,
+    onShowSpineDebugChange,
     activeLight,
     onActiveLightChange
 }) => {
@@ -101,6 +105,24 @@ export const DungeonControlPanel: React.FC<DungeonControlPanelProps> = ({
                     />
                     Player
                 </label>
+                {onShowSpineDebugChange && (
+                    <label
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '12px',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={showSpineDebug}
+                            onChange={(e) => onShowSpineDebugChange(e.target.checked)}
+                        />
+                        Seeds
+                    </label>
+                )}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

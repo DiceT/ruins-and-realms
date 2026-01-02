@@ -48,7 +48,6 @@ export class PhysicsWorld {
   private handleGroundCollision = (e: any) => {
     const relativeVelocity = e.contact.getImpactVelocityAlongNormal()
     if (Math.abs(relativeVelocity) > 0.5) {
-      console.log(`PhysicsWorld: Ground Hit. Vel: ${relativeVelocity.toFixed(2)}`)
       AudioManager.getInstance().playSurfaceHit(
         Math.abs(relativeVelocity),
         this.currentSurface || 'felt'
@@ -61,8 +60,7 @@ export class PhysicsWorld {
     if (otherBody.mass > 0) {
       const relativeVelocity = e.contact.getImpactVelocityAlongNormal()
       if (Math.abs(relativeVelocity) > 0.5) {
-        console.log(`PhysicsWorld: Dice Hit. Vel: ${relativeVelocity.toFixed(2)}`)
-        AudioManager.getInstance().playDiceHit(Math.abs(relativeVelocity))
+          AudioManager.getInstance().playDiceHit(Math.abs(relativeVelocity))
       }
     }
   }

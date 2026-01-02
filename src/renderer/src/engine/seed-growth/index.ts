@@ -14,7 +14,7 @@ export { DungeonViewRenderer } from './renderers/DungeonViewRenderer'
 
 // Classifiers
 export { RoomClassifier } from './classifiers/RoomClassifier'
-export { SpineSeedClassifier } from './classifiers/SpineSeedClassifier'
+export { SpineSeedClassifierFixed } from './classifiers/SpineSeedClassifier'
 
 // Processors
 export { CorridorPathfinder } from './processors/CorridorPathfinder'
@@ -23,7 +23,7 @@ export { DungeonDecorator } from './processors/DungeonDecorator'
 export { SpinePruner } from './processors/SpinePruner'
 
 // Support Systems
-export { TagManager } from './TagManager'
+export { TrellisManager } from './TrellisManager'
 export { getSeedLabel, expandRepeats, createVirtualConfig, validateSeedBatch } from './ManualSeedSystem'
 
 // Types

@@ -66,7 +66,8 @@ export function validateSeedBatch(json: any): { valid: ManualSeedConfig[], error
             mandatory: item.mandatory,
             allowMirror: item.allowMirror,
             repeat: typeof item.repeat === 'number' && item.repeat > 0 ? item.repeat : 1,
-            metadata: item.metadata ? { ...item.metadata } : undefined
+            metadata: item.metadata ? { ...item.metadata } : undefined,
+            trellis: Array.isArray(item.trellis) ? item.trellis : undefined
         }
 
         valid.push(config)
@@ -158,7 +159,8 @@ export function settingsToSeedConfig(settings: SpineSeedSettings): ManualSeedCon
         mandatory: true,
         metadata: {
             roomScore: 1
-        }
+        },
+        trellis: []
     }
 }
 

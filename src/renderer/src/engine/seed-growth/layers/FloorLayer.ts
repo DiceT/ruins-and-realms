@@ -68,10 +68,9 @@ export class FloorLayer {
    * Render a single room's floor
    */
   private renderRoomFloor(room: Room, size: number, theme: RoomLayerConfig): void {
-    const { x, y, w, h } = room.bounds
-
     if (room.isCircular) {
       // Draw wall-colored bounding box first (corners will show as walls)
+      const { x, y, w, h } = room.bounds
       this.graphics.rect(x * size, y * size, w * size, h * size)
       this.graphics.fill({ color: theme.walls.color })
 
@@ -83,12 +82,16 @@ export class FloorLayer {
       this.graphics.circle(centerX, centerY, radius)
       this.graphics.fill({ color: theme.floor.color })
     } else {
-      // Draw rectangular room (full tiles)
-      for (let dy = 0; dy < h; dy++) {
-        for (let dx = 0; dx < w; dx++) {
-          this.graphics.rect((x + dx) * size, (y + dy) * size, size, size)
-          this.graphics.fill({ color: theme.floor.color })
-        }
+      // Draw actual tiles (safer than bounds for non-rect or 1x1 rooms)
+      // DEBUG: Log for small rooms
+      if (room.area <= 1) {
+         // Force a debug color if needed, or just ensure it draws
+         // console.log('[FloorLayer] Rendering 1x1 room', room.id, room.tiles[0])
+      }
+
+      for (const t of room.tiles) {
+        this.graphics.rect(t.x * size, t.y * size, size, size)
+        this.graphics.fill({ color: theme.floor.color })
       }
     }
   }

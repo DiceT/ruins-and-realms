@@ -21,7 +21,8 @@ import {
 } from '../types'
 import { ManualSeedConfig, SeedSide, RangeOrNumber } from '../SeedDefinitions'
 import { createVirtualConfig, expandRepeats } from '../ManualSeedSystem'
-import { TagManager } from '../TagManager'
+import { TrellisManager } from '../TrellisManager'
+import { TrellisContext } from '../trellises/ITrellis'
 
 // Direction vectors
 const DIRECTIONS: { [key in Direction]: GridCoord } = {
@@ -1082,11 +1083,13 @@ export class SpineSeedGenerator {
       // Metadata (Locked Scope v1)
       configSource: config,
       tags: config.tags,
+      trellis: config.trellis,
       content: config.metadata
     }
 
-    // Apply Tags: onSeedEjected hook
-    TagManager.getInstance().applyOnSeedEjected(roomSeed, this.state)
+    // Apply Trellises: ejection phase
+    const context: TrellisContext = { state: this.state, rng: this.rng }
+    TrellisManager.getInstance().processPhase('ejection', context, roomSeed)
 
     this.state.roomSeeds.push(roomSeed)
 
@@ -1095,6 +1098,8 @@ export class SpineSeedGenerator {
       tile.state = 'floor'
       tile.regionId = this.state.roomSeeds.length // Use seed index as region ID
       tile.growthOrder = this.state.tilesGrown++
+      
+      console.warn(`[SpineSeedGenerator] 🌱 SPROUTING ${roomSeed.id} at ${pos.x},${pos.y} [1x1]. Tags: ${roomSeed.tags?.join(',') || 'none'}`)
     }
     
     return roomSeed
@@ -1174,6 +1179,11 @@ export class SpineSeedGenerator {
     // Check budget
     if (this.state.tilesGrown >= this.settings.tileBudget) {
       this.state.roomGrowthComplete = true
+      
+      // Run Classification Phase
+      const context: TrellisContext = { state: this.state, rng: this.rng }
+      TrellisManager.getInstance().processGlobalPhase('classification', context)
+      
       this.state.phase = 'walls'
       return false
     }
@@ -1183,6 +1193,11 @@ export class SpineSeedGenerator {
     
     if (activeSeeds.length === 0) {
       this.state.roomGrowthComplete = true
+
+      // Run Classification Phase
+      const context: TrellisContext = { state: this.state, rng: this.rng }
+      TrellisManager.getInstance().processGlobalPhase('classification', context)
+
       this.state.phase = 'walls'
       return false
     }
@@ -1412,7 +1427,13 @@ export class SpineSeedGenerator {
     // For now, walls are implicit (empty tiles adjacent to floor)
     // This phase could be expanded for explicit wall tile placement
     this.state.isComplete = true
+    this.state.spineComplete = true // Required for GameWindow detection
     this.state.phase = 'complete'
+    
+    // DEBUG: Check persistence
+    const seedIds = this.state.roomSeeds.map(s => s.id).join(',')
+    console.warn(`[SpineSeedGenerator] COMPLETE. Final Seeds (${this.state.roomSeeds.length}): ${seedIds}`)
+    
     return false
   }
 

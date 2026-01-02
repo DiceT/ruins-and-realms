@@ -130,6 +130,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const [showRoomNumbers, setShowRoomNumbers] = useState<boolean>(true)
   const [showHeatMap, setShowHeatMap] = useState<boolean>(false)
   const [showWalkmap, setShowWalkmap] = useState<boolean>(false) // New: Walkmap toggle
+  const [showSpineDebug, setShowSpineDebug] = useState<boolean>(false) // Spine debug overlay toggle
   const [activeTheme, setActiveTheme] = useState('None')
 
   const themeManagerRef = useRef<ThemeManager | null>(null)
@@ -280,7 +281,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
   // Handle View as Dungeon toggle
   useEffect(() => {
-    console.log('[ViewAsDungeon] Effect triggered:', { viewAsDungeon, gameMode, showMap, hasState: !!seedGrowthState })
 
     if (gameMode !== 'dungeon' || !showMap) return
     if (!layoutRef.current) return
@@ -295,17 +295,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       state = spineSeedGenRef.current?.getState() ?? spineSeedState
     }
     if (!state) {
-      console.log('[ViewAsDungeon] No state available')
       return
-    }
-
-    // Updated Logging for debugging Spine Mode
-    if (generatorMode === 'spineSeed') {
-      console.log('[ViewAsDungeon] Spine Mode State Check:')
-      console.log(' - roomSeeds count:', (state as any).roomSeeds?.length ?? 0)
-      console.log(' - spineTiles present:', !!(state as any).spineTiles, (state as any).spineTiles?.length)
-    } else {
-      console.log('[ViewAsDungeon] Organic Mode Rooms:', state.rooms?.length ?? 0)
     }
 
 
@@ -371,7 +361,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
       // --- ADAPTER LOGIC ---
       if (generatorMode === 'spineSeed' && state.spineTiles) {
-        console.log('[ViewAsDungeon] Entering Spine Adapter logic')
+        // Adapter logic
         // Convert SpineSeedState to DungeonData
         const rawSeeds = (state.roomSeeds || []) as any[]
 
@@ -391,8 +381,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             type: getSeedLabel(seed)
           }))
 
-        console.log('[ViewAsDungeon] Pruned rooms count:', prunedRooms.length)
-        console.log('[ViewAsDungeon] Calling renderDungeonView() with spine settings')
 
         // Build raw DungeonData
         const rawDungeonData = {
@@ -418,6 +406,12 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
         // --- INITIALIZE PLAYER & VISIBILITY (SPINE MODE) ---
         if (state.spineComplete) { // Ensure generation is done
+          console.error(`[GameWindow] Spine Complete! Mode: ${generatorMode}`)
+          // CRITICAL FIX: Ensure final render uses Controller logic (Classification/Pruning)
+          if (generatorMode === 'spineSeed') {
+            console.error('[GameWindow] Triggering Controller Render...')
+            dungeonControllerRef.current.renderSpineDungeonView(state as any)
+          }
           // 1. Find Start (Stairs Up or first Spine Tile)
           let startX = 0
           let startY = 0
@@ -517,11 +511,14 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           handleMove(startX, startY)
         }
 
-        console.log('[ViewAsDungeon] Render returned')
 
       } else {
-        console.log('[ViewAsDungeon] calling renderDungeonView() with Organic state')
-        dungeonViewRendererRef.current.renderDungeonView(state, seedGrowthSettings, showRoomNumbers, showWalkmap)
+        if (generatorMode === 'spineSeed') {
+          // Use Controller Pipeline (includes Classification & Pruning)
+          dungeonControllerRef.current.renderSpineDungeonView(state as any)
+        } else {
+          dungeonViewRendererRef.current.renderDungeonView(state, seedGrowthSettings, showRoomNumbers, showWalkmap)
+        }
 
         // --- INITIALIZE PLAYER (ORGANIC MODE) ---
         // TODO: Similar logic for Organic mode if needed, utilizing rooms[0] center
@@ -608,7 +605,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   // Dedicated effect for heat map visibility (independent of render)
   useEffect(() => {
     if (dungeonViewRendererRef.current) {
-      console.log('[GameWindow] Toggling Heat Map:', showHeatMap)
       dungeonViewRendererRef.current.setShowHeatMap(showHeatMap)
     }
   }, [showHeatMap])
@@ -616,7 +612,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   // Dedicated effect for walkmap visibility (independent of render)
   useEffect(() => {
     if (dungeonViewRendererRef.current) {
-      console.log('[GameWindow] Toggling Walkmap:', showWalkmap)
       dungeonViewRendererRef.current.setShowWalkmap(showWalkmap)
     }
   }, [showWalkmap])
@@ -689,7 +684,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
         setIsReady(true)
       } catch (err) {
-        console.error('[GameWindow] initGame failed:', err)
         initializingRef.current = false
       }
     }
@@ -702,7 +696,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     })
 
     return () => {
-      console.log('[GameWindow] Cleanup')
       initializingRef.current = false
       setIsReady(false)
       if (appRef.current) {
@@ -798,6 +791,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
         // Create or reuse controller
         if (!dungeonControllerRef.current) {
+          // Force Rebuild Log
+          console.warn('[GameWindow] Creating new DungeonController instance...')
           dungeonControllerRef.current = new DungeonController({
             onStateChange: (state) => {
               // Sync React state for UI - use controller's current mode to avoid stale closure
@@ -895,14 +890,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     if (gameMode === 'overworld') {
       if (overworldStep === 1) {
         if (townPlaced) {
-          console.log('[GameWindow] Sync: Forcing IDLE mode for Explore')
           mapEngineRef.current.interactionState.mode = 'idle'
         } else {
-          console.log('[GameWindow] Sync: Forcing PLACING_TOWN mode')
           mapEngineRef.current.interactionState.mode = 'placing_town'
         }
       } else if (overworldStep === 3) {
-        console.log('[GameWindow] Sync: Forcing PLACING_TERRAIN mode')
         mapEngineRef.current.interactionState.mode = 'placing_terrain'
       } else if (overworldStep === 0 && !townPlaced) {
         // Usually handled by button click, but good to enforce?
@@ -1128,7 +1120,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           <div
             onClick={() => {
               diceEngine.roll('2d8').then((result) => {
-                console.log('Roll Result:', result)
+                // console.log('Roll Result:', result)
               })
             }}
             style={{
@@ -1262,6 +1254,16 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
                   onToggleWalkmap={setShowWalkmap}
                   activeTheme={activeTheme}
                   onThemeChange={setActiveTheme}
+                  showSpineDebug={showSpineDebug}
+                  onToggleSpineDebug={(val) => {
+                    setShowSpineDebug(val)
+                    if (dungeonViewRendererRef.current) {
+                      dungeonViewRendererRef.current.setShowSpineDebug(val)
+                      if (val && spineSeedState) {
+                        dungeonViewRendererRef.current.setSpineState(spineSeedState)
+                      }
+                    }
+                  }}
                 />
               </div>
             )}
@@ -1428,11 +1430,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
         {/* --- FLOATING SEED GROWTH CONTROL PANEL --- */}
         {gameMode === 'dungeon' && seedGrowthState && (
-          // DEBUG: Log props being passed
-          (console.log('[GameWindow] Passing props:', {
-            showHeatMap,
-            hasToggleFn: !!setShowHeatMap
-          }) as any) ||
           <SeedGrowthControlPanel
             generatorMode={generatorMode}
             onGeneratorModeChange={setGeneratorMode}
@@ -1469,6 +1466,18 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             onToggleHeatMap={setShowHeatMap}
             activeTheme={activeTheme}
             onThemeChange={setActiveTheme}
+            showWalkmap={showWalkmap}
+            onToggleWalkmap={setShowWalkmap}
+            showSpineDebug={showSpineDebug}
+            onToggleSpineDebug={(val) => {
+              setShowSpineDebug(val)
+              if (dungeonViewRendererRef.current) {
+                dungeonViewRendererRef.current.setShowSpineDebug(val)
+                if (val && spineSeedState) {
+                  dungeonViewRendererRef.current.setSpineState(spineSeedState)
+                }
+              }
+            }}
           />
         )}
 
@@ -1491,6 +1500,13 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         <DiceSettingsWrapper isOpen={showDiceSettings} onClose={() => setShowDiceSettings(false)} />
         <SettingsSync />
         <DiceOverlay />
+
+        {/* Sync Spine State to Renderer when it changes (Real-time update) */}
+        {React.useEffect(() => {
+          if (dungeonViewRendererRef.current && spineSeedState && viewAsDungeon) {
+            dungeonViewRendererRef.current.setSpineState(spineSeedState)
+          }
+        }, [spineSeedState, viewAsDungeon]) as any}
 
         {/* Tooltip */}
         {

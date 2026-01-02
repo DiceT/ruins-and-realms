@@ -22,6 +22,9 @@ export interface ManualSeedMetadata {
     // Scoring / Pathfinding
     roomScore?: number // Custom weight for Dijkstra
 
+    // Trellis System
+    trellis?: string[]
+    
     // Extensible
     [key: string]: any
 }
@@ -55,4 +58,8 @@ export interface ManualSeedConfig {
 
     // Nested Metadata
     metadata?: ManualSeedMetadata
+
+    // Trellis System
+    trellis?: string[]
 }
+```

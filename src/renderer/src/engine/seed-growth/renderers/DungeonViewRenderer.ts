@@ -9,12 +9,12 @@
  */
 
 import { Container, Graphics, FederatedPointerEvent, Text, TextStyle, DisplacementFilter, Sprite, Texture, Assets, RenderTexture, Matrix, Rectangle } from 'pixi.js'
-import { SeedGrowthState, SeedGrowthSettings, Room, Corridor, Connection, DungeonData, DungeonObject } from '../types'
+import { SeedGrowthState, SeedGrowthSettings, Room, Corridor, Connection, DungeonData, DungeonObject, SpineSeedState } from '../types'
 import { LightProfile, VisionGrid, VISION_STATE } from '../../data/LightingData'
 import { DungeonAnalysis, FurthestRoomResult } from '../../analysis/DungeonAnalysis'
 import { ThemeManager } from '../../managers/ThemeManager'
 import { RoomLayerConfig } from '../../themes/ThemeTypes'
-import { FloorLayer, WallLayer, GridLayer, ObjectLayer, LabelLayer, DebugLayer, VisibilityLayer } from '../layers'
+import { FloorLayer, WallLayer, GridLayer, ObjectLayer, LabelLayer, DebugLayer, VisibilityLayer, SpineDebugLayer } from '../layers'
 import { PanZoomController } from '../controllers/PanZoomController'
 import { createNoiseTexture } from '../../utils/rendering'
 
@@ -46,6 +46,7 @@ export class DungeonViewRenderer {
   private gridLayer: GridLayer  // Separate layer for grid lines (re-rendered on zoom)
   private labelLayer: LabelLayer
   private debugLayer: DebugLayer
+  private spineDebugLayer: SpineDebugLayer
   private overlayLayer: Graphics
   
   // --- New Visibility Layers ---
@@ -73,6 +74,8 @@ export class DungeonViewRenderer {
   // Debug flags
   private showFog: boolean = true
   private showLight: boolean = true
+  private showSpineDebug: boolean = false
+  private cachedSpineState: SpineSeedState | null = null
 
   constructor(parentContainer: Container, options: DungeonViewOptions = {}) {
     this.container = new Container()
@@ -137,6 +140,7 @@ export class DungeonViewRenderer {
     this.gridLayer = new GridLayer()
     this.labelLayer = new LabelLayer()
     this.debugLayer = new DebugLayer()
+    this.spineDebugLayer = new SpineDebugLayer()
     this.overlayLayer = new Graphics()
     
     // VISIBILITY INIT
@@ -165,6 +169,7 @@ export class DungeonViewRenderer {
     // Debug Layers
     this.contentContainer.addChild(this.overlayLayer)
     this.contentContainer.addChild(this.debugLayer.containerNode)
+    this.contentContainer.addChild(this.spineDebugLayer.containerNode)
     this.contentContainer.addChild(this.labelLayer.containerNode)
     
     if (options.tileSize) {
@@ -336,6 +341,10 @@ export class DungeonViewRenderer {
         // --- ORGANIC MODE ---
         rooms = (data as any).rooms || []
         this.renderedRooms = rooms // Update interaction target list
+        
+        // DEBUG: Verify TinyTitan
+        const tinyRooms = rooms.filter(r => r.bounds.w === 1 && r.bounds.h === 1)
+        console.warn(`[DungeonViewRenderer] Received ${rooms.length} rooms. 1x1 Rooms: ${tinyRooms.length}. TinyTitan Tagged: ${rooms.filter(r => (r.trellis as any)?.includes('#tinytitan')).length}`)
         
         // Data must be pre-assembled by DungeonAssembler
         if ((data as any).corridors && (data as any).corridors.length > 0) {
@@ -574,6 +583,28 @@ export class DungeonViewRenderer {
   public setShowWalkmap(visible: boolean): void {
       this.showWalkmap = visible
       this.debugLayer.setVisibility(this.showHeatMap, visible)
+  }
+
+  /**
+   * Toggle spine debug overlay visibility
+   */
+  public setShowSpineDebug(visible: boolean): void {
+      this.showSpineDebug = visible
+      this.spineDebugLayer.setVisible(visible)
+      // Re-render if we have cached state
+      if (visible && this.cachedSpineState) {
+          this.spineDebugLayer.render(this.cachedSpineState, { tileSize: this.tileSize })
+      }
+  }
+
+  /**
+   * Set the spine state for debug overlay (call before rendering when in spine mode)
+   */
+  public setSpineState(state: SpineSeedState | null): void {
+      this.cachedSpineState = state
+      if (this.showSpineDebug && state) {
+          this.spineDebugLayer.render(state, { tileSize: this.tileSize })
+      }
   }
 
   public setPlayerVisibility(visible: boolean): void {
