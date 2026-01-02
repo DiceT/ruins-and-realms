@@ -9,14 +9,14 @@
  */
 
 import { Container, Graphics, FederatedPointerEvent, Text, TextStyle, DisplacementFilter, Sprite, Texture, Assets, RenderTexture, Matrix, Rectangle } from 'pixi.js'
-import { SeedGrowthState, SeedGrowthSettings, Room, Corridor, Connection, DungeonData, DungeonObject } from './types'
-import { LightProfile, VisionGrid, VISION_STATE } from '../data/LightingData'
-import { DungeonAnalysis, FurthestRoomResult } from '../analysis/DungeonAnalysis'
-import { ThemeManager } from '../managers/ThemeManager'
-import { RoomLayerConfig } from '../themes/ThemeTypes'
-import { FloorLayer, WallLayer, GridLayer, ObjectLayer, LabelLayer, DebugLayer, VisibilityLayer } from './layers'
-import { PanZoomController } from './controllers/PanZoomController'
-import { createNoiseTexture } from '../utils/rendering'
+import { SeedGrowthState, SeedGrowthSettings, Room, Corridor, Connection, DungeonData, DungeonObject } from '../types'
+import { LightProfile, VisionGrid, VISION_STATE } from '../../data/LightingData'
+import { DungeonAnalysis, FurthestRoomResult } from '../../analysis/DungeonAnalysis'
+import { ThemeManager } from '../../managers/ThemeManager'
+import { RoomLayerConfig } from '../../themes/ThemeTypes'
+import { FloorLayer, WallLayer, GridLayer, ObjectLayer, LabelLayer, DebugLayer, VisibilityLayer } from '../layers'
+import { PanZoomController } from '../controllers/PanZoomController'
+import { createNoiseTexture } from '../../utils/rendering'
 
 export interface DungeonViewOptions {
   tileSize?: number

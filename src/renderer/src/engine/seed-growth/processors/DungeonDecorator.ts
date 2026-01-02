@@ -1,4 +1,4 @@
-import { SeededRNG } from '../../utils/SeededRNG'
+import { SeededRNG } from '../../../utils/SeededRNG'
 import { 
     SpineSeedState, 
     SeedGrowthState, 
@@ -7,7 +7,7 @@ import {
     SpineTile,
     DungeonData,
     Room
-} from './types'
+} from '../types'
 
 export class DungeonDecorator {
     private rng: SeededRNG

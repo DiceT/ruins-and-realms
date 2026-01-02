@@ -11,12 +11,12 @@
  * complete DungeonData (rooms + corridors + objects + pruned spine).
  */
 
-import { DungeonData, SeedGrowthState, SeedGrowthSettings, Room } from './types'
-import { HeatMapCalculator } from './HeatMapCalculator'
-import { CorridorPathfinder } from './CorridorPathfinder'
-import { DungeonDecorator } from './DungeonDecorator'
-import { SpinePruner } from './SpinePruner'
-import { SeededRNG } from '../../utils/SeededRNG'
+import { DungeonData, SeedGrowthState, SeedGrowthSettings, Room } from '../types'
+import { HeatMapCalculator } from '../processors/HeatMapCalculator'
+import { CorridorPathfinder } from '../processors/CorridorPathfinder'
+import { DungeonDecorator } from '../processors/DungeonDecorator'
+import { SpinePruner } from '../processors/SpinePruner'
+import { SeededRNG } from '../../../utils/SeededRNG'
 
 export class DungeonAssembler {
 

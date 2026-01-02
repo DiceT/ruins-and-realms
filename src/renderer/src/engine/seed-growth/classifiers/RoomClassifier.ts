@@ -14,7 +14,7 @@ import {
   Corridor,
   Connection,
   RoomClassificationMode
-} from './types'
+} from '../types'
 
 export class RoomClassifier {
   

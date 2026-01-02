@@ -27,7 +27,7 @@ import {
   SpineSeedState,
   GeneratorMode
 } from '../../seed-growth'
-import { DungeonAssembler } from '../../seed-growth/DungeonAssembler'
+import { DungeonAssembler } from '../../seed-growth/generators/DungeonAssembler'
 
 export interface DungeonControllerCallbacks {
   onStateChange?: (state: SeedGrowthState | SpineSeedState) => void

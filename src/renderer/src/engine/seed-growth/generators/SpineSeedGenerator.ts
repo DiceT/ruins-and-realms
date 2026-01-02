@@ -8,7 +8,7 @@
  * Phase 4: Wall Generation - walls drawn around final geometry
  */
 
-import { SeededRNG } from '../../utils/SeededRNG'
+import { SeededRNG } from '../../../utils/SeededRNG'
 import {
   SpineSeedSettings,
   SpineSeedState,
@@ -18,10 +18,10 @@ import {
   GridCoord,
   Direction,
   createDefaultSpineSeedSettings
-} from './types'
-import { ManualSeedConfig, SeedSide, RangeOrNumber } from './SeedDefinitions'
-import { createVirtualConfig, expandRepeats } from './ManualSeedSystem'
-import { TagManager } from './TagManager'
+} from '../types'
+import { ManualSeedConfig, SeedSide, RangeOrNumber } from '../SeedDefinitions'
+import { createVirtualConfig, expandRepeats } from '../ManualSeedSystem'
+import { TagManager } from '../TagManager'
 
 // Direction vectors
 const DIRECTIONS: { [key in Direction]: GridCoord } = {

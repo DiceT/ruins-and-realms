@@ -1,5 +1,5 @@
-import { GridCoord, Room, SeedGrowthState, Direction } from './types'
-import { SeededRNG } from '../../utils/SeededRNG'
+import { GridCoord, Room, SeedGrowthState, Direction } from '../types'
+import { SeededRNG } from '../../../utils/SeededRNG'
 
 interface PathNode {
   x: number

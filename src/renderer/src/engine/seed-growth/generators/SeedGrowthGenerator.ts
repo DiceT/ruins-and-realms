@@ -5,7 +5,7 @@
  * Territory grows outward from seeds; rooms/corridors emerge from growth patterns.
  */
 
-import { SeededRNG } from '../../utils/SeededRNG'
+import { SeededRNG } from '../../../utils/SeededRNG'
 import {
   SeedGrowthSettings,
   SeedGrowthState,
@@ -14,7 +14,7 @@ import {
   Seed,
   Region,
   Direction
-} from './types'
+} from '../types'
 
 // Direction vectors
 const DIRECTIONS: { [key in Direction]: GridCoord } = {

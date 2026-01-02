@@ -8,7 +8,7 @@
  * 4. Ensuring objects have necessary floor tiles.
  */
 
-import { DungeonData } from './types'
+import { DungeonData } from '../types'
 
 export class SpinePruner {
   /**

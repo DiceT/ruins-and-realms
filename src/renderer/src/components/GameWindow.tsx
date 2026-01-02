@@ -40,7 +40,7 @@ import {
   createDefaultSpineSeedSettings,
   GeneratorMode
 } from '../engine/seed-growth'
-import { DungeonAssembler } from '../engine/seed-growth/DungeonAssembler'
+import { DungeonAssembler } from '../engine/seed-growth/generators/DungeonAssembler'
 import { getSeedLabel } from '../engine/seed-growth/ManualSeedSystem'
 import { VisibilitySystem } from '../engine/systems/VisibilitySystem'
 import { PlayerController } from '../engine/systems/PlayerController'

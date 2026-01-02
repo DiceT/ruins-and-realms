@@ -11,7 +11,7 @@
  * - Corner tiles: +100 (strongly discourage corner connections)
  */
 
-import { Room } from './types'
+import { Room } from '../types'
 
 export class HeatMapCalculator {
   /**

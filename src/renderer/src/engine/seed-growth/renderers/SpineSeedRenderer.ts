@@ -7,7 +7,7 @@
  */
 
 import { Container, Graphics, Text, TextStyle, FederatedPointerEvent } from 'pixi.js'
-import { SpineSeedState, SpineSeedSettings, SpineTile, RoomSeed } from './types'
+import { SpineSeedState, SpineSeedSettings, SpineTile, RoomSeed } from '../types'
 
 // Color palette for room seeds
 const ROOM_COLORS = [

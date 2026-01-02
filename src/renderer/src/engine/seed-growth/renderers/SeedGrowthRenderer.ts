@@ -7,7 +7,7 @@
  */
 
 import { Container, Graphics, Text, TextStyle, FederatedPointerEvent } from 'pixi.js'
-import { SeedGrowthState, SeedGrowthSettings } from './types'
+import { SeedGrowthState, SeedGrowthSettings } from '../types'
 
 // Color palette for regions (HSL-based for distinct colors)
 const REGION_COLORS = [

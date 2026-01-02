@@ -4,7 +4,7 @@ import {
   DungeonData,
   Room,
   RoomSeed
-} from './types'
+} from '../types'
 
 /**
  * SpineSeedClassifier
