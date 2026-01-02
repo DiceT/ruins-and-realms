@@ -27,6 +27,7 @@ import {
   SpineSeedState,
   GeneratorMode
 } from '../../seed-growth'
+import { DungeonAssembler } from '../../seed-growth/DungeonAssembler'
 
 export interface DungeonControllerCallbacks {
   onStateChange?: (state: SeedGrowthState | SpineSeedState) => void
@@ -553,9 +554,12 @@ export class DungeonController {
     if (!this.dungeonViewRenderer || !this.spineSettings) return
     
     // Use Classifier to get clean DungeonData
-    const dungeonData = this.spineSeedClassifier.classify(state, this.spineSettings)
+    const rawData = this.spineSeedClassifier.classify(state, this.spineSettings)
     
-    // Pass dungeon data to renderer
+    // Assemble corridors, decorations, and prune
+    const dungeonData = DungeonAssembler.assembleSpine(rawData, this.spineSettings)
+    
+    // Pass assembled dungeon data to renderer
     this.dungeonViewRenderer.renderDungeonView(
       dungeonData, 
       this.spineSettings as any, 
