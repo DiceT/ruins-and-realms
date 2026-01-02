@@ -622,6 +622,9 @@ export interface SpineSeedState {
   /** Active spine heads for branching growth */
   activeHeads: SpineHead[]
 
+  /** Pre-calculated list of seeds to eject (The Seed Pouch) */
+  seedPouch: ManualSeedConfig[]
+
   /** Room seeds ejected from spine */
   roomSeeds: RoomSeed[]
   /** Index of next spine tile to eject from */

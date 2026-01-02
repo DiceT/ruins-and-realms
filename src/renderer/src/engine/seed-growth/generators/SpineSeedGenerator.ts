@@ -22,6 +22,7 @@ import {
 import { ManualSeedConfig, SeedSide, RangeOrNumber } from '../SeedDefinitions'
 import { createVirtualConfig, expandRepeats } from '../ManualSeedSystem'
 import { TrellisManager } from '../TrellisManager'
+import { PouchBuilder } from './PouchBuilder'
 import { TrellisContext } from '../trellises/ITrellis'
 
 // Direction vectors
@@ -54,12 +55,12 @@ export class SpineSeedGenerator {
   private settings: SpineSeedSettings
   private rng: SeededRNG
   private state: SpineSeedState
-  private localSeedQueue: ManualSeedConfig[] = []
+  // private localSeedQueue: ManualSeedConfig[] = [] // Removed, replaced by state.seedPouch
 
   constructor(settings?: SpineSeedSettings) {
     this.settings = settings ? { ...settings } : createDefaultSpineSeedSettings()
     this.rng = new SeededRNG(this.settings.seed)
-    this.localSeedQueue = expandRepeats(this.settings.manualSeedQueue || [])
+    // this.localSeedQueue = expandRepeats(this.settings.manualSeedQueue || [])
     this.state = this.createInitialState()
   }
 
@@ -70,7 +71,7 @@ export class SpineSeedGenerator {
   public reset(settings: SpineSeedSettings): void {
     this.settings = { ...settings }
     this.rng = new SeededRNG(settings.seed)
-    this.localSeedQueue = expandRepeats(this.settings.manualSeedQueue || [])
+    // this.localSeedQueue = expandRepeats(this.settings.manualSeedQueue || [])
     this.state = this.createInitialState()
   }
 
@@ -106,7 +107,10 @@ export class SpineSeedGenerator {
 
   /** Run until completion */
   public runToCompletion(): void {
+    let safety = 0
+    const MAX_LOOPS = 100000
     while (!this.state.isComplete) {
+      if (safety++ > MAX_LOOPS) throw new Error('SpineSeedGenerator: Infinite Loop detected in runToCompletion')
       this.step()
     }
   }
@@ -123,7 +127,10 @@ export class SpineSeedGenerator {
   /** Run current phase to completion, then return */
   public runPhaseToCompletion(): void {
     const startPhase = this.state.phase
+    let safety = 0
+    const MAX_LOOPS = 100000
     while (this.state.phase === startPhase && !this.state.isComplete) {
+      if (safety++ > MAX_LOOPS) throw new Error(`SpineSeedGenerator: Infinite Loop detected in runPhaseToCompletion (Phase: ${startPhase})`)
       this.step()
     }
   }
@@ -162,6 +169,7 @@ export class SpineSeedGenerator {
       loopCount: 0,
       spineComplete: false,
 
+      seedPouch: PouchBuilder.build(this.settings, this.rng), 
       roomSeeds: [],
       ejectionIndex: 0,
       distanceToNextEjection: this.calculateNextEjectionDistance(),
@@ -814,28 +822,21 @@ export class SpineSeedGenerator {
   private ejectSeed(spineTile: SpineTile): void {
       const { ejection, seedCount } = this.settings
       
-      // Helper: Dequeue next available manual seed or create virtual
+      // Helper: Dequeue next available from Pouch
       const getNextSeed = (): { config: ManualSeedConfig, isManual: boolean } => {
-          if (this.localSeedQueue.length > 0) {
-              const config = this.localSeedQueue.shift()!
+          if (this.state.seedPouch.length > 0) {
+              const config = this.state.seedPouch.shift()!
+              // "Virtual" seeds are in the pouch too, but we typically treat pouch items 
+              // as "Manual" if they came from queue. 
+              // For simplicity, we can assume Pouch Builder handled priority.
               return { config, isManual: true }
           }
+          // Fallback if pouch empty (shouldn't happen if built correctly to count)
+          console.warn('SpineSeedGenerator: Pouch empty, creating virtual fallback')
           return { config: createVirtualConfig(this.settings, this.rng), isManual: false }
       }
 
-      // 1. Get Primary Seed for Side 1 (Target Side)
-      // We look at the first seed to determine target side preferences, but we consume it.
-      // Wait, we need to know the 'side' before we loop.
-      // But the first seed dictating the side is only relevant if it's manual.
-      // So we peek? No, we just get it.
-      
-      // Actually, we must determine SIDES first.
-      // If the first seed in queue says "Left", we do Left.
-      // If it says "Both", we do Both.
-      // If it says "Any", we resolve global.
-      
-      // So we MUST peek or shift the first seed to plan the ejection.
-      // Let's shift it. This is "Seed 1".
+      // 1. Get Primary Seed (Seed 1)
       const seed1 = getNextSeed()
       const primaryConfig = seed1.config
       const isManual = seed1.isManual
@@ -845,8 +846,8 @@ export class SpineSeedGenerator {
       const symmetryChanceHit = (this.settings.symmetry > 0) && (this.rng.next() < this.settings.symmetry / 100)
       const enforceMirror = allowMirror && (symmetryChanceHit || this.settings.symmetryStrictPrimary)
 
-      // Determine Sides based on Seed 1
-      let sides: SeedSide[] = []
+      // Determine Sides - Only used to set direction. 
+      // ACTUAL ejection side is determined by logic below.
       const perps = PERPENDICULAR[spineTile.direction]
 
       // Resolve 'side' from config
@@ -859,6 +860,7 @@ export class SpineSeedGenerator {
           } 
       }
 
+      let sides: SeedSide[] = []
       if (enforceMirror) {
          sides = ['left', 'right'] 
       } else {
@@ -905,8 +907,6 @@ export class SpineSeedGenerator {
       // Create Seeds
       const createdSeeds: RoomSeed[] = []
       const secondarySeeds: RoomSeed[] = []
-
-      // Store the secondary config from the first side for potential mirroring
       let firstSecondaryConfig: ManualSeedConfig | null = null;
 
       for (let i = 0; i < sides.length; i++) {
@@ -919,136 +919,109 @@ export class SpineSeedGenerator {
         
         // Determine Config for this side
         let currentConfig: ManualSeedConfig
-        let currentIsManual: boolean
 
         if (i === 0) {
-            // First side uses the seed we already shifted (Seed 1)
+            // First side uses Seed 1
             currentConfig = primaryConfig
-            currentIsManual = isManual
         } else {
-            // Second side (e.g. Right when Both)
+            // Second side
             if (enforceMirror) {
-                // MIRROR: Reuse Seed 1 (Cloned effectively by creating new RoomSeed from same config)
-                // This means we DO NOT consume Seed 2 from queue.
+                // MIRROR: Reuse Seed 1
                 currentConfig = primaryConfig
-                currentIsManual = isManual
             } else {
-                // NOT MIRROR: Consume next seed from queue! (Seed 2)
-                const next = getNextSeed()
-                currentConfig = next.config
-                currentIsManual = next.isManual
+                // NOT MIRROR: Consume next seed from Pouch! (Seed 2)
+                currentConfig = getNextSeed().config
             }
         }
 
-        // Resolve extra seeds from generic Trellis ejection phase
-        // WE DO NOT HARD CODE ANY TRELLISES. EVER.
-        const trellisContext: TrellisContext = { rng: this.rng, state: this.state }
-        const extraConfigs: ManualSeedConfig[] = []
+        // --- SIMPLIFIED: Pouch Builder already handled clusters/trellises ---
+        // We just use currentConfig directly.
+        // If currentConfig has `_burstIndex` > 0, we respect it.
+        // Wait, current logic in PouchBuilder puts bursts IN THE POUCH.
+        // So `getNextSeed()` might return a burst child.
+        // This loop structure handles "Sides" (Left/Right ejection).
+        // If we are processing a BURST CHILD from the pouch, it should correspond to ONE EJECTION EVENT.
+        // The generator iterates `ejectionIndex`.
+        // Ideally, the generator just "pops one seed from pouch" and ejects it at `ejectionIndex`.
+        // BUT strict symmetry attempts to eject TWO seeds (Left/Right) at the SAME ejectionIndex.
+        // This implies that if Pouch has [A, B, C], and we do "Both Sides", we consume [A, B] for index 1?
+        // OR does "Both Sides" mean "Clone A" for Left/Right?
+        // EnforceMirror = Clone.
+        // TargetSide = Both = Two Seeds (A left, B right).
         
-        if (currentConfig.trellis) {
-            for (const t of currentConfig.trellis) {
-                const parsed = TrellisManager.getInstance().parseTrellisString(t)
-                if (parsed) {
-                    const trellisItem = TrellisManager.getInstance().getTrellis(parsed.id)
-                    if (trellisItem && trellisItem.phases.includes('ejection')) {
-                        const results = trellisItem.execute('ejection', trellisContext, currentConfig, parsed.args)
-                        if (Array.isArray(results)) {
-                            extraConfigs.push(...results)
-                        }
-                    }
+        // What if A is a Burst Child?
+        // Then we place A.
+        
+        // This block needs to handle "Should we double this ejection?".
+        // If currentConfig is `_burstIndex > 0`, it is PART OF A CLUSTER.
+        // Cluster placement usually assumes singular spine progression.
+        // If we force "Both Sides" on a cluster, it gets messy.
+        // Logic:
+        // Use `currentConfig` to determine dimensions/placement.
+        // Burst spacing is handled by Main Loop via `distanceToNextEjection` (Look ahead).
+        
+        // Resolve Dimensions
+        let dist: number
+        let w: number
+        let h: number
+
+        if (currentConfig === primaryConfig && enforceMirror) {
+                dist = sharedDist ?? this.resolveValue(currentConfig.distance)
+                w = sharedW ?? this.resolveValue(currentConfig.width)
+                h = sharedH ?? this.resolveValue(currentConfig.height)
+        } else {
+                dist = this.resolveValue(currentConfig.distance)
+                w = this.resolveValue(currentConfig.width)
+                h = this.resolveValue(currentConfig.height)
+        }
+        
+        const seed = this.createRoomSeedFromConfig(spineTile, dir, currentConfig, 'primary', dist, w, h)
+        
+        if (seed) {
+            // Cluster ID transfer
+            // If the config has a cluster ID or burst index, assign it.
+            // PouchBuilder doesn't set clusterId string, just metadata.
+            // We can generate one if needed, or rely on _burstIndex.
+            // Using `_burstIndex` as is.
+            createdSeeds.push(seed)
+            
+            // 2. Secondary/Paired Seed
+            // Only if pairedEjection is ON and we have budget
+            // AND (burstIndex === 0 OR we want paired bursts?) -> Usually just lead.
+            const burstIndex = (currentConfig as any)._burstIndex || 0
+            if (burstIndex === 0 && this.settings.ejection.pairedEjection && this.state.roomSeeds.length < seedCount) {
+                let secConfig: ManualSeedConfig;
+                const hasStrictSecSymmetry = this.settings.symmetryStrictSecondary && firstSecondaryConfig;
+
+                if (i > 0 && enforceMirror && hasStrictSecSymmetry) {
+                    secConfig = firstSecondaryConfig!;
+                } else {
+                    secConfig = getNextSeed().config;
                 }
-            }
-        }
-
-        // Determine Cluster ID if we have extra burst seeds
-        const clusterId = extraConfigs.length > 0 ? (currentConfig.id || `cluster_${this.state.roomSeeds.length}`) : undefined
-        
-        // Final list of seeds to spawn for this ejection step
-        const allBurstConfigs = [
-            { config: currentConfig, burstIndex: 0, burstSpacing: 0 },
-            ...extraConfigs.map(c => ({
-                config: c,
-                burstIndex: (c as any)._burstIndex || 0,
-                burstSpacing: (c as any)._burstSpacing || 0
-            }))
-        ]
-
-        for (const burstEntry of allBurstConfigs) {
-            const { config, burstIndex, burstSpacing } = burstEntry
-            
-            // Limit check: Only the first seed of a cluster (or non-clustered seeds) counts against limit
-            const isClusterMember = clusterId !== undefined && burstIndex > 0
-            if (!isClusterMember && this.state.roomSeeds.length >= seedCount) break
-
-            // Find spine tile for this burst index
-            const spineIndex = (this.state.ejectionIndex - 1) + (burstIndex * burstSpacing)
-            if (spineIndex >= this.state.spineTiles.length) break
-            
-            const burstTile = this.state.spineTiles[spineIndex]
-
-            // Resolve Dimensions for this specific seed
-            let dist: number
-            let w: number
-            let h: number
-
-            if (config === primaryConfig && enforceMirror) {
-                 dist = sharedDist ?? this.resolveValue(config.distance)
-                 w = sharedW ?? this.resolveValue(config.width)
-                 h = sharedH ?? this.resolveValue(config.height)
-            } else {
-                 dist = this.resolveValue(config.distance)
-                 w = this.resolveValue(config.width)
-                 h = this.resolveValue(config.height)
-            }
-            
-            const seed = this.createRoomSeedFromConfig(burstTile, dir, config, 'primary', dist, w, h)
-            
-            if (seed) {
-                seed.clusterId = clusterId
-                createdSeeds.push(seed)
                 
-                // 2. Secondary Seed (Paired)
-                // Paired ejection only applies to the lead burst seed (index 0)
-                if (burstIndex === 0 && this.settings.ejection.pairedEjection && this.state.roomSeeds.length < seedCount) {
-                    let secConfig: ManualSeedConfig;
-                    const hasStrictSecSymmetry = this.settings.symmetryStrictSecondary && firstSecondaryConfig;
+                const { minDistance, maxDistance } = this.settings.ejection
+                const offset = sharedSecOffset ?? this.rng.nextInt(minDistance, maxDistance)
+                const secDist = dist + offset
+                
+                let secW = this.resolveValue(secConfig.width)
+                let secH = this.resolveValue(secConfig.height)
+                
+                if (enforceMirror && this.settings.symmetryStrictSecondary) {
+                    secW = sharedSecW ?? this.resolveValue(secConfig.width);
+                    secH = sharedSecH ?? this.resolveValue(secConfig.height);
+                }
 
-                    if (i > 0 && enforceMirror && hasStrictSecSymmetry) {
-                        secConfig = firstSecondaryConfig!;
-                    } else {
-                        const nextSec = getNextSeed();
-                        secConfig = nextSec.config;
-                    }
-                    
-                    const { minDistance, maxDistance } = this.settings.ejection
-                    const offset = sharedSecOffset ?? this.rng.nextInt(minDistance, maxDistance)
-                    const secDist = dist + offset
-                    
-                    let secW = this.resolveValue(secConfig.width)
-                    let secH = this.resolveValue(secConfig.height)
-                    
-                    if (enforceMirror && this.settings.symmetryStrictSecondary) {
-                        secW = sharedSecW ?? this.resolveValue(secConfig.width);
-                        secH = sharedSecH ?? this.resolveValue(secConfig.height);
-                    }
-
-                    const s2 = this.createRoomSeedFromConfig(burstTile, dir, secConfig, 'secondary', secDist, secW, secH)
-                    if (s2) {
-                        s2.clusterId = clusterId // Mirror also shares cluster ID
-                        secondarySeeds.push(s2)
-                        createdSeeds.push(s2)
-                        
-                        if (i === 0) {
-                            firstSecondaryConfig = secConfig
-                        }
-                    }
+                const s2 = this.createRoomSeedFromConfig(spineTile, dir, secConfig, 'secondary', secDist, secW, secH)
+                if (s2) {
+                    secondarySeeds.push(s2)
+                    createdSeeds.push(s2)
+                    if (i === 0) firstSecondaryConfig = secConfig
                 }
             }
         }
-
       }
       
-      // Link partners if symmetric pair created
+      // Link partners
       if (enforceMirror) {
           if (createdSeeds.length === 2) {
               createdSeeds[0].partnerId = createdSeeds[1].id
@@ -1058,6 +1031,20 @@ export class SpineSeedGenerator {
               secondarySeeds[0].partnerId = secondarySeeds[1].id
               secondarySeeds[1].partnerId = secondarySeeds[0].id
           }
+      }
+
+      // Set Next Distance (Look ahead at seedPouch[0])
+      if (this.state.seedPouch.length > 0) {
+          const next = this.state.seedPouch[0]
+          // Check for burst spacing metadata (injected by PouchBuilder)
+          const burstSpacing = (next as any)._burstSpacing
+          if (typeof burstSpacing === 'number') { // 0 is valud
+               this.state.distanceToNextEjection = burstSpacing
+          } else {
+               this.state.distanceToNextEjection = this.calculateNextEjectionDistance()
+          }
+      } else {
+         this.state.distanceToNextEjection = 100 // Done
       }
   }
 

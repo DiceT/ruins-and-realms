@@ -421,12 +421,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           const handleMove = (x, y) => {
             if (!dungeonViewRendererRef.current || !visibilitySystemRef.current) return
 
-            // Update Visibility
-            // We need a collision function for LOS.
-            // Simple: blocked if NOT in walkable set? Or strict walls?
-            // Walls are tiles NOT in navigable space (simplified).
-            // Actually, better to check if tile is a WALL or BLOCKED in state.
-            // For now, let's assume anything NOT floor is a wall.
+            // Update Visibility (Simplified LOS logic for now)
             const isWall = (tx, ty) => !seen.has(`${tx},${ty}`)
 
             visibilitySystemRef.current.computeVisibility(
@@ -435,8 +430,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
               isWall
             )
 
-            // Update Renderer
-            // Update Renderer
             dungeonViewRendererRef.current.updateVisibilityState(
               spineSeedSettings.gridWidth,
               spineSeedSettings.gridHeight,
@@ -445,9 +438,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
               LIGHT_PROFILES[activeLight]
             )
 
-
-
-            // Focus Camera (Only if player is visible)
+            // NOTE: We do NOT force focus on every move here anymore, 
+            // relying on the initial focus or user panning.
+            // But if tracking is desired, we could add it back.
+            // For now, let's Stick to "Center on Player when Player is enabled" request.
+            // If showPlayerRef is true, we track?
             if (showPlayerRef.current) {
               dungeonViewRendererRef.current.focusOnTile(x, y)
             }
@@ -461,8 +456,15 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             handleMove
           )
 
-          // Initial Update
+          // Initial Visual Update
           handleMove(startX, startY)
+
+          // FORCE FOCUS CAMERA ON START/TOGGLE
+          // We do this explicitly here to ensure valid start coords are used.
+          if (showPlayerRef.current || isToggleOn) {
+            console.log('[GameWindow] Forcing Camera Focus to', startX, startY)
+            dungeonViewRendererRef.current.focusOnTile(startX, startY)
+          }
         }
 
 
@@ -520,7 +522,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         playerControllerRef.current = null
       }
     }
-  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, showRoomNumbers, showWalkmap, activeLight]) // Added activeLight dependency to re-init logic if light changes? No, handleLightChange separately.
+  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, activeLight]) // Added activeLight dependency to re-init logic if light changes? No, handleLightChange separately.
 
   // Update Light Profile when activeLight changes
   useEffect(() => {
@@ -1430,6 +1432,20 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             showSpineDebug={showSpineDebug}
             onToggleSpineDebug={(val) => {
               setShowSpineDebug(val)
+
+              // Sync to Settings (for Renderer Phase A-C)
+              setSpineSeedSettings(prev => ({
+                ...prev,
+                debug: {
+                  ...prev.debug,
+                  showSpine: val,
+                  showSeeds: val,
+                  showRoomGrowth: val,
+                  showWalls: val
+                }
+              }))
+
+              // Sync to Dungeon View Renderer (Phase D Overlay)
               const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
               if (renderer) {
                 renderer.setShowSpineDebug(val)
