@@ -20,6 +20,7 @@ import {
   SpineSeedRenderer,
   DungeonViewRenderer,
   RoomClassifier,
+  SpineSeedClassifier,
   SeedGrowthSettings,
   SpineSeedSettings,
   SeedGrowthState,
@@ -57,6 +58,7 @@ export class DungeonController {
   private seedGrowthRenderer: SeedGrowthRenderer | null = null
   private spineSeedRenderer: SpineSeedRenderer | null = null
   private dungeonViewRenderer: DungeonViewRenderer | null = null
+  private spineSeedClassifier: SpineSeedClassifier = new SpineSeedClassifier()
   
   // Theme
   private themeManager: ThemeManager | null = null
@@ -550,39 +552,20 @@ export class DungeonController {
   private renderSpineDungeonView(state: SpineSeedState): void {
     if (!this.dungeonViewRenderer || !this.spineSettings) return
     
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawSeeds = (state.roomSeeds || []) as any[]
+    // Use Classifier to get clean DungeonData
+    const dungeonData = this.spineSeedClassifier.classify(state, this.spineSettings)
     
-    // Prune small rooms
-    const prunedRooms = rawSeeds
-      .filter(seed => seed.currentBounds.w > 1 && seed.currentBounds.h > 1)
-      .map(seed => ({
-        id: seed.id,
-        regionId: 0,
-        tiles: seed.tiles,
-        bounds: seed.currentBounds,
-        area: seed.tiles.length,
-        centroid: {
-          x: seed.currentBounds.x + Math.floor(seed.currentBounds.w / 2),
-          y: seed.currentBounds.y + Math.floor(seed.currentBounds.h / 2)
-        }
-      }))
-    
-    // Pass dungeon data
-    this.dungeonViewRenderer.renderDungeonView({
-      gridWidth: this.spineSettings.gridWidth,
-      gridHeight: this.spineSettings.gridHeight,
-      rooms: prunedRooms,
-      spine: state.spineTiles,
-      spineWidth: this.spineSettings.spine.spineWidth,
-      seed: this.spineSettings.seed,
-      objects: state.objects
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any, this.spineSettings as any, this.showRoomNumbers, this.showWalkmap)
+    // Pass dungeon data to renderer
+    this.dungeonViewRenderer.renderDungeonView(
+      dungeonData, 
+      this.spineSettings as any, 
+      this.showRoomNumbers, 
+      this.showWalkmap
+    )
     
     // Initialize player if generation is complete
     if (state.spineComplete) {
-      this.initializePlayer(state, prunedRooms)
+      this.initializePlayer(state, dungeonData.rooms)
     }
   }
 
