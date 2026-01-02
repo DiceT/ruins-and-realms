@@ -170,4 +170,32 @@ export class TrellisManager {
       this.processPhase(phase, context, room)
     }
   }
+  /**
+   * Process a single seed through trellises (e.g. 'ejection' phase).
+   * This allows a seed to be transformed or expanded (bursts) BEFORE being added to the final pouch.
+   * 
+   * @param seed The candidate seed
+   * @param context Execution context
+   * @returns Array of resulting seeds (usually [original] or [original, ...extras])
+   */
+  public processSeed(seed: any, context: TrellisContext): any[] {
+      const results: any[] = [seed]
+      
+      if (seed.trellis) {
+           for (const tString of seed.trellis) {
+               const parsed = this.parseTrellisString(tString)
+               if (parsed) {
+                   const trellis = this.getTrellis(parsed.id)
+                   // Run 'ejection' phase logic (e.g. #spawn)
+                   if (trellis && trellis.phases.includes('ejection')) {
+                       const extras = trellis.execute('ejection', context, seed, parsed.args)
+                       if (Array.isArray(extras)) {
+                           results.push(...extras)
+                       }
+                   }
+               }
+           }
+      }
+      return results
+  }
 }
