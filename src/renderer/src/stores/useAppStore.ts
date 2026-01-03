@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 
-export type GamePhase = 'loading' | 'menu' | 'adventure'
+export type GamePhase = 'loading' | 'menu' | 'adventure' | 'pixi-test' | 'dungeon-test'
 
 interface AppState {
   gamePhase: GamePhase

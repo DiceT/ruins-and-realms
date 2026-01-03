@@ -56,8 +56,7 @@ export class LabelLayer implements ILayer {
       fontFamily: 'Arial',
       fontSize: Math.max(10, Math.floor(tileSize / 1.5)),
       fontWeight: 'bold',
-      fill: '#FFFFFF',
-      stroke: { color: '#000000', width: 2 },
+      fill: '#000000',
       align: 'center'
     })
 

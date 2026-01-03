@@ -47,20 +47,10 @@ export function toFloorRenderData(
 }
 
 /**
- * Convert to WallRenderData
+ * Convert to WallRenderData (expects pre-computed wall positions)
  */
-export function toWallRenderData(
-  rooms: Room[],
-  corridorTiles: TilePosition[],
-  gridWidth: number,
-  gridHeight: number
-): WallRenderData {
-  return {
-    rooms: rooms.map(roomToRenderData),
-    corridorTiles,
-    gridWidth,
-    gridHeight
-  }
+export function toWallRenderData(wallPositions: Set<string>): WallRenderData {
+  return { wallPositions }
 }
 
 /**
@@ -116,7 +106,7 @@ export function toObjectLayerData(objects: DungeonObject[]): ObjectLayerData {
  */
 export function toDebugRenderData(
   rooms: Room[],
-  spineTiles: TilePosition[],
+  heatScores?: Map<string, number>,
   walkableTiles?: Set<string>,
   roomCosts?: Map<string, number>,
   roomTraversals?: Map<string, number>,
@@ -124,7 +114,7 @@ export function toDebugRenderData(
 ): DebugRenderData {
   return {
     rooms: rooms.map(roomToRenderData),
-    spineTiles,
+    heatScores,
     walkableTiles,
     roomCosts,
     roomTraversals,
@@ -137,14 +127,15 @@ export function toDebugRenderData(
  */
 export function toSpineDebugRenderData(
   spinePath: TilePosition[],
-  ejectedSeeds: Array<{ position: TilePosition; id: string; bounds?: { x: number; y: number; w: number; h: number } }>
+  ejectedSeeds: Array<{ position: TilePosition; id: string; bounds?: { x: number; y: number; w: number; h: number }; sourceSpineTile?: TilePosition }>
 ): SpineDebugRenderData {
   return {
     spinePath,
     ejectedSeeds: ejectedSeeds.map(s => ({
       position: s.position,
       id: s.id,
-      bounds: s.bounds
+      bounds: s.bounds,
+      sourceSpineTile: s.sourceSpineTile
     }))
   }
 }

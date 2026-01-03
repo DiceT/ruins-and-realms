@@ -130,71 +130,79 @@ export class VisibilityLayer implements ILayer {
     // Update sub-layer visibility
     this.entityLayer.visible = showPlayer
 
-    // 1. FOG
+    // 1. FOG - ALWAYS RENDER (visibility controlled by container)
     this.fogGraphics.clear()
     
-    if (showFog) {
-      // Border fog (infinite blackness outside grid)
-      const gloomSize = 10000
-      const totalW = gridWidth * tileSize
-      const totalH = gridHeight * tileSize
+    // Border fog (infinite blackness outside grid)
+    const gloomSize = 10000
+    const totalW = gridWidth * tileSize
+    const totalH = gridHeight * tileSize
 
-      this.fogGraphics.rect(-gloomSize, -gloomSize, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
-      this.fogGraphics.rect(-gloomSize, totalH, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
-      this.fogGraphics.rect(-gloomSize, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
-      this.fogGraphics.rect(totalW, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
+    this.fogGraphics.rect(-gloomSize, -gloomSize, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
+    this.fogGraphics.rect(-gloomSize, totalH, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
+    this.fogGraphics.rect(-gloomSize, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
+    this.fogGraphics.rect(totalW, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
 
-      // Per-tile fog based on vision state
-      for (let y = 0; y < gridHeight; y++) {
-        for (let x = 0; x < gridWidth; x++) {
-          const idx = y * gridWidth + x
-          const state = visionGrid[idx]
-          
-          const px = x * tileSize
-          const py = y * tileSize
-          
-          if (state === VISION_STATE.VISIBLE) {
-            // Visible: Transparent
-          } else if (state === VISION_STATE.EXPLORED) {
-            // Explored: 75% opacity black
-            this.fogGraphics.rect(px, py, tileSize, tileSize).fill({ color: 0x000000, alpha: 0.75 })
-          } else {
-            // Unexplored: 100% opacity black
-            this.fogGraphics.rect(px, py, tileSize, tileSize).fill({ color: 0x000000, alpha: 1.0 })
-          }
+    // Per-tile fog based on vision state
+    for (let y = 0; y < gridHeight; y++) {
+      for (let x = 0; x < gridWidth; x++) {
+        const idx = y * gridWidth + x
+        const state = visionGrid[idx]
+        
+        const px = x * tileSize
+        const py = y * tileSize
+        
+        if (state === VISION_STATE.VISIBLE) {
+          // Visible: Transparent
+        } else if (state === VISION_STATE.EXPLORED) {
+          // Explored: 75% opacity black
+          this.fogGraphics.rect(px, py, tileSize, tileSize).fill({ color: 0x000000, alpha: 0.75 })
+        } else {
+          // Unexplored: 100% opacity black
+          this.fogGraphics.rect(px, py, tileSize, tileSize).fill({ color: 0x000000, alpha: 1.0 })
         }
       }
     }
 
-    // 2. PLAYER
-    if (showPlayer) {
-      const cx = (playerX + 0.5) * tileSize
-      const cy = (playerY + 0.5) * tileSize
-      const r = tileSize * 0.4
-      this.playerSprite.clear()
-      this.playerSprite.circle(cx, cy, r).fill(0xFFA500).stroke({ width: 2, color: 0xFFFFFF })
-    } else {
-      this.playerSprite.clear()
+    // 2. PLAYER - ALWAYS RENDER (visibility controlled by container)
+    const cx = (playerX + 0.5) * tileSize
+    const cy = (playerY + 0.5) * tileSize
+    const r = tileSize * 0.4
+    this.playerSprite.clear()
+    this.playerSprite.circle(cx, cy, r).fill(0xFFA500).stroke({ width: 2, color: 0xFFFFFF })
+
+    // 3. LIGHTING - ALWAYS RENDER (visibility controlled by container)
+    let tex = this.lightTextureCache.get(lightProfile.type)
+    if (!tex) {
+      tex = this.generateLightTexture(lightProfile)
+      this.lightTextureCache.set(lightProfile.type, tex)
     }
 
-    // 3. LIGHTING
-    if (showLight) {
-      let tex = this.lightTextureCache.get(lightProfile.type)
-      if (!tex) {
-        tex = this.generateLightTexture(lightProfile)
-        this.lightTextureCache.set(lightProfile.type, tex)
-      }
+    this.lightLayer.texture = tex
+    this.lightLayer.anchor.set(0.5)
+    this.lightLayer.width = lightProfile.dimRadius * 2 * tileSize
+    this.lightLayer.height = lightProfile.dimRadius * 2 * tileSize
+    this.lightLayer.x = (playerX + 0.5) * tileSize
+    this.lightLayer.y = (playerY + 0.5) * tileSize
+  }
 
-      this.lightLayer.texture = tex
-      this.lightLayer.anchor.set(0.5)
-      this.lightLayer.width = lightProfile.dimRadius * 2 * tileSize
-      this.lightLayer.height = lightProfile.dimRadius * 2 * tileSize
-      this.lightLayer.x = (playerX + 0.5) * tileSize
-      this.lightLayer.y = (playerY + 0.5) * tileSize
-      this.lightLayer.visible = true
-    } else {
-      this.lightLayer.visible = false
-    }
+  /**
+   * Backward-compatible update() method - delegates to render()
+   * Used by DungeonViewRenderer.updateVisibilityState()
+   */
+  update(
+    gridWidth: number,
+    gridHeight: number,
+    visionGrid: VisionGrid,
+    playerX: number,
+    playerY: number,
+    lightProfile: LightProfile,
+    config: VisibilityRenderConfig
+  ): void {
+    this.render(
+      { gridWidth, gridHeight, visionGrid, playerX, playerY, lightProfile },
+      config
+    )
   }
 
   private generateLightTexture(profile: LightProfile): Texture {

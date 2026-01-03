@@ -61,8 +61,17 @@ export const LoadingScreen = () => {
   useEffect(() => {
     if (!isLoaded) return
 
-    const handleKeyPress = () => {
-      setGamePhase('menu')
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Developer shortcuts for test pages
+      if (e.key === 't' || e.key === 'T') {
+        // 'T' - Basic @pixi/react test (shapes)
+        setGamePhase('pixi-test')
+      } else if (e.key === 'd' || e.key === 'D') {
+        // 'D' - Dungeon test (full generation + new renderer)
+        setGamePhase('dungeon-test')
+      } else {
+        setGamePhase('menu')
+      }
     }
 
     const handleClick = () => {

@@ -63,13 +63,23 @@ export class ObjectLayer implements ILayer {
     const px = position.x * size
     const py = position.y * size
 
-    switch (type) {
-      case 'door':
-        // Simple door marker
-        this.graphics.rect(px + 2, py + 2, size - 4, size - 4)
-        this.graphics.fill({ color: 0x8B4513 }) // Brown
-        break
+    // Handle door variations (door_north, door_south, etc.)
+    if (type.startsWith('door')) {
+      // Simple door marker - brown square
+      this.graphics.rect(px + 2, py + 2, size - 4, size - 4)
+      this.graphics.fill({ color: 0x8B4513 }) // Brown
+      return
+    }
 
+    // Handle stairs variations
+    if (type.startsWith('stairs')) {
+      // Gray stairs marker
+      this.graphics.rect(px + 2, py + 2, size - 4, size - 4)
+      this.graphics.fill({ color: type === 'stairs_up' ? 0x00AA00 : 0xAA0000 })
+      return
+    }
+
+    switch (type) {
       case 'trap':
         // Red X marker
         this.graphics.moveTo(px + 2, py + 2)

@@ -12,6 +12,7 @@ export interface SpineSeedData {
   position: TilePosition
   id: string
   bounds?: Bounds
+  sourceSpineTile?: TilePosition
 }
 
 export interface SpineDebugRenderData {
@@ -85,44 +86,25 @@ export class SpineDebugLayer implements ILayer {
       this.pathGraphics.stroke({ width: 2, color: 0x8B00FF, alpha: 0.8 })
     }
 
-    // Render ejected seeds (yellow markers)
-    const labelStyle = new TextStyle({
-      fontFamily: 'Arial',
-      fontSize: Math.max(8, Math.floor(tileSize / 2)),
-      fontWeight: 'bold',
-      fill: '#FFFF00',
-      stroke: { color: '#000000', width: 1 }
-    })
-
-    for (let i = 0; i < ejectedSeeds.length; i++) {
-      const seed = ejectedSeeds[i]
+    // Render ejected seeds (orange markers with white-blue border, no labels)
+    for (const seed of ejectedSeeds) {
       const cx = (seed.position.x + 0.5) * tileSize
       const cy = (seed.position.y + 0.5) * tileSize
 
-      // Yellow circle marker
+      // Orange circle marker with white-blue (cyan) border
       this.seedGraphics.circle(cx, cy, tileSize * 0.3)
-      this.seedGraphics.fill({ color: 0xFFFF00, alpha: 0.8 })
-      this.seedGraphics.stroke({ width: 1, color: 0x000000 })
+      this.seedGraphics.fill({ color: 0xFFA500, alpha: 0.9 }) // Orange
+      this.seedGraphics.stroke({ width: 2, color: 0x87CEEB }) // Light blue/white-blue
 
-      // Draw connecting line to next seed
-      if (i < ejectedSeeds.length - 1) {
-        const next = ejectedSeeds[i + 1]
-        const nx = (next.position.x + 0.5) * tileSize
-        const ny = (next.position.y + 0.5) * tileSize
-        this.seedGraphics.moveTo(cx, cy)
-        this.seedGraphics.lineTo(nx, ny)
-        this.seedGraphics.stroke({ width: 1, color: 0xFFFF00, alpha: 0.5 })
+      // Draw line from source spine tile to seed (if we have sourceSpineTile)
+      if ((seed as any).sourceSpineTile) {
+        const source = (seed as any).sourceSpineTile
+        const sx = (source.x + 0.5) * tileSize
+        const sy = (source.y + 0.5) * tileSize
+        this.seedGraphics.moveTo(sx, sy)
+        this.seedGraphics.lineTo(cx, cy)
+        this.seedGraphics.stroke({ width: 1, color: 0xFFA500, alpha: 0.7 })
       }
-
-      // Add seed ID label
-      const label = new Text({
-        text: seed.id,
-        style: labelStyle
-      })
-      label.anchor.set(0.5, 1.5)
-      label.x = cx
-      label.y = cy
-      this.labelContainer.addChild(label)
 
       // Draw room bounds if available
       if (seed.bounds) {
