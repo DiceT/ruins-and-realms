@@ -3,11 +3,13 @@
  * 
  * PixiJS rendering for seed growth dungeon visualization.
  * Supports debug overlays for regions, frontier, rooms, corridors, and symmetry.
- * Includes pan and zoom controls.
+ * Uses CameraController and InputController for pan/zoom.
  */
 
-import { Container, Graphics, Text, TextStyle, FederatedPointerEvent } from 'pixi.js'
+import { Container, Graphics, Text, TextStyle } from 'pixi.js'
 import { SeedGrowthState, SeedGrowthSettings } from '../types'
+import { CameraController } from '../../systems/CameraController'
+import { InputController } from '../../systems/InputController'
 
 // Color palette for regions (HSL-based for distinct colors)
 const REGION_COLORS = [
@@ -30,16 +32,9 @@ export class SeedGrowthRenderer {
   private contentContainer: Container // Contains all renderable content, for pan/zoom
   private tileSize: number = 8
   
-  // Pan/zoom state
-  private isPanning: boolean = false
-  private lastPanPos: { x: number; y: number } = { x: 0, y: 0 }
-  private zoom: number = 1.0
-  private readonly minZoom = 0.25
-  private readonly maxZoom = 4.0
-  
-  // View dimensions for center-based zoom
-  private viewWidth: number = 800
-  private viewHeight: number = 600
+  // Camera and input controllers (unified system)
+  private cameraController: CameraController
+  private inputController: InputController
   
   // Graphics layers
   private gridLayer: Graphics
@@ -91,64 +86,19 @@ export class SeedGrowthRenderer {
     this.statusText.y = 10
     this.container.addChild(this.statusText)
 
-    // Setup pan/zoom event handlers
-    this.setupPanZoom()
-  }
-
-  private setupPanZoom(): void {
-    // Hit area for the container (so we can receive events)
-    this.container.hitArea = { contains: () => true }
+    // Initialize camera controller
+    this.cameraController = new CameraController(this.contentContainer, {
+      minZoom: 0.25,
+      maxZoom: 4.0,
+      initialZoom: 1.0
+    })
+    this.cameraController.setOnZoomChange(() => this.updateGridLines())
     
-    // Pan: right mouse or middle mouse drag (LMB reserved for painting)
-    this.container.on('pointerdown', (e: FederatedPointerEvent) => {
-      if (e.button === 2 || e.button === 1) { // Right or middle mouse
-        this.isPanning = true
-        this.lastPanPos = { x: e.globalX, y: e.globalY }
-      }
-    })
-
-    this.container.on('pointermove', (e: FederatedPointerEvent) => {
-      if (this.isPanning) {
-        const dx = e.globalX - this.lastPanPos.x
-        const dy = e.globalY - this.lastPanPos.y
-        this.contentContainer.x += dx
-        this.contentContainer.y += dy
-        this.lastPanPos = { x: e.globalX, y: e.globalY }
-      }
-    })
-
-    this.container.on('pointerup', () => {
-      this.isPanning = false
-    })
-
-    this.container.on('pointerupoutside', () => {
-      this.isPanning = false
-    })
-
-    // Zoom: mouse wheel - zoom towards VIEW CENTER (not mouse position)
-    this.container.on('wheel', (e: WheelEvent) => {
-      e.preventDefault()
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1
-      const newZoom = Math.min(this.maxZoom, Math.max(this.minZoom, this.zoom * zoomFactor))
-      
-      if (newZoom !== this.zoom) {
-        // Zoom towards view center (not mouse position) to avoid sliding
-        const centerX = this.viewWidth / 2
-        const centerY = this.viewHeight / 2
-        
-        const beforeZoomX = (centerX - this.contentContainer.x) / this.zoom
-        const beforeZoomY = (centerY - this.contentContainer.y) / this.zoom
-        
-        this.zoom = newZoom
-        this.contentContainer.scale.set(this.zoom)
-        
-        // Adjust position to keep view center stable
-        this.contentContainer.x = centerX - beforeZoomX * this.zoom
-        this.contentContainer.y = centerY - beforeZoomY * this.zoom
-
-        // Update grid lines to maintain constant screen-space width
-        this.updateGridLines()
-      }
+    // Initialize input controller
+    this.inputController = new InputController({
+      container: this.container,
+      onPanMove: (dx, dy) => this.cameraController.pan(dx, dy),
+      onZoom: (delta) => this.cameraController.zoomToCenter(delta)
     })
   }
 
@@ -164,50 +114,29 @@ export class SeedGrowthRenderer {
 
   /** Center the view on the grid */
   public centerView(gridWidth: number, gridHeight: number, viewWidth: number, viewHeight: number): void {
-    // Store view dimensions for center-based zoom
-    this.viewWidth = viewWidth
-    this.viewHeight = viewHeight
-    
-    const contentWidth = gridWidth * this.tileSize * this.zoom
-    const contentHeight = gridHeight * this.tileSize * this.zoom
-    
-    this.contentContainer.x = (viewWidth - contentWidth) / 2
-    this.contentContainer.y = (viewHeight - contentHeight) / 2
+    this.cameraController.setViewDimensions(viewWidth, viewHeight)
+    this.cameraController.centerOnGrid(gridWidth, gridHeight, this.tileSize)
   }
 
   /** Reset zoom to 1.0 and center */
   public resetView(gridWidth: number, gridHeight: number, viewWidth: number, viewHeight: number): void {
-    this.zoom = 1.0
-    this.contentContainer.scale.set(1.0)
+    this.cameraController.setZoom(1.0)
     this.centerView(gridWidth, gridHeight, viewWidth, viewHeight)
   }
 
   /** Get current transform for syncing to another renderer */
   public getTransform(): { x: number; y: number; scale: number } {
-    return {
-      x: this.contentContainer.x,
-      y: this.contentContainer.y,
-      scale: this.zoom
-    }
+    return this.cameraController.getTransform()
   }
 
   /** Sync position and zoom from another renderer */
   public syncTransform(x: number, y: number, scale: number): void {
-    this.contentContainer.x = x
-    this.contentContainer.y = y
-    this.zoom = scale
-    this.contentContainer.scale.set(scale)
+    this.cameraController.syncFrom(x, y, scale)
   }
 
   /** Convert screen coordinates (relative to Pixi canvas) to grid coordinates */
   public screenToGrid(screenX: number, screenY: number): { x: number; y: number } | null {
-    // Use Pixi's toLocal to properly handle the full transform chain
-    const local = this.contentContainer.toLocal({ x: screenX, y: screenY })
-    
-    const gridX = Math.floor(local.x / this.tileSize)
-    const gridY = Math.floor(local.y / this.tileSize)
-    
-    return { x: gridX, y: gridY }
+    return this.cameraController.screenToTile(screenX, screenY, this.tileSize)
   }
 
 

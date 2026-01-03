@@ -75,6 +75,10 @@ export class DungeonExplorationManager {
     }
   }
 
+  public getPlayerPosition(): { x: number; y: number } {
+    return { x: this.playerController.x, y: this.playerController.y }
+  }
+
   /**
    * Internal handler for player movement
    */
@@ -90,7 +94,7 @@ export class DungeonExplorationManager {
   /**
    * Recompute visibility and update renderer
    */
-  private updateVisibility(): void {
+  public updateVisibility(): void {
     const lightProfile = LIGHT_PROFILES[this.activeLight]
     const isWall = (tx: number, ty: number) => !this.walkableSet.has(`${tx},${ty}`)
     

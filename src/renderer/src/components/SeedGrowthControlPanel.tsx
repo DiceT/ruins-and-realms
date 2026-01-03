@@ -405,21 +405,6 @@ export const SeedGrowthControlPanel: React.FC<SeedGrowthControlPanelProps> = ({
                 </div>
             </div>
 
-            {/* View as Dungeon Toggle */}
-            <div style={{ ...sectionStyle, marginBottom: 16 }}>
-                <button
-                    style={{
-                        ...(viewAsDungeon ? activeButtonStyle : buttonStyle),
-                        width: '100%',
-                        padding: '8px 12px',
-                        fontSize: 12
-                    }}
-                    onClick={() => onViewAsDungeonChange(!viewAsDungeon)}
-                >
-                    {viewAsDungeon ? '✓ View as Dungeon' : 'View as Dungeon'}
-                </button>
-            </div>
-
             {/* Seed & Actions */}
             <div style={sectionStyle}>
                 <div style={rowStyle}>

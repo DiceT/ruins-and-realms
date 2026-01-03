@@ -3,11 +3,13 @@
  * 
  * PixiJS rendering for spine-seed dungeon visualization.
  * 4-layer debug view: Spine, Seeds, Rectangles, Walls
- * Includes pan and zoom controls.
+ * Uses CameraController and InputController for pan/zoom.
  */
 
-import { Container, Graphics, Text, TextStyle, FederatedPointerEvent } from 'pixi.js'
-import { SpineSeedState, SpineSeedSettings, SpineTile, RoomSeed } from '../types'
+import { Container, Graphics, Text, TextStyle } from 'pixi.js'
+import { SpineSeedState, SpineSeedSettings } from '../types'
+import { CameraController } from '../../systems/CameraController'
+import { InputController } from '../../systems/InputController'
 
 // Color palette for room seeds
 const ROOM_COLORS = [
@@ -42,16 +44,9 @@ export class SpineSeedRenderer {
   private contentContainer: Container
   private tileSize: number = 8
   
-  // Pan/zoom state
-  private isPanning: boolean = false
-  private lastPanPos: { x: number; y: number } = { x: 0, y: 0 }
-  private zoom: number = 0.25
-  private readonly minZoom = 0.05
-  private readonly maxZoom = 4.0
-  
-  // View dimensions
-  private viewWidth: number = 800
-  private viewHeight: number = 600
+  // Camera and input controllers (unified system)
+  private cameraController: CameraController
+  private inputController: InputController
   
   // Graphics layers (4-layer system)
   private backgroundLayer: Graphics
@@ -103,57 +98,19 @@ export class SpineSeedRenderer {
     this.statusText.y = 10
     this.container.addChild(this.statusText)
 
-    this.setupPanZoom()
-  }
-
-  private setupPanZoom(): void {
-    this.container.hitArea = { contains: () => true }
+    // Initialize camera controller
+    this.cameraController = new CameraController(this.contentContainer, {
+      minZoom: 0.05,
+      maxZoom: 4.0,
+      initialZoom: 0.25
+    })
+    this.cameraController.setOnZoomChange(() => this.updateGridLines())
     
-    this.container.on('pointerdown', (e: FederatedPointerEvent) => {
-      if (e.button === 2 || e.button === 1) {
-        this.isPanning = true
-        this.lastPanPos = { x: e.globalX, y: e.globalY }
-      }
-    })
-
-    this.container.on('pointermove', (e: FederatedPointerEvent) => {
-      if (this.isPanning) {
-        const dx = e.globalX - this.lastPanPos.x
-        const dy = e.globalY - this.lastPanPos.y
-        this.contentContainer.x += dx
-        this.contentContainer.y += dy
-        this.lastPanPos = { x: e.globalX, y: e.globalY }
-      }
-    })
-
-    this.container.on('pointerup', () => {
-      this.isPanning = false
-    })
-
-    this.container.on('pointerupoutside', () => {
-      this.isPanning = false
-    })
-
-    this.container.on('wheel', (e: WheelEvent) => {
-      e.preventDefault()
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1
-      const newZoom = Math.min(this.maxZoom, Math.max(this.minZoom, this.zoom * zoomFactor))
-      
-      if (newZoom !== this.zoom) {
-        const centerX = this.viewWidth / 2
-        const centerY = this.viewHeight / 2
-        
-        const beforeZoomX = (centerX - this.contentContainer.x) / this.zoom
-        const beforeZoomY = (centerY - this.contentContainer.y) / this.zoom
-        
-        this.zoom = newZoom
-        this.contentContainer.scale.set(this.zoom)
-        
-        this.contentContainer.x = centerX - beforeZoomX * this.zoom
-        this.contentContainer.y = centerY - beforeZoomY * this.zoom
-
-        this.updateGridLines()
-      }
+    // Initialize input controller
+    this.inputController = new InputController({
+      container: this.container,
+      onPanMove: (dx, dy) => this.cameraController.pan(dx, dy),
+      onZoom: (delta) => this.cameraController.zoomToCenter(delta)
     })
   }
 
@@ -169,46 +126,29 @@ export class SpineSeedRenderer {
 
   /** Center the view on the grid */
   public centerView(gridWidth: number, gridHeight: number, viewWidth: number, viewHeight: number): void {
-    this.viewWidth = viewWidth
-    this.viewHeight = viewHeight
-    
-    const contentWidth = gridWidth * this.tileSize * this.zoom
-    const contentHeight = gridHeight * this.tileSize * this.zoom
-    
-    this.contentContainer.x = (viewWidth - contentWidth) / 2
-    this.contentContainer.y = (viewHeight - contentHeight) / 2
+    this.cameraController.setViewDimensions(viewWidth, viewHeight)
+    this.cameraController.centerOnGrid(gridWidth, gridHeight, this.tileSize)
   }
 
-  /** Reset zoom to 1.0 and center */
+  /** Reset zoom to 0.25 and center */
   public resetView(gridWidth: number, gridHeight: number, viewWidth: number, viewHeight: number): void {
-    this.zoom = 0.25
-    this.contentContainer.scale.set(0.25)
+    this.cameraController.setZoom(0.25)
     this.centerView(gridWidth, gridHeight, viewWidth, viewHeight)
   }
 
   /** Get current transform */
   public getTransform(): { x: number; y: number; scale: number } {
-    return {
-      x: this.contentContainer.x,
-      y: this.contentContainer.y,
-      scale: this.zoom
-    }
+    return this.cameraController.getTransform()
   }
 
   /** Sync transform from another renderer */
   public syncTransform(x: number, y: number, scale: number): void {
-    this.contentContainer.x = x
-    this.contentContainer.y = y
-    this.zoom = scale
-    this.contentContainer.scale.set(scale)
+    this.cameraController.syncFrom(x, y, scale)
   }
 
   /** Convert screen coordinates to grid coordinates */
   public screenToGrid(screenX: number, screenY: number): { x: number; y: number } | null {
-    const local = this.contentContainer.toLocal({ x: screenX, y: screenY })
-    const gridX = Math.floor(local.x / this.tileSize)
-    const gridY = Math.floor(local.y / this.tileSize)
-    return { x: gridX, y: gridY }
+    return this.cameraController.screenToTile(screenX, screenY, this.tileSize)
   }
 
   /** Full render of current state */

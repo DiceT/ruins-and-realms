@@ -7,6 +7,7 @@ import { DebugToolbar } from '@/components/DebugToolbar'
 
 function App() {
   const gamePhase = useAppStore((state) => state.gamePhase)
+  const showMap = useAppStore((state) => state.showMap)
   const { setGamePhase } = useAppActions()
 
   // Render based on game phase
@@ -22,7 +23,7 @@ function App() {
   return (
     <AppLayout>
       <GameWindow onBack={() => setGamePhase('menu')} />
-      <DebugToolbar />
+      {showMap && <DebugToolbar />}
     </AppLayout>
   )
 }

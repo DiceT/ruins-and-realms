@@ -124,8 +124,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const dungeonViewRendererRef = useRef<DungeonViewRenderer | null>(null)
   const [seedGrowthState, setSeedGrowthState] = useState<SeedGrowthState | null>(null)
   const [isAnimating, setIsAnimating] = useState(false)
-  // View As Dungeon toggle
-  const [viewAsDungeon, setViewAsDungeon] = useState<boolean>(false)
+  // Dungeon view is always enabled (removed toggle)
+  const [viewAsDungeon, setViewAsDungeon] = useState<boolean>(true)
   const [showRoomNumbers, setShowRoomNumbers] = useState<boolean>(true)
   const [showHeatMap, setShowHeatMap] = useState<boolean>(false)
   const [showWalkmap, setShowWalkmap] = useState<boolean>(false) // New: Walkmap toggle
@@ -166,12 +166,12 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const visibilitySystemRef = useRef<VisibilitySystem | null>(null)
   const playerControllerRef = useRef<PlayerController | null>(null)
   const [activeLight, setActiveLight] = useState<LightSourceType>('torch')
-  const [showFog, setShowFog] = useState(true)
-  const [showLight, setShowLight] = useState(true)
-  const [showPlayer, setShowPlayer] = useState(true)
+  const [showFog, setShowFog] = useState(false)  // Default OFF
+  const [showLight, setShowLight] = useState(false)  // Default OFF
+  const [showPlayer, setShowPlayer] = useState(false)  // Default OFF
 
   // Ref for movement handler access without re-binding
-  const showPlayerRef = useRef(true)
+  const showPlayerRef = useRef(false)  // Sync with showPlayer default
   useEffect(() => { showPlayerRef.current = showPlayer }, [showPlayer])
 
   // Interactive Exploration State
@@ -303,22 +303,10 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     const viewHeight = appRef.current?.screen.height ?? layout.middlePanel.height ?? 600
 
     if (viewAsDungeon) {
-      // Create dungeon view renderer if it doesn't exist
-      if (!dungeonViewRendererRef.current) {
-        // Initialize ThemeManager if needed
-        if (!themeManagerRef.current) {
-          themeManagerRef.current = new ThemeManager(activeTheme)
-        }
+      // Rely on DungeonController to provide the renderer (synced in init effect).
+      // Do NOT create a duplicate standalone renderer here.
 
-        dungeonViewRendererRef.current = new DungeonViewRenderer(
-          appRef.current.stage,
-          {
-            tileSize: 50,
-            themeManager: themeManagerRef.current,
-            onRoomHover: (room, x, y) => handleRoomHover(room, x, y)
-          }
-        )
-      }
+
 
       // Hide seed renderer, show dungeon view
       if (seedGrowthRendererRef.current) {
@@ -331,7 +319,9 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       // Render dungeon view
 
       // Always update view dimensions first
-      dungeonViewRendererRef.current.setViewDimensions(viewWidth, viewHeight)
+      if (dungeonViewRendererRef.current) {
+        dungeonViewRendererRef.current.setViewDimensions(viewWidth, viewHeight)
+      }
 
       // Add simple resize listener
       const handleResize = () => {
@@ -344,24 +334,25 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       }
       window.addEventListener('resize', handleResize)
 
-      // Check if this is a "Toggle On" event (was hidden, now showing)
-      const isToggleOn = !dungeonViewRendererRef.current.getContainer().visible
+      // Check if we need to sync camera (Initial Load or Toggle On)
+      // If ref is missing, it's a fresh load -> Sync.
+      // If ref exists but hidden, it's a toggle -> Sync.
+      const shouldSyncCamera = !dungeonViewRendererRef.current || !dungeonViewRendererRef.current.getContainer().visible
 
-      // SYNC CAMERA from Spine Renderer (Only on toggle transition)
-      if (isToggleOn) {
-        if (generatorMode === 'spineSeed' && spineSeedRendererRef.current) {
-          const t = spineSeedRendererRef.current.getTransform()
-          dungeonViewRendererRef.current.syncTransform(t.x, t.y, t.scale)
-        } else if (seedGrowthRendererRef.current) {
-          const t = seedGrowthRendererRef.current.getTransform()
-          dungeonViewRendererRef.current.syncTransform(t.x, t.y, t.scale)
-        }
+      // Try to ensure renderer ref is populated
+      if (!dungeonViewRendererRef.current && dungeonControllerRef.current) {
+        dungeonViewRendererRef.current = dungeonControllerRef.current.getDungeonViewRenderer()
       }
 
       // --- SPINE MODE RENDERING ---
       // All classification, pruning, and corridor assembly is handled by DungeonController/DungeonAssembler
       if (generatorMode === 'spineSeed' && state.spineTiles) {
         dungeonControllerRef.current.renderSpineDungeonView(state as any, spineSeedSettings)
+
+        // Sync ref again as renderSpineDungeonView may have created the renderer
+        if (!dungeonViewRendererRef.current) {
+          dungeonViewRendererRef.current = dungeonControllerRef.current.getDungeonViewRenderer()
+        }
 
         // --- INITIALIZE PLAYER & VISIBILITY (SPINE MODE) ---
         if (state.spineComplete) { // Ensure generation is done
@@ -378,12 +369,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           }
 
           // 2. Build Walkmap (Floor + Doors)
-          // We can extract this from the DungeonViewRenderer or rebuild it.
-          // DungeonViewRenderer knows the "corridorTiles" logic.
-          // But for now, let's use the raw state: Room Tiles + Spine Tiles + Objects(floor)
-          // Actually, `DungeonViewRenderer` processes the final corridor set. 
-          // Ideally we ask the renderer for the 'walkable' set, but it's render-only.
-          // Let's rebuild a quick set here.
           const walkable: { x: number, y: number }[] = []
           const seen = new Set<string>()
           const add = (x, y) => {
@@ -392,13 +377,14 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           }
 
           // Add Rooms (get from renderer which was just updated by renderSpineDungeonView)
-          const renderedRooms = dungeonViewRendererRef.current.getRenderedRooms() || []
-          renderedRooms.forEach(r => r.tiles.forEach(t => add(t.x, t.y)))
+          if (dungeonViewRendererRef.current) {
+            const renderedRooms = dungeonViewRendererRef.current.getRenderedRooms() || []
+            renderedRooms.forEach(r => r.tiles.forEach(t => add(t.x, t.y)))
 
-          // Add Expanded Corridors from Renderer
-          // This fixes the collision issue where narrow spine state didn't match wide visual corridors
-          const expandedCorridors = dungeonViewRendererRef.current.getWalkableTiles()
-          expandedCorridors.forEach(t => add(t.x, t.y))
+            // Add Expanded Corridors from Renderer
+            const expandedCorridors = dungeonViewRendererRef.current.getWalkableTiles()
+            expandedCorridors.forEach(t => add(t.x, t.y))
+          }
 
           // Add Walkable Objects (Doors, Stairs)
           state.objects?.forEach(obj => {
@@ -459,11 +445,15 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           // Initial Visual Update
           handleMove(startX, startY)
 
-          // FORCE FOCUS CAMERA ON START/TOGGLE
-          // We do this explicitly here to ensure valid start coords are used.
-          if (showPlayerRef.current || isToggleOn) {
-            console.log('[GameWindow] Forcing Camera Focus to', startX, startY)
-            dungeonViewRendererRef.current.focusOnTile(startX, startY)
+          // CAMERA CENTERING LOGIC
+          // Delegated to Controller for robust handling
+          if (showPlayerRef.current) {
+            if (dungeonViewRendererRef.current) {
+              dungeonViewRendererRef.current.focusOnTile(startX, startY)
+            }
+          } else if (shouldSyncCamera) {
+            console.log('[GameWindow] Triggering Initial Camera Focus via Controller')
+            dungeonControllerRef.current.resetCameraToGridCenter()
           }
         }
 
@@ -472,57 +462,46 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         if (generatorMode === 'spineSeed') {
           // Use Controller Pipeline (includes Classification & Pruning)
           dungeonControllerRef.current.renderSpineDungeonView(state as any)
+
+          // Sync ref again
+          if (!dungeonViewRendererRef.current) {
+            dungeonViewRendererRef.current = dungeonControllerRef.current.getDungeonViewRenderer()
+          }
         } else {
-          dungeonViewRendererRef.current.renderDungeonView(state, seedGrowthSettings, showRoomNumbers, showWalkmap)
+          if (dungeonViewRendererRef.current) {
+            dungeonViewRendererRef.current.renderDungeonView(state, seedGrowthSettings, showRoomNumbers, showWalkmap)
+          }
         }
 
         // --- INITIALIZE PLAYER (ORGANIC MODE) ---
         // TODO: Similar logic for Organic mode if needed, utilizing rooms[0] center
       }
-      dungeonViewRendererRef.current.setShowRoomNumbers(showRoomNumbers)
-      dungeonViewRendererRef.current.getContainer().visible = true
-    } else {
-      // Toggle OFF logic
-      const isToggleOff = dungeonViewRendererRef.current?.getContainer().visible
 
-      // Hide dungeon view
       if (dungeonViewRendererRef.current) {
-        dungeonViewRendererRef.current.getContainer().visible = false
-      }
+        dungeonViewRendererRef.current.setShowRoomNumbers(showRoomNumbers)
+        dungeonViewRendererRef.current.getContainer().visible = true
 
-      // Restore Seed Renderer
-      if (seedGrowthRendererRef.current) {
-        seedGrowthRendererRef.current.getContainer().visible = true
-        // Reverse Sync (Dungeon -> Organic)
-        if (isToggleOff && dungeonViewRendererRef.current) {
-          const t = dungeonViewRendererRef.current.getTransform()
-          seedGrowthRendererRef.current.syncTransform(t.x, t.y, t.scale)
+        // Expose debug info (Last step to ensure renderer exists)
+        const renderer = dungeonViewRendererRef.current
+        const app = appRef.current
+        if (app) {
+          (window as any).__DUNGEON_DEBUG__ = {
+            app: app,
+            camera: {
+              get scale() { return renderer.getTransform().scale },
+              container: renderer.getContentContainer()
+            },
+            toWorld: (x: number, y: number) => {
+              const local = renderer.getContentContainer().toLocal({ x, y })
+              return { x: local.x, y: local.y }
+            }
+          }
+          delete (window as any).__MAP_ENGINE__
         }
-
-        if (generatorMode === 'organic') {
-          seedGrowthRendererRef.current.render(state, seedGrowthSettings)
-        }
-      }
-
-      // Restore Spine Renderer
-      if (generatorMode === 'spineSeed' && spineSeedRendererRef.current && state) {
-        spineSeedRendererRef.current.getContainer().visible = true // FIXED: Explicitly show spine renderer
-
-        // Reverse Sync (Dungeon -> Spine)
-        if (isToggleOff && dungeonViewRendererRef.current) {
-          const t = dungeonViewRendererRef.current.getTransform()
-          spineSeedRendererRef.current.syncTransform(t.x, t.y, t.scale)
-        }
-        spineSeedRendererRef.current.render(state, spineSeedSettings)
-      }
-
-      // Cleanup Player Controller when Toggling Off
-      if (playerControllerRef.current) {
-        playerControllerRef.current.destroy()
-        playerControllerRef.current = null
       }
     }
-  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, activeLight]) // Added activeLight dependency to re-init logic if light changes? No, handleLightChange separately.
+    console.log('[GameWindow] Render Effect Complete. Renderer Exists:', !!dungeonViewRendererRef.current)
+  }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, activeLight, isReady]) // Added activeLight dependency to re-init logic if light changes? No, handleLightChange separately.
 
   // Update Light Profile when activeLight changes
   useEffect(() => {
@@ -539,7 +518,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
       // OR: Just let the next move update it? (User might want instant update).
       // Let's leave it for next move for MVP safety, or try to hack a move(0,0).
       // playerControllerRef.current.attemptMove(0,0) // Logic is private.
-      // Let's enforce re-init in the main effect by adding activeLight to dependency array?
       // Yes, that will tear down and re-build. A bit heavy but safe.
     }
   }, [activeLight])
@@ -547,10 +525,19 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   // Debug Toggles Effect
   useEffect(() => {
     const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
+    console.log(`[GameWindow] Debug Toggle Effect: Fog=${showFog}, Light=${showLight}, Renderer=${!!renderer}`)
     if (renderer) {
       renderer.setDebugVisibility(showFog, showLight)
     }
   }, [showFog, showLight])
+
+  // Player Visibility Effect - just toggle visibility, don't move camera
+  useEffect(() => {
+    const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
+    if (renderer) {
+      renderer.setPlayerVisibility(showPlayer)
+    }
+  }, [showPlayer])
 
   // Dedicated effect for room number visibility toggle (independent of render)
   useEffect(() => {
@@ -583,6 +570,13 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
     }
   }, [activeTheme])
 
+
+  // Sync Settings to Controller
+  useEffect(() => {
+    if (dungeonControllerRef.current) {
+      dungeonControllerRef.current.updateSettings(seedGrowthSettings, spineSeedSettings)
+    }
+  }, [seedGrowthSettings, spineSeedSettings])
 
   /**
    * Initializes the entire Game View (Pixi App, Layout, Backgrounds)
@@ -788,6 +782,33 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         spineSeedRendererRef.current = controller.getSpineSeedRenderer()
         dungeonViewRendererRef.current = controller.getDungeonViewRenderer()
         themeManagerRef.current = controller.getThemeManager()
+
+        // === FIX: Initialize visibility layers immediately after renderer creation ===
+        // This ensures Fog/Light/Player work on first load without needing HIDE/SHOW toggle
+        if (dungeonViewRendererRef.current) {
+          dungeonViewRendererRef.current.setDebugVisibility(showFog, showLight)
+          dungeonViewRendererRef.current.setPlayerVisibility(showPlayer)
+          dungeonViewRendererRef.current.setShowHeatMap(showHeatMap)
+          dungeonViewRendererRef.current.setShowWalkmap(showWalkmap)
+          dungeonViewRendererRef.current.setShowSpineDebug(showSpineDebug)
+        }
+
+        // Expose debug info for DebugToolbar
+        if (dungeonViewRendererRef.current) {
+          const renderer = dungeonViewRendererRef.current
+            ; (window as any).__DUNGEON_DEBUG__ = {
+              app: app,
+              camera: {
+                get scale() { return renderer.getTransform().scale },
+                container: renderer.getContentContainer()
+              },
+              toWorld: (x: number, y: number) => {
+                const local = renderer.getContentContainer().toLocal({ x, y })
+                return { x: local.x, y: local.y }
+              }
+            }
+          delete (window as any).__MAP_ENGINE__
+        }
 
         // Update React state from controller current state
         const currentState = controller.getCurrentState()
@@ -1457,8 +1478,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           />
         )}
 
-        {/* Floating Dungeon Controls */}
-        {viewAsDungeon && (
+        {/* Floating Dungeon Controls - only show when dungeon map is visible */}
+        {showMap && gameMode === 'dungeon' && (
           <DungeonControlPanel
             showFog={showFog}
             onShowFogChange={setShowFog}

@@ -69,9 +69,9 @@ export class DungeonController {
   private showRoomNumbers: boolean = true
   private showHeatMap: boolean = false
   private showWalkmap: boolean = false
-  private showFog: boolean = true
-  private showLight: boolean = true
-  private showPlayer: boolean = true
+  private showFog: boolean = false  // Default OFF
+  private showLight: boolean = false  // Default OFF
+  private showPlayer: boolean = false  // Default OFF
   
   // Animation
   private animationFrameId: number | null = null
@@ -169,6 +169,8 @@ export class DungeonController {
         viewWidth, 
         viewHeight
       )
+      // Hide immediately (dungeon view is always on)
+      this.seedGrowthRenderer.getContainer().visible = false
     } else if (this.spineSettings && this.spineSeedGen) {
       this.spineSeedRenderer = new SpineSeedRenderer(this.container)
       this.spineSeedRenderer.setTileSize(50)
@@ -179,6 +181,8 @@ export class DungeonController {
         viewWidth, 
         viewHeight
       )
+      // Hide immediately (dungeon view is always on)
+      this.spineSeedRenderer.getContainer().visible = false
     }
   }
 
@@ -188,6 +192,7 @@ export class DungeonController {
   public updateSettings(seedSettings: SeedGrowthSettings, spineSettings: SpineSeedSettings): void {
     this.seedSettings = seedSettings
     this.spineSettings = spineSettings
+    console.log('[DungeonController] Settings Updated. Symmetry:', spineSettings.symmetry, 'Branch:', spineSettings.branchChance)
   }
 
   /**
@@ -249,9 +254,9 @@ export class DungeonController {
         )
       }
       
-      // Show and render
+      // Keep seed renderer hidden (dungeon view is always on)
       if (this.seedGrowthRenderer && this.seedGrowthGen) {
-        this.seedGrowthRenderer.getContainer().visible = true
+        this.seedGrowthRenderer.getContainer().visible = false
         this.seedGrowthRenderer.render(this.seedGrowthGen.getState(), this.seedSettings!)
         this.callbacks.onStateChange?.(this.seedGrowthGen.getState())
       }
@@ -278,9 +283,9 @@ export class DungeonController {
         )
       }
       
-      // Show and render
+      // Keep spine renderer hidden (dungeon view is always on)
       if (this.spineSeedRenderer && this.spineSeedGen) {
-        this.spineSeedRenderer.getContainer().visible = true
+        this.spineSeedRenderer.getContainer().visible = false
         this.spineSeedRenderer.render(this.spineSeedGen.getState(), this.spineSettings!)
         this.callbacks.onStateChange?.(this.spineSeedGen.getState())
       }
@@ -304,6 +309,7 @@ export class DungeonController {
       this.seedGrowthRenderer.render(this.seedGrowthGen.getState(), this.seedSettings)
       this.runChunkedGeneration('organic')
     } else if (this.spineSeedGen && this.spineSeedRenderer && this.spineSettings) {
+      console.log('[DungeonController] Regenerating Spine. Symmetry:', this.spineSettings.symmetry)
       this.spineSeedGen.reset(this.spineSettings)
       this.spineSeedRenderer.render(this.spineSeedGen.getState(), this.spineSettings)
       this.runChunkedGeneration('spineSeed')
@@ -650,8 +656,58 @@ export class DungeonController {
       renderer: this.dungeonViewRenderer
     })
     
-    // Focus camera on player start position
-    this.dungeonViewRenderer.focusOnTile(startX, startY)
+    // Camera focus only happens when Player checkbox is enabled (handled by GameWindow)
+    // Removed: this.dungeonViewRenderer.focusOnTile(startX, startY)
+  }
+
+  /**
+   * Reset camera to center of the grid
+   */
+  public resetCameraToGridCenter(): void {
+    if (!this.dungeonViewRenderer) return
+    
+    // Priority: Track Player if Exploration Manager is active (and player is enabled?)
+    // Actually, user wants "Hide/Show" behavior which is Grid Center.
+    // If showPlayer is on, GameWindow handles focus via showPlayerRef check.
+    // So this method should strictly be "Reset to Grid".
+    
+    let gridWidth = 64
+    let gridHeight = 64
+    
+    
+    if (this.generatorMode === 'spineSeed' && this.spineSettings) {
+        gridWidth = this.spineSettings.gridWidth
+        gridHeight = this.spineSettings.gridHeight
+    } else if (this.seedSettings) {
+        gridWidth = this.seedSettings.gridWidth
+        gridHeight = this.seedSettings.gridHeight
+    }
+
+    // CRITICAL: Ensure view dimensions are up to date!
+    // The renderer might have initialized with default 800x600.
+    if (this.app) {
+       const screen = this.app.screen
+       // Use full screen dimensions since we are rendering to stage
+       this.dungeonViewRenderer.setViewDimensions(screen.width, screen.height)
+    }
+    
+    console.log('[DungeonController] Resetting Camera to Grid Center:', gridWidth, gridHeight)
+    
+    // User requested offset: (width + 4) / 2
+    // Standard center is (width - 1) / 2
+    // We calculate standard center first, then apply user offset math
+    
+    // Center view takes (cx, cy) in tiles.
+    // User formula: (width + 4) / 2 = width/2 + 2.
+    // Standard center is approx width/2.
+    // So we use (gridWidth + 4) / 2 - 0.5 (since 0-indexed center is w-1 / 2)
+    // Actually, centerView implementation: this.panZoomController.centerView(cx, cy, tileSize)
+    // Let's just pass the User's Target X.
+    
+    const targetX = (gridWidth + 4) / 2
+    const targetY = (gridHeight - 1) / 2
+    
+    this.dungeonViewRenderer.panZoomController.centerView(targetX, targetY, this.dungeonViewRenderer.tileSize)
   }
 
   /**
@@ -723,18 +779,22 @@ export class DungeonController {
   }
 
   public setShowFog(enabled: boolean): void {
+    console.log(`[DungeonController] setShowFog: ${enabled}. ExpManager exists: ${!!this.explorationManager}`)
     this.showFog = enabled
     this.dungeonViewRenderer?.setDebugVisibility(enabled, this.showLight)
+    this.explorationManager?.updateVisibility()
   }
 
   public setShowLight(enabled: boolean): void {
     this.showLight = enabled
     this.dungeonViewRenderer?.setDebugVisibility(this.showFog, enabled)
+    this.explorationManager?.updateVisibility()
   }
 
   public setShowPlayer(enabled: boolean): void {
     this.showPlayer = enabled
     this.explorationManager?.setShowPlayer(enabled)
+    this.explorationManager?.updateVisibility()
   }
 
   public setTheme(themeName: string): void {

@@ -15,6 +15,7 @@ export interface VisibilityRenderConfig {
   tileSize: number
   showFog: boolean
   showLight: boolean
+  showPlayer?: boolean  // Optional, defaults to false
 }
 
 export class VisibilityLayer {
@@ -56,6 +57,7 @@ export class VisibilityLayer {
     this.entityLayer = new Container()
     this.playerSprite = new Graphics()
     this.entityLayer.addChild(this.playerSprite)
+    this.entityLayer.visible = false  // Hidden by default
     this.container.addChild(this.entityLayer)
   }
   
@@ -83,46 +85,49 @@ export class VisibilityLayer {
     lightProfile: LightProfile,
     config: VisibilityRenderConfig
   ): void {
-    const { tileSize, showFog, showLight } = config
+    const { tileSize, showFog, showLight, showPlayer = false } = config
     
-    // 1. FOG & DARKNESS
+    // Entity layer visibility
+    this.entityLayer.visible = showPlayer
+
+    console.log(`[VisibilityLayer] Update: Fog=${showFog}, Light=${showLight}, Player=${showPlayer}, GridSize=${gridWidth}x${gridHeight}`)
+    
+    // 1. FOG & DARKNESS - ALWAYS RENDER (visibility controlled by container)
     this.fogGraphics.clear()
-    this.fogLayer.visible = showFog
-    this.darknessLayer.visible = showLight // Darkness is the partner of Light
     
-    if (showFog) {
-       // Draw "Border" Fog (Infinite Blackness outside the grid)
-       const gloomSize = 10000 
-       const totalW = gridWidth * tileSize
-       const totalH = gridHeight * tileSize
+    // Always draw fog graphics so they're ready when layer is toggled visible
+    console.log(`[VisibilityLayer] Drawing Fog. Grid: ${gridWidth}x${gridHeight}, TileSize: ${tileSize}. State 0: ${visionGrid[0]}`)
+    // Draw "Border" Fog (Infinite Blackness outside the grid)
+    const gloomSize = 10000 
+    const totalW = gridWidth * tileSize
+    const totalH = gridHeight * tileSize
 
-       this.fogGraphics.rect(-gloomSize, -gloomSize, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
-       this.fogGraphics.rect(-gloomSize, totalH, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
-       this.fogGraphics.rect(-gloomSize, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
-       this.fogGraphics.rect(totalW, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
+    this.fogGraphics.rect(-gloomSize, -gloomSize, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
+    this.fogGraphics.rect(-gloomSize, totalH, totalW + gloomSize * 2, gloomSize).fill({ color: 0x000000, alpha: 1.0 })
+    this.fogGraphics.rect(-gloomSize, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
+    this.fogGraphics.rect(totalW, 0, gloomSize, totalH).fill({ color: 0x000000, alpha: 1.0 })
 
-       for (let y = 0; y < gridHeight; y++) {
-          for (let x = 0; x < gridWidth; x++) {
-              const idx = y * gridWidth + x
-              const state = visionGrid[idx]
-              
-              const px = x * tileSize
-              const py = y * tileSize
-              
-               if (state === VISION_STATE.VISIBLE) {
-                  // Visible: Transparent
-              } else if (state === VISION_STATE.EXPLORED) {
-                   // Explored: 75% opacity black
-                   this.fogGraphics.rect(px, py, tileSize, tileSize).fill({ color: 0x000000, alpha: 0.75 })
-              } else {
-                   // Unexplored: 100% opacity black
-                   this.fogGraphics.rect(px, py, tileSize, tileSize).fill({ color: 0x000000, alpha: 1.0 })
-              }
-          }
+    for (let y = 0; y < gridHeight; y++) {
+       for (let x = 0; x < gridWidth; x++) {
+           const idx = y * gridWidth + x
+           const state = visionGrid[idx]
+           
+           const px = x * tileSize
+           const py = y * tileSize
+           
+            if (state === VISION_STATE.VISIBLE) {
+               // Visible: Transparent
+           } else if (state === VISION_STATE.EXPLORED) {
+                // Explored: 75% opacity black
+                this.fogGraphics.rect(px, py, tileSize, tileSize).fill({ color: 0x000000, alpha: 0.75 })
+           } else {
+                // Unexplored: 100% opacity black
+                this.fogGraphics.rect(px, py, tileSize, tileSize).fill({ color: 0x000000, alpha: 1.0 })
+           }
        }
     }
 
-    // 2. PLAYER
+    // 2. PLAYER - ALWAYS RENDER (visibility controlled by container)
     if (this.playerSprite) {
         const cx = (playerX + 0.5) * tileSize
         const cy = (playerY + 0.5) * tileSize
@@ -131,24 +136,19 @@ export class VisibilityLayer {
         this.playerSprite.circle(cx, cy, r).fill(0xFFA500).stroke({ width: 2, color: 0xFFFFFF })
     }
     
-    // 3. LIGHTING
-    if (showLight) {
-        let tex = this.lightTextureCache.get(lightProfile.type)
-        if (!tex) {
-            tex = this.generateLightTexture(lightProfile)
-            this.lightTextureCache.set(lightProfile.type, tex)
-        }
-        
-        this.lightLayer.texture = tex
-        this.lightLayer.anchor.set(0.5)
-        this.lightLayer.width = lightProfile.dimRadius * 2 * tileSize
-        this.lightLayer.height = lightProfile.dimRadius * 2 * tileSize
-        this.lightLayer.x = (playerX + 0.5) * tileSize
-        this.lightLayer.y = (playerY + 0.5) * tileSize
-        this.lightLayer.visible = true
-    } else {
-        this.lightLayer.visible = false
+    // 3. LIGHTING - ALWAYS RENDER (visibility controlled by container)
+    let tex = this.lightTextureCache.get(lightProfile.type)
+    if (!tex) {
+        tex = this.generateLightTexture(lightProfile)
+        this.lightTextureCache.set(lightProfile.type, tex)
     }
+    
+    this.lightLayer.texture = tex
+    this.lightLayer.anchor.set(0.5)
+    this.lightLayer.width = lightProfile.dimRadius * 2 * tileSize
+    this.lightLayer.height = lightProfile.dimRadius * 2 * tileSize
+    this.lightLayer.x = (playerX + 0.5) * tileSize
+    this.lightLayer.y = (playerY + 0.5) * tileSize
   }
 
   /**

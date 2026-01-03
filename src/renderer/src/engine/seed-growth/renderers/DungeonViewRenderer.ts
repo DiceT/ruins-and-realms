@@ -17,6 +17,7 @@ import { RoomLayerConfig } from '../../themes/ThemeTypes'
 import { FloorLayer, WallLayer, GridLayer, ObjectLayer, LabelLayer, DebugLayer, VisibilityLayer, SpineDebugLayer } from '../layers'
 import { PanZoomController } from '../controllers/PanZoomController'
 import { createNoiseTexture } from '../../utils/rendering'
+import { LayerManager } from '../../systems/LayerManager'
 
 export interface DungeonViewOptions {
   tileSize?: number
@@ -35,15 +36,16 @@ export class DungeonViewRenderer {
   private themeManager: ThemeManager
   private config: RoomLayerConfig
 
-  // Pan/zoom state
+  // Managers
   private panZoomController: PanZoomController
+  private layerManager: LayerManager
   
-  // Layers
+  // Layers (References for rendering data updates)
   private backgroundLayer: Graphics
   private floorLayer: FloorLayer
   private wallLayer: WallLayer
-  private objectLayer: ObjectLayer // New: Objects (Sprites, Decorations)
-  private gridLayer: GridLayer  // Separate layer for grid lines (re-rendered on zoom)
+  private objectLayer: ObjectLayer 
+  private gridLayer: GridLayer  
   private labelLayer: LabelLayer
   private debugLayer: DebugLayer
   private spineDebugLayer: SpineDebugLayer
@@ -51,8 +53,6 @@ export class DungeonViewRenderer {
   
   // --- New Visibility Layers ---
   private visibilityLayer: VisibilityLayer
-  
-  // FX
   
   // FX
   private noiseSprite: Sprite | null = null
@@ -67,13 +67,13 @@ export class DungeonViewRenderer {
   
   // Accessible corridor tiles for collision
   private corridorTiles: Set<string> = new Set()
-
   
-  // Debug flags
-  
-  // Debug flags
-  private showFog: boolean = true
-  private showLight: boolean = true
+  // Debug state tracking
+  private showFog: boolean = false
+  private showLight: boolean = false
+  private showPlayer: boolean = false
+  private showHeatMap: boolean = false
+  private showWalkmap: boolean = false
   private showSpineDebug: boolean = false
   private cachedSpineState: SpineSeedState | null = null
 
@@ -85,22 +85,19 @@ export class DungeonViewRenderer {
     this.contentContainer = new Container()
     this.container.addChild(this.contentContainer)
     
+    // Initialize Layer Manager
+    this.layerManager = new LayerManager(this.contentContainer)
+    
     this.onRoomHover = options.onRoomHover
 
-    // Interaction Handling
+    // Interaction Handling (same as before)
     if (this.onRoomHover) {
        this.container.addEventListener('pointermove', (e) => {
-           // Convert global to local
            const global = e.global
            const local = this.contentContainer.toLocal(global)
            
-           // Convert Local Pixel to Grid Coords
-           // Room bounds are in Grid Coords. FloorLayer scales them by tileSize.
-           // So check: room.bounds * tileSize vs local pixel
-           
            let hovered: Room | null = null
            
-           // Inverse iterate to check top-most (though rooms don't overlap much here)
            for (let i = this.renderedRooms.length - 1; i >= 0; i--) {
                const room = this.renderedRooms[i]
                const { x, y, w, h } = room.bounds
@@ -116,12 +113,10 @@ export class DungeonViewRenderer {
                }
            }
            
-           // Debounce / Trigger
            if (hovered?.id !== this.lastHoveredRoom) {
                this.lastHoveredRoom = hovered ? hovered.id : null
                this.onRoomHover!(hovered, global.x, global.y)
            } else if (!hovered && this.lastHoveredRoom !== null) {
-               // Exit
                this.lastHoveredRoom = null
                this.onRoomHover!(null, global.x, global.y)
            }
@@ -132,7 +127,7 @@ export class DungeonViewRenderer {
     this.themeManager = options.themeManager || new ThemeManager()
     this.config = this.themeManager.config
     
-    // Create layers
+    // Init Visual Components
     this.backgroundLayer = new Graphics()
     this.floorLayer = new FloorLayer()
     this.wallLayer = new WallLayer()
@@ -142,50 +137,63 @@ export class DungeonViewRenderer {
     this.debugLayer = new DebugLayer()
     this.spineDebugLayer = new SpineDebugLayer()
     this.overlayLayer = new Graphics()
-    
-    // VISIBILITY INIT
     this.visibilityLayer = new VisibilityLayer()
     
-    // LAYER ORDER
-    this.contentContainer.addChild(this.backgroundLayer)
-    this.contentContainer.addChild(this.floorLayer.container)
-    this.contentContainer.addChild(this.wallLayer.shadowContainer)  // Shadows under walls
-    this.contentContainer.addChild(this.wallLayer.container)
+    // LAYER REGISTRATION (Z-Index Strategy)
+    // 0: Background
+    this.layerManager.register('background', this.backgroundLayer, { zIndex: 0 })
+    // 10: Floor
+    this.layerManager.register('floor', this.floorLayer.container, { zIndex: 10 })
+    // 15: Wall Shadows
+    this.layerManager.register('shadow', this.wallLayer.shadowContainer, { zIndex: 15 })
+    // 20: Walls
+    this.layerManager.register('wall', this.wallLayer.container, { zIndex: 20 })
+    // 30: Objects
+    this.layerManager.register('object', this.objectLayer.containerNode, { zIndex: 30 })
+    // 40: Grid
+    this.layerManager.register('grid', this.gridLayer.container, { zIndex: 40 })
     
-    this.contentContainer.addChild(this.objectLayer.containerNode)
+    // VISIBILITY STACK (Flattened from VisibilityLayer)
+    // Light (Screen blend) goes BELOW Fog/Darkness?
+    // Actually, normally Light is additive on top of darkness.
+    // If Darkness is Multiply, it should optionally be above Floor/Walls.
+    // Let's stick to the previous hierarchy:
+    // Light (Screen), Fog (Initial), Darkness (Multiply), Entity
+    // Using VisibilityLayer's getters to register components directly
     
-    // VISIBILITY STACK
-    // Grid Lines should be affected by Fog? User said "Grid layer should adhere to light rules".
-    // So Grid Lines -> Fog -> Light -> Entities?
-    // If Grid is under Fog, it will get dark. Correct.
-    // VISIBILITY STACK
-    // Light MUST be below Fog to be occluded by Unexplored areas
-    // VISIBILITY STACK
-    // Grid must be BEFORE VisibilityLayer so Fog can occlude it
-    this.contentContainer.addChild(this.gridLayer.container)
-    this.contentContainer.addChild(this.visibilityLayer.containerNode)
+    // 50: Light (Screen - usually additive, put below Fog so fog occludes it? No, Fog occludes everything)
+    this.layerManager.register('light', this.visibilityLayer.lightNode, { zIndex: 50, group: 'visibility', visible: false })
     
+    // 52: Darkness (Multiply) - Tints the scene
+    this.layerManager.register('darkness', this.visibilityLayer.darknessNode, { zIndex: 52, group: 'visibility', visible: false })
     
-    // Debug Layers
-    this.contentContainer.addChild(this.overlayLayer)
-    this.contentContainer.addChild(this.debugLayer.containerNode)
-    this.contentContainer.addChild(this.spineDebugLayer.containerNode)
-    this.contentContainer.addChild(this.labelLayer.containerNode)
+    // 55: Fog (Blackness) - Occludes unexplored areas completely
+    this.layerManager.register('fog', this.visibilityLayer.fogNode, { zIndex: 55, group: 'visibility', visible: false })
+    
+    // 60: Entity (Player) - Should be visible on top of Fog? No, under.
+    // But Player should be visible in known areas.
+    this.layerManager.register('entity', this.visibilityLayer.entityNode, { zIndex: 60, group: 'visibility', visible: false })
+    
+    // DEBUG LAYERS
+    // 80: Spine Debug
+    this.layerManager.register('spineDebug', this.spineDebugLayer.containerNode, { zIndex: 80, group: 'debug', visible: false })
+    // 90: General Debug (Heatmap/Walkmap)
+    this.layerManager.register('debug', this.debugLayer.containerNode, { zIndex: 90, group: 'debug', visible: false })
+    // 95: Overlay
+    this.layerManager.register('overlay', this.overlayLayer, { zIndex: 95, group: 'debug', visible: false })
+    // 100: Labels
+    this.layerManager.register('label', this.labelLayer.containerNode, { zIndex: 100, visible: true })
+
     
     if (options.tileSize) {
       this.tileSize = options.tileSize
     }
     
     // Listen for theme changes
-    this.themeManager.onThemeChange((name, config) => {
-        this.config = config
-        this.updateFilters()
-    })
+    this.themeManager.onThemeChange(this.onThemeChange)
 
     // Initialize Roughness (Displacement)
     this.initRoughness()
-
-    // Apply initial theme config (filters only)
     this.updateFilters()
 
     // Setup pan/zoom controller
@@ -198,7 +206,15 @@ export class DungeonViewRenderer {
   public setDebugVisibility(fog: boolean, light: boolean) {
       this.showFog = fog
       this.showLight = light
-      this.visibilityLayer.setVisibility(fog, light)
+      
+      // Use LayerManager to toggle
+      this.layerManager.toggle('fog', fog)
+      this.layerManager.toggle('light', light)
+      this.layerManager.toggle('darkness', light) // Darkness pairs with light
+      
+      // Update logic layer: WE DO NOT TOGGLE VISIBILITY HERE ANYMORE.
+      // LayerManager handles the container visibility.
+      // VisibilityLayer.update() handles the graphics generation.
   }
 
   public updateVisibilityState(
@@ -209,6 +225,7 @@ export class DungeonViewRenderer {
       playerY: number,
       lightProfile: LightProfile
   ) {
+      // Update logic + graphics generation
       this.visibilityLayer.update(
           gridWidth,
           gridHeight,
@@ -216,7 +233,7 @@ export class DungeonViewRenderer {
           playerX,
           playerY,
           lightProfile,
-          { tileSize: this.tileSize, showFog: this.showFog, showLight: this.showLight }
+          { tileSize: this.tileSize, showFog: this.showFog, showLight: this.showLight, showPlayer: this.showPlayer }
       )
   }
   
@@ -296,18 +313,20 @@ export class DungeonViewRenderer {
    * Render the dungeon view from seed growth state OR DungeonData
    */
   public renderDungeonView(data: SeedGrowthState | DungeonData, settings: SeedGrowthSettings, showRoomNumbers: boolean = true, showWalkmap: boolean = false): void {
-    console.log('[DungeonViewRenderer] renderDungeonView Start', { showWalkmap, rooms: (data as any).rooms?.length })
+    console.log(`[DungeonViewRenderer] renderDungeonView. DataRooms: ${(data as any).rooms?.length}, ShowHeatMap: ${this.showHeatMap}, ShowWalkmap: ${showWalkmap}`)
+    console.log(`[DungeonViewRenderer] Current Visibility Flags: Fog=${this.showFog}, Light=${this.showLight}, Player=${this.showPlayer}`)
+    
+    // Clean canvas via LayerManager helper
     this.clear()
     
-    // Ensure filters are up to date (in case config changed)
     this.updateFilters()
     
     const { gridWidth, gridHeight } = settings
     const size = this.tileSize
     
-    // 1. Background (Expanded by 2 tiles in all directions)
-    // Origin at -2, -2
+    // 1. Background
     const pad = 2
+    this.backgroundLayer.clear()
     this.backgroundLayer.rect(
         -pad * size, 
         -pad * size, 
@@ -420,6 +439,8 @@ export class DungeonViewRenderer {
       { tileSize: size, showHeatMap: this.showHeatMap, showWalkmap: showWalkmap }
     )
     
+    // NOTE: VisibilityLayer doesn't need explicit render call here, it updates via updateVisibilityState
+    
     console.log('[DungeonViewRenderer] Render Complete')
   }
 
@@ -445,7 +466,8 @@ export class DungeonViewRenderer {
           graphics.fill()
       }
       
-      this.walkmapContainer.addChild(graphics)
+      // The walkmapContainer was removed, debugLayer now handles walkmap rendering
+      // this.walkmapContainer.addChild(graphics) 
       
       // Render Cost Labels
     // User requested: 1/2 square above room number, 1/2 square below for traversals
@@ -473,7 +495,7 @@ export class DungeonViewRenderer {
             text.x = cx * size
             text.y = (cy - 0.5) * size
             
-            this.walkmapContainer.addChild(text)
+            // this.walkmapContainer.addChild(text) // Now handled by debugLayer
         }
         
         // Render room/door traversal counts
@@ -490,46 +512,9 @@ export class DungeonViewRenderer {
         traversalLabel.x = cx * size
         traversalLabel.y = (cy + 0.5) * size
         
-        this.walkmapContainer.addChild(traversalLabel)
+        // this.walkmapContainer.addChild(traversalLabel) // Now handled by debugLayer
     }
 }
-  
-  /**
-   * Main render method for the dungeon.
-   */
-  public render(data: SeedGrowthState | DungeonData, settings: SeedGrowthSettings, showRoomNumbers: boolean = true, showWalkmap: boolean = false): void {
-    // Clear previous
-    this.backgroundLayer.clear()
-    this.floorLayer.clear()
-    this.wallLayer.clear()
-    this.gridLayer.clear()
-    this.heatMapLayer.clear()
-    this.overlayLayer.clear()
-    this.objectLayer.clear()
-    this.labelContainer.removeChildren()
-    this.walkmapContainer.removeChildren() // Clear Walkmap
-
-    // ... (rest of the render logic would go here)
-    // For example:
-    // if (showWalkmap && data instanceof DungeonData) {
-    //   this.renderWalkmap(data, settings.tileSize)
-    // }
-    // ...
-  }
-  
-  /**
-   * Clear all layers
-   */
-  public clear(): void {
-    this.backgroundLayer.clear()
-    this.floorLayer.clear()
-    this.wallLayer.clear()
-    this.gridLayer.clear()
-    this.debugLayer.clear()
-    this.overlayLayer.clear()
-    this.labelLayer.clear()
-    this.objectLayer.clear()
-  }
   
   /**
    * Destroy and cleanup
@@ -585,11 +570,17 @@ export class DungeonViewRenderer {
   public setShowHeatMap(visible: boolean): void {
       this.showHeatMap = visible
       this.debugLayer.setVisibility(visible, this.showWalkmap)
+      // Ensure the parent 'debug' layer is visible if either child is active
+      const showDebugGroup = visible || this.showWalkmap
+      this.layerManager.toggle('debug', showDebugGroup)
   }
 
   public setShowWalkmap(visible: boolean): void {
       this.showWalkmap = visible
       this.debugLayer.setVisibility(this.showHeatMap, visible)
+      // Ensure the parent 'debug' layer is visible if either child is active
+      const showDebugGroup = this.showHeatMap || visible
+      this.layerManager.toggle('debug', showDebugGroup)
   }
 
   /**
@@ -598,6 +589,9 @@ export class DungeonViewRenderer {
   public setShowSpineDebug(visible: boolean): void {
       this.showSpineDebug = visible
       this.spineDebugLayer.setVisible(visible)
+      // Ensure the parent 'spineDebug' layer is visible
+      this.layerManager.toggle('spineDebug', visible)
+      
       // Re-render if we have cached state
       if (visible && this.cachedSpineState) {
           this.spineDebugLayer.render(this.cachedSpineState, { tileSize: this.tileSize })
@@ -615,12 +609,33 @@ export class DungeonViewRenderer {
   }
 
   public setPlayerVisibility(visible: boolean): void {
-      this.entityLayer.visible = visible
+      this.showPlayer = visible
+      // Update logic layer (which updates render state)
+      // Note: VisibilityLayer containers (fog/light) are managed by setDebugVisibility
+      // This mainly affects the 'entity' layer if we had one separate, 
+      // but essentially PlayerController handles the 'focus' and 'update logic'.
+      // We also toggle the graphics container if needed.
+      // LayerManager 'entity' layer (Z:80)
+      // this.layerManager.toggle('entity', visible) // If we registered an entity layer
   }
-
-
-
-  // Bind for cleanup
+  
+  /**
+   * Clear all layers
+   */
+  public clear(): void {
+    // Clear Static Content Layers
+    this.backgroundLayer.clear()
+    this.floorLayer.clear()
+    this.wallLayer.clear()
+    this.gridLayer.clear()
+    this.labelLayer.clear()
+    this.objectLayer.clear()
+    
+    // Clear Debug Layers Internal State
+    this.debugLayer.clear()
+    this.spineDebugLayer.clear()
+    this.overlayLayer.clear()
+  }
   private onThemeChange = (name: string, config: RoomLayerConfig) => {
       this.config = config
       this.updateFilters()
