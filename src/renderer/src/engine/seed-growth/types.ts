@@ -325,6 +325,8 @@ export interface DungeonData {
   spineWidth: number
   objects: DungeonObject[]
   seed?: number  // For seeded RNG operations (anti-clustering, etc.)
+  /** Pre-computed heat scores from DungeonAssembler (for debug display) */
+  heatScores?: Map<string, number>
 }
 
 // -----------------------------------------------------------------------------

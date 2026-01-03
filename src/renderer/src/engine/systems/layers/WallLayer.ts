@@ -7,13 +7,11 @@
  */
 
 import { Container, Graphics } from 'pixi.js'
-import { ILayer, RoomRenderData, TilePosition, ThemeColors } from './ILayer'
+import { ILayer, ThemeColors } from './ILayer'
 
 export interface WallRenderData {
-  rooms: RoomRenderData[]
-  corridorTiles: TilePosition[]
-  gridWidth: number
-  gridHeight: number
+  // Pre-computed wall positions (from processors/WallCalculator)
+  wallPositions: Set<string>
 }
 
 export interface WallRenderConfig {
@@ -48,80 +46,25 @@ export class WallLayer implements ILayer {
   }
 
   /**
-   * Render walls around all floor tiles
-   * @returns Set of wall positions for external use (e.g., collision)
+   * Render walls from pre-computed positions
    */
-  render(data: WallRenderData, config: WallRenderConfig): Set<string> {
+  render(data: WallRenderData, config: WallRenderConfig): void {
     this.clear()
 
-    const { rooms, corridorTiles, gridWidth, gridHeight } = data
+    const { wallPositions } = data
     const { tileSize, theme } = config
-
-    // Build floor set from rooms + corridors
-    const floorSet = this.buildFloorSet(rooms, corridorTiles)
-
-    // Find wall positions (adjacent to floor but not floor)
-    const wallSet = this.findWallPositions(floorSet, gridWidth, gridHeight)
 
     // Render shadows first
     if (theme.shadow) {
-      this.renderShadows(wallSet, tileSize, theme)
+      this.renderShadows(wallPositions, tileSize, theme)
     }
 
     // Render walls
-    for (const key of wallSet) {
+    for (const key of wallPositions) {
       const [x, y] = key.split(',').map(Number)
       this.wallGraphics.rect(x * tileSize, y * tileSize, tileSize, tileSize)
       this.wallGraphics.fill({ color: theme.walls.color })
     }
-
-    return wallSet
-  }
-
-  private buildFloorSet(rooms: RoomRenderData[], corridorTiles: TilePosition[]): Set<string> {
-    const floorSet = new Set<string>()
-
-    for (const room of rooms) {
-      const { x, y, w, h } = room.bounds
-      for (let dy = 0; dy < h; dy++) {
-        for (let dx = 0; dx < w; dx++) {
-          floorSet.add(`${x + dx},${y + dy}`)
-        }
-      }
-    }
-
-    for (const pos of corridorTiles) {
-      floorSet.add(`${pos.x},${pos.y}`)
-    }
-
-    return floorSet
-  }
-
-  private findWallPositions(floorSet: Set<string>, gridWidth: number, gridHeight: number): Set<string> {
-    const wallSet = new Set<string>()
-    const neighbors = [
-      [0, -1], [0, 1], [-1, 0], [1, 0],
-      [-1, -1], [1, -1], [-1, 1], [1, 1]
-    ]
-
-    for (const key of floorSet) {
-      const [x, y] = key.split(',').map(Number)
-
-      for (const [dx, dy] of neighbors) {
-        const nx = x + dx
-        const ny = y + dy
-        const neighborKey = `${nx},${ny}`
-
-        // Relaxed bounds for border padding
-        if (nx >= -2 && nx < gridWidth + 2 && ny >= -2 && ny < gridHeight + 2) {
-          if (!floorSet.has(neighborKey)) {
-            wallSet.add(neighborKey)
-          }
-        }
-      }
-    }
-
-    return wallSet
   }
 
   private renderShadows(wallPositions: Set<string>, tileSize: number, theme: ThemeColors): void {

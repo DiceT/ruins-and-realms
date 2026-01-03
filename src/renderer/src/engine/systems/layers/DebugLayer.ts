@@ -6,11 +6,12 @@
  */
 
 import { Container, Graphics, Text, TextStyle } from 'pixi.js'
-import { ILayer, RoomRenderData, TilePosition } from './ILayer'
+import { ILayer, RoomRenderData } from './ILayer'
 
 export interface DebugRenderData {
   rooms: RoomRenderData[]
-  spineTiles: TilePosition[]
+  // Pre-computed heat scores (from seed-growth/processors/HeatMapCalculator)
+  heatScores?: Map<string, number>
   walkableTiles?: Set<string>
   roomCosts?: Map<string, number>
   roomTraversals?: Map<string, number>
@@ -57,19 +58,19 @@ export class DebugLayer implements ILayer {
   render(data: DebugRenderData, config: DebugRenderConfig): void {
     this.clear()
 
-    const { rooms, spineTiles } = data
+    const { heatScores } = data
     const { tileSize, showHeatMap, showWalkmap } = config
 
-    // Always render graphics (visibility controlled separately)
-    this.renderHeatMap(rooms, spineTiles, tileSize)
+    // Render heat map from pre-computed scores
+    if (heatScores) {
+      this.renderHeatMap(heatScores, tileSize)
+    }
     this.renderWalkmap(data, tileSize)
 
     this.setVisibility(showHeatMap, showWalkmap)
   }
 
-  private renderHeatMap(rooms: RoomRenderData[], spineTiles: TilePosition[], size: number): void {
-    const scores = this.calculateWallHeatScores(rooms, spineTiles)
-
+  private renderHeatMap(scores: Map<string, number>, size: number): void {
     // Color scale helper
     const scoreToColor = (s: number): number => {
       if (s <= -20) return 0x00FF00 // Green (Best - Double Shared)
@@ -84,70 +85,6 @@ export class DebugLayer implements ILayer {
       this.heatMapLayer.rect(x * size, y * size, size, size)
       this.heatMapLayer.fill({ color: scoreToColor(score), alpha: 0.5 })
     }
-  }
-
-  private calculateWallHeatScores(rooms: RoomRenderData[], spineTiles: TilePosition[]): Map<string, number> {
-    const heatScores = new Map<string, number>()
-    const spineSet = new Set<string>(spineTiles.map(t => `${t.x},${t.y}`))
-
-    const checkSpineAdj = (x: number, y: number) => {
-      return spineSet.has(`${x},${y - 1}`) ||
-        spineSet.has(`${x},${y + 1}`) ||
-        spineSet.has(`${x - 1},${y}`) ||
-        spineSet.has(`${x + 1},${y}`)
-    }
-
-    for (const room of rooms) {
-      const { x, y, w, h } = room.bounds
-
-      // North and South walls
-      for (let dx = 0; dx < w; dx++) {
-        const dist = Math.abs(dx - Math.floor((w - 1) / 2))
-        const isEdge = dx === 0 || dx === w - 1
-        let bonus = isEdge ? -5 : (dist === 0 ? -10 : 0)
-
-        // North
-        const nKey = `${x + dx},${y - 1}`
-        if (checkSpineAdj(x + dx, y - 1)) bonus += 20
-        heatScores.set(nKey, (heatScores.get(nKey) || 0) + bonus)
-
-        // South
-        const sKey = `${x + dx},${y + h}`
-        if (checkSpineAdj(x + dx, y + h)) bonus += 20
-        heatScores.set(sKey, (heatScores.get(sKey) || 0) + bonus)
-      }
-
-      // West and East walls
-      for (let dy = 0; dy < h; dy++) {
-        const dist = Math.abs(dy - Math.floor((h - 1) / 2))
-        const isEdge = dy === 0 || dy === h - 1
-        let bonus = isEdge ? -5 : (dist === 0 ? -10 : 0)
-
-        // West
-        const wKey = `${x - 1},${y + dy}`
-        if (checkSpineAdj(x - 1, y + dy)) bonus += 20
-        heatScores.set(wKey, (heatScores.get(wKey) || 0) + bonus)
-
-        // East
-        const eKey = `${x + w},${y + dy}`
-        if (checkSpineAdj(x + w, y + dy)) bonus += 20
-        heatScores.set(eKey, (heatScores.get(eKey) || 0) + bonus)
-      }
-
-      // Diagonal corners (high penalty)
-      const corners = [
-        { x: x - 1, y: y - 1 },
-        { x: x + w, y: y - 1 },
-        { x: x - 1, y: y + h },
-        { x: x + w, y: y + h }
-      ]
-      for (const c of corners) {
-        const key = `${c.x},${c.y}`
-        heatScores.set(key, (heatScores.get(key) || 0) + 100)
-      }
-    }
-
-    return heatScores
   }
 
   private renderWalkmap(data: DebugRenderData, size: number): void {

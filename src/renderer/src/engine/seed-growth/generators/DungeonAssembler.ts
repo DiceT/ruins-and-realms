@@ -174,6 +174,9 @@ export class DungeonAssembler {
       tiles: consolidatedCorridors.map(t => ({ x: t.x, y: t.y }))
     }]
 
+    // Store heat scores for debug display
+    data.heatScores = heatScores
+
     return data
   }
 
