@@ -229,7 +229,7 @@ export const SeedPouchTab: React.FC<SeedPouchTabProps> = ({ queue, onQueueChange
                                 <span style={{ marginLeft: 8, color: '#888', fontSize: 10 }}>W:{fmt(seed.width)} H:{fmt(seed.height)}</span>
                             </div>
                             <div style={styles.row}>
-                                <span style={{ fontSize: 10, color: '#666' }}>{seed.side || 'Any'}</span>
+                                <span style={{ fontSize: 10, color: '#666' }}>Int:{fmt((seed as any).interval)}</span>
                                 {seed.tags?.map(t => <span key={t} style={styles.tag}>{t}</span>)}
                             </div>
                         </div>

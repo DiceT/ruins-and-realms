@@ -45,6 +45,7 @@ export interface ManualSeedConfig {
     // Placement
     distance?: RangeOrNumber
     side?: SeedSide
+    interval?: RangeOrNumber // Used by Trellises (e.g. #spawn) for spacing
 
     // Exits / Entrances
     doorType?: DoorType
@@ -61,5 +62,11 @@ export interface ManualSeedConfig {
 
     // Trellis System
     trellis?: string[]
+    
+    // Cluster (set by SpawnTrellis)
+    clusterId?: string
+
+    // Pouch Tracking (1-based index)
+    pouchId?: number
 }
 ```

@@ -97,9 +97,9 @@ export class LabelLayer {
         fillColor = `rgb(${r}, ${g}, ${b})`
       }
 
-      // Use sequential number based on index (1-based)
-      // This solves the off-by-one issue and duplicate numbers for repeated seeds
-      const labelText = String(i + 1)
+      // Use room ID but strip _L/_R suffix for display (User wants just the number)
+      // Internal ID must remain unique (e.g. 4_L, 4_R) to prevent Engine collision
+      const labelText = room.id.replace(/_[LR]$/, '')
 
       const label = new Text({ 
         text: labelText, 

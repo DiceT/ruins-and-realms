@@ -40,8 +40,23 @@ export class DungeonAssembler {
     // The spineTiles array only contains CENTER path tiles.
     const spineTiles: any[] = data.spine || []
     
-    // 0. Calculate Scores (Required for generator)
-    const heatScores = HeatMapCalculator.calculate(rooms, spineTiles)
+    // --- SPINE PRUNING ---
+    // Determine active range of the spine
+    let minActiveIndex = 0
+    let maxActiveIndex = spineTiles.length - 1
+    
+    // Use full spine range - final cleanup will trim dead ends
+    if (spineTiles.length > 0) {
+      // Skip early pruning - final cleanup pass after tributaries handles dead-ends
+      const spineWidth = data.spineWidth || 1
+      // No random trimming logic here anymore to ensure consistency
+    }
+    
+    const activeSpineTiles = spineTiles.slice(minActiveIndex, maxActiveIndex + 1)
+    
+    // 0. Calculate Scores
+    // Pass the active skeleton and the width - HeatMapCalculator handles the expansion logic
+    const heatScores = HeatMapCalculator.calculate(rooms, activeSpineTiles, data.spineWidth || 1)
 
     // --- TRELLIS PHASE: corridorAssembly ---
     const context: TrellisContext = { 
@@ -50,35 +65,7 @@ export class DungeonAssembler {
       rooms: rooms
     }
     TrellisManager.getInstance().processPhaseForRooms('corridorAssembly', context, rooms)
-    
-    // --- SPINE PRUNING ---
-    // Determine active range of the spine
-    let minActiveIndex = 0
-    let maxActiveIndex = spineTiles.length - 1
-    
-    if (spineTiles.length > 0) {
-      // Skip early pruning - final cleanup pass after tributaries handles dead-ends
-      // Just determine if stairs should be at spine start (affects south trimming)
-      const spineWidth = data.spineWidth || 1
-      const rng = new SeededRNG(settings.seed)
-      let stairsOnSpine = false
-      if (spineWidth >= 3) {
-        if (Math.floor(rng.next() * 100) < 50) stairsOnSpine = true
-      }
-      
-      // Use full spine range - final cleanup will trim dead ends
-      minActiveIndex = 0
-      maxActiveIndex = spineTiles.length - 1
-    }
-    
-    // Ensure valid range
-    if (minActiveIndex > maxActiveIndex) {
-      minActiveIndex = 0
-      maxActiveIndex = spineTiles.length - 1
-    }
-    
-    const activeSpineTiles = spineTiles.slice(minActiveIndex, maxActiveIndex + 1)
-    
+
     // 1. Build Blocked Set (Room Floors)
     const blockedSet = new Set<string>()
     for (const room of rooms) {
@@ -87,6 +74,14 @@ export class DungeonAssembler {
       }
     }
     
+    // Re-calculate targetSet (Spine Tiles) for Pathfinder (using local logic or just reusing what we had?)
+    // Pathfinder needs the FULL spine to connect to. 
+    // We already removed the pre-calc block above. We need to restore it OR calculate it here.
+    // Since we reverted the "Move Before HeatMap" change, we need to put the Spine Expansion back here where it was,
+    // OR just use the helper if we had one.
+    // For now, I will restore the logic here as it was originally (Spine Mode A/B), 
+    // effectively putting the code back to its original state but with the HeatMap call using the skeleton.
+
     const spineWidth = data.spineWidth || 1
     let targetSet = new Set<string>()
     let renderedSpinePath: { x: number; y: number }[] = []
@@ -129,9 +124,6 @@ export class DungeonAssembler {
 
     } else {
       // --- MODE B: WIDTH 1 - NO SPINE CORRIDOR ---
-      // When spine width is 1, the spine is just a pathfinding guide.
-      // renderedSpinePath stays empty (no spine floor tiles drawn).
-      // But we still need to set a targetSet for tributary generation.
       if (rooms.length > 0) {
         const seedRoom = rooms.reduce((prev, curr) => (prev.id.localeCompare(curr.id) < 0 ? prev : curr))
         for (const tile of seedRoom.tiles) {

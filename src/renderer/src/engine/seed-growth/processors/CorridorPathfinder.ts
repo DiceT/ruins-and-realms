@@ -1110,10 +1110,28 @@ export class CorridorPathfinder {
     for (const room of sortedRooms) {
       const attractor = roomAttractors.get(room.id) || {x: this.width/2, y: this.height/2}
       
+      // Check if room is a cell
+      const isCell = room.trellis?.some(t => t.startsWith('#cell')) ?? false
+
       // Find best start point on room wall
-      // Pass attractor to break ties
-      const startPoint = this.findBestRoomExit(room, heatMap, blockedSet, attractor)
+      // Pass targetSet to detect existing connections
+      const startPoint = this.findBestRoomExit(room, heatMap, blockedSet, attractor, connectedSet, isCell)
       if (!startPoint) continue
+
+      // SPECIAL: For Cell rooms, block the rest of the perimeter to prevent "wrapping" paths
+      const extraBlocked = new Set<string>()
+      if (isCell) {
+          const { x, y, w, h } = room.bounds
+          // Add all perimeter tiles excluding the chosen startPoint
+          const addP = (tx: number, ty: number) => {
+              if (tx === startPoint.x && ty === startPoint.y) return
+              extraBlocked.add(`${tx},${ty}`)
+          }
+          for (let dx=0; dx<w; dx++) addP(x+dx, y-1)
+          for (let dx=0; dx<w; dx++) addP(x+dx, y+h)
+          for (let dy=0; dy<h; dy++) addP(x-1, y+dy)
+          for (let dy=0; dy<h; dy++) addP(x+w, y+dy)
+      }
 
       // Start A*
       const path = this.findPathToNetwork(
@@ -1122,7 +1140,8 @@ export class CorridorPathfinder {
         blockedSet,
         heatMap,
         spineIndexMap,
-        noiseMap
+        noiseMap,
+        extraBlocked
       )
 
       if (path.length > 0) {
@@ -1138,6 +1157,7 @@ export class CorridorPathfinder {
         // If this is a #cell room, and we just found its exit, block the opposing wall.
         // Also block ALL other walls if we want STRICTLY one exit (user said "Cells can only have one exit").
         if (room.trellis?.some(t => t.startsWith('#cell'))) {
+            console.log(`[CorridorPathfinder] Cell ${room.id} got exit, blocking other walls. Trellis:`, room.trellis)
             const { x, y, w, h } = room.bounds
             const door = path[0] // First tile of path is the startPoint (the door)
             
@@ -1258,26 +1278,38 @@ export class CorridorPathfinder {
     room: Room, 
     heatMap: Map<string, number>, 
     blockedSet: Set<string>,
-    attractor: GridCoord
+    attractor: GridCoord,
+    targetSet?: Set<string>,
+    isCell: boolean = false
   ): GridCoord | null {
-    let bestSpot: GridCoord | null = null
-    let minScore = Infinity
-
     const { x, y, w, h } = room.bounds
-    const checkObj = { bestSpot, minScore }
+    
+    // CheckObj pattern to capture best result in loop
+    const checkObj = { bestSpot: null as GridCoord | null, minScore: Infinity }
     
     // Helper to calculate total score
     const calc = (tx: number, ty: number) => {
+         // Optimization for Cells: If we found an existing connection, stop searching
+         if (isCell && checkObj.minScore === -1000000) return
+
          const key = `${tx},${ty}`
          if (blockedSet.has(key)) return
+         
+         // SPECIAL: Existing Connection Check
+         if (targetSet?.has(key)) {
+             // This wall tile is ALREADY a corridor/spine floor!
+             // This is the ideal exit.
+             // For cells, we found our single exit.
+             checkObj.minScore = -1000000
+             checkObj.bestSpot = {x: tx, y: ty}
+             return
+         }
          
          let score = heatMap.get(key)
          if (score === undefined || score >= 100) return
          
          // Add Heuristic Score: Distance to Attractor * Factor
-         // Factor should be small enough not to override Wall vs Corner logic (which is ~5-10 diff)
-         // Dist is usually 0-50. 
-         // Factor 0.5: Dist 20 -> +10 cost.
+         // Factor 0.2: Dist 20 -> +4 cost.
          const dist = (Math.abs(tx - attractor.x) + Math.abs(ty - attractor.y)) * 0.2
          score += dist
          
@@ -1308,7 +1340,8 @@ export class CorridorPathfinder {
     blockedSet: Set<string>,
     heatMap: Map<string, number>,
     spineIndexMap: Map<string, number>,
-    noiseMap: Map<string, number>
+    noiseMap: Map<string, number>,
+    extraBlocked?: Set<string>
   ): GridCoord[] {
     const openSet: PathNode[] = []
     const closedSet = new Set<string>()
@@ -1339,7 +1372,9 @@ export class CorridorPathfinder {
             
             const nextKey = `${nextX},${nextY}`
             if (closedSet.has(nextKey)) continue
-            // Removed strict blockedSet check
+            
+            // strict blocking for specific checks (like cell perimeters)
+            if (extraBlocked?.has(nextKey)) continue
             
             let moveCost = this.COST_VOID
             const heatVal = heatMap.get(nextKey)
@@ -1351,8 +1386,10 @@ export class CorridorPathfinder {
                 // Room Traversal -> Medium Cost (encourages going around unless far)
                 moveCost = 5 
             } else if (heatVal !== undefined) {
+                // High Heat = BLOCKED (Walls 500+)
+                if (heatVal >= 500) continue
+
                 // Wall/Constraint (Heat can be negative bonus now)
-                // Base 30 + Heat. (-20 -> 10, -10 -> 20, 0 -> 30, +100 -> 130)
                 moveCost = 30 + heatVal
                 if (moveCost < 1) moveCost = 1
             } else {

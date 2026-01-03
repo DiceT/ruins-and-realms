@@ -3,13 +3,8 @@
  * 
  * DESCRIPTION:
  * Handles layout constraints for "Cell" type rooms (small, repeating units). 
- * It enforces a "Single Exit" rule and ensures that corridors enter/exit the cell 
- * only from orthogonal sides by manipulating the pathfinding heatmap.
- * 
- * SEED-ENGINE TERMINOLOGY:
- * - Phase [CORRIDOR_ASSEMBLY]: Executes during the final pathfinding stage to block specific walls.
- * - Heatmap: The cost-grid for door placement. Setting a tile to 500 "blocks" it; 1000 "forbids" it.
- * - Shared Wall: A wall abutting another room's floor, detected by the engine and blocked by this trellis.
+ * Blocks walls where adjacent cells are detected (+/- 2 tiles).
+ * Forces exits perpendicular to the cell row direction.
  */
 
 import { ITrellis, TrellisPhase, TrellisContext } from './ITrellis'
@@ -21,9 +16,7 @@ export class CellTrellis implements ITrellis {
 
   execute(phase: TrellisPhase, context: TrellisContext, subject?: RoomSeed | Room | ManualSeedConfig, args?: any[]): any {
     if (phase === 'classification') {
-      const seed = subject as RoomSeed
-      // Ensure cluster seeds share a type/label if needed
-      // Most of this is handled by clusterId sharing
+      // Classification phase - nothing needed
 
     } else if (phase === 'corridorAssembly') {
       const room = subject as Room
@@ -31,10 +24,49 @@ export class CellTrellis implements ITrellis {
       
       if (room && heatMap && rooms) {
         const { x, y, w, h } = room.bounds
+        const cx = room.bounds.x + room.bounds.w / 2
+        const cy = room.bounds.y + room.bounds.h / 2
         
-        // 1. Identify shared walls (500)
-        // (HeatMapCalculator already does some of this, but we can enforce it here specifically for cells)
+        // Find ALL neighbors
+        const neighbors = context.rooms.filter(r => 
+            r.id !== room.id && 
+            r.clusterId === room.clusterId &&
+            Math.abs(r.bounds.x - cx) <= (w + 2) && 
+            Math.abs(r.bounds.y - cy) <= (h + 2)
+        )
+
+        let hasNorthNeighbor = false
+        let hasSouthNeighbor = false
+        let hasWestNeighbor = false
+        let hasEastNeighbor = false
+
+        for (const other of neighbors) {
+            const dy = other.bounds.y - room.bounds.y
+            const dx = other.bounds.x - room.bounds.x
+            const absDx = Math.abs(dx)
+            const absDy = Math.abs(dy)
+            
+            // Determine primary axis of adjacency
+            if (absDx > absDy) {
+                // Horizontal: Check Y-Overlap to ensure true adjacency
+                const yOverlap = Math.min(room.bounds.y + room.bounds.h, other.bounds.y + other.bounds.h) - Math.max(room.bounds.y, other.bounds.y)
+                if (yOverlap > 0) {
+                    if (dx > 0) hasEastNeighbor = true
+                    else hasWestNeighbor = true
+                }
+            } else {
+                // Vertical: Check X-Overlap to ensure true adjacency
+                const xOverlap = Math.min(room.bounds.x + room.bounds.w, other.bounds.x + other.bounds.w) - Math.max(room.bounds.x, other.bounds.x)
+                if (xOverlap > 0) {
+                    if (dy > 0) hasSouthNeighbor = true
+                    else hasNorthNeighbor = true
+                }
+            }
+        }
         
+        console.log(`[CellTrellis] Room ${room.id} Neighbors: N=${hasNorthNeighbor} S=${hasSouthNeighbor} W=${hasWestNeighbor} E=${hasEastNeighbor}`)
+
+        // Define walls
         const walls = {
             north: [] as string[],
             south: [] as string[],
@@ -51,26 +83,19 @@ export class CellTrellis implements ITrellis {
             walls.east.push(`${x + w},${y + dy}`)
         }
 
-        const isWallBlocked = (keyList: string[]) => {
-            return keyList.some(k => heatMap.get(k) === 500)
-        }
-
-        // Apply "Opposite wall 500 if shared"
-        // This forces exits to be strictly orthogonal to the shared axis.
-        if (isWallBlocked(walls.north)) {
-            for (const k of walls.south) heatMap.set(k, 500)
-        }
-        if (isWallBlocked(walls.south)) {
-            for (const k of walls.north) heatMap.set(k, 500)
-        }
-        if (isWallBlocked(walls.west)) {
+        // Block Horizontal walls if any horizontal neighbor exists (Force Vertical Flow)
+        if (hasWestNeighbor || hasEastNeighbor) {
+            for (const k of walls.west) heatMap.set(k, 500)
             for (const k of walls.east) heatMap.set(k, 500)
         }
-        if (isWallBlocked(walls.east)) {
-            for (const k of walls.west) heatMap.set(k, 500)
+
+        // Block Vertical walls if any vertical neighbor exists (Force Horizontal Flow)
+        if (hasNorthNeighbor || hasSouthNeighbor) {
+            for (const k of walls.north) heatMap.set(k, 500)
+            for (const k of walls.south) heatMap.set(k, 500)
         }
         
-        // Implementation for corners zeroed (Prevent corner doors)
+        // Block corners entirely
         const corners = [
             {x: x-1, y: y-1}, {x: x+w, y: y-1},
             {x: x+w, y: y+h}, {x: x-1, y: y+h}
@@ -82,12 +107,31 @@ export class CellTrellis implements ITrellis {
     }
   }
 
-  private resolveValue(val: any, rng: any): number {
-      if (val === undefined) return 1
-      if (typeof val === 'number') return val
-      if (typeof val === 'object' && val.min !== undefined && val.max !== undefined) {
-          return rng.nextInt(val.min, val.max)
+  /**
+   * Check if there's an adjacent room in a given direction.
+   * Checks +/- offset from center.
+   */
+  private checkDirection(
+    cx: number, cy: number, 
+    dx: number, dy: number,
+    w: number, h: number,
+    allFloors: Map<string, Room>
+  ): boolean {
+    // Check positions offset from center
+    // For 1x1 cells, check just the offset position
+    // For larger cells, check across the width/height
+    
+    if (dx !== 0) {
+      // Horizontal check - scan vertically
+      for (let oy = -Math.floor(h/2); oy <= Math.floor(h/2); oy++) {
+        if (allFloors.has(`${cx + dx},${cy + oy}`)) return true
       }
-      return 1
+    } else {
+      // Vertical check - scan horizontally
+      for (let ox = -Math.floor(w/2); ox <= Math.floor(w/2); ox++) {
+        if (allFloors.has(`${cx + ox},${cy + dy}`)) return true
+      }
+    }
+    return false
   }
 }

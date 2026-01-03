@@ -59,7 +59,8 @@ export function validateSeedBatch(json: any): { valid: ManualSeedConfig[], error
             width: item.width,
             height: item.height,
             distance: item.distance,
-            side: item.side,
+            interval: item.interval,
+            side: item.side, // Preserved for manual seed side override
             doorType: item.doorType,
             isExit: !!item.isExit,
             exitType: item.exitType,
@@ -149,12 +150,12 @@ export function settingsToSeedConfig(settings: SpineSeedSettings): ManualSeedCon
     return {
         schemaVersion: 1,
         type: 'room', 
-        id: 'copied_seed',
+        type: 'room',
         shape: 'rectangle', 
         width: { min: roomGrowth.minWidth, max: roomGrowth.maxWidth },
         height: { min: roomGrowth.minHeight, max: roomGrowth.maxHeight },
         distance: { min: ejection.minDistance, max: ejection.maxDistance },
-        side: ejection.ejectionSide === 'random' ? 'any' : ejection.ejectionSide as any,
+        interval: { min: ejection.minInterval, max: ejection.maxInterval },
         allowMirror: true, 
         mandatory: true,
         metadata: {
