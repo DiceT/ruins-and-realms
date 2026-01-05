@@ -33,7 +33,7 @@ const INITIAL_STATE: RealmState = {
     assignedWorkers: 0
   },
   wellness: 0, // STABLE
-  foodStatus: FoodStatus.STARVING, // Start with 0 production vs 4 pop
+  foodStatus: FoodStatus.STARVATION, // Start with 0 production vs 4 pop
   date: {
     turn: 1
   },
@@ -49,7 +49,12 @@ const INITIAL_STATE: RealmState = {
   actionPoints: {
     current: 2, // Base 2 actions
     max: 2      // Potentially upgradable (Manor, etc.)
-  }
+  },
+  // Addendum 002: New state fields
+  titles: ['SURVIVOR'],      // Start with SURVIVOR title
+  threat: 0,
+  lastDelveTurn: 0,
+  clocks: []
 };
 
 export const useRealmStore = create<RealmState & RealmActions>((set, get) => ({
@@ -96,13 +101,22 @@ export const useRealmStore = create<RealmState & RealmActions>((set, get) => ({
       rings: state.rings,
       population: state.population,
       wellness: state.wellness,
+      foodStatus: state.foodStatus,
       date: state.date,
       buildings: state.buildings,
+      tax: state.tax,
+      baronPatience: state.baronPatience,
       phase: state.phase,
       ownedHexes: state.ownedHexes,
-      actionPoints: state.actionPoints
+      actionPoints: state.actionPoints,
+      // New fields
+      titles: state.titles,
+      threat: state.threat,
+      lastDelveTurn: state.lastDelveTurn,
+      clocks: state.clocks
     };
     PersistenceService.save('realm', dataToSave);
+    console.log('[Realm] State saved');
   },
 
   loadRealm: () => {

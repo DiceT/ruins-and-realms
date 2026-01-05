@@ -18,10 +18,12 @@ export enum RealmWellnessStatus {
   THRIVING = 'THRIVING'    // >= +4
 }
 
+// 4-tier food system per design doc
 export enum FoodStatus {
-  SURPLUS = 'SURPLUS',
-  STABLE = 'STABLE',
-  STARVING = 'STARVING'
+  SURPLUS = 'SURPLUS',     // +1 Wellness/turn, growth possible
+  FED = 'FED',             // Stable (renamed from STABLE)
+  SHORTAGE = 'SHORTAGE',   // -1 Wellness/turn, no growth
+  STARVATION = 'STARVATION' // -2 Wellness/turn, population loss
 }
 
 export interface RealmDate {
@@ -30,13 +32,42 @@ export interface RealmDate {
 
 import { TurnPhase } from './turnTypes';
 
+// === BUILDING SYSTEM (Addendum 001) ===
+
+export const DISABLED_THRESHOLD_OFFSET = 2;
+
+export function getDisabledThreshold(maxHP: number): number {
+  return Math.max(1, maxHP - DISABLED_THRESHOLD_OFFSET);
+}
+
+export function isBuildingDisabled(currentHP: number, maxHP: number): boolean {
+  return currentHP <= getDisabledThreshold(maxHP);
+}
+
 export interface BuildingInstance {
   id: string;          // Unique Instance ID
   defId: string;       // Reference to BuildingDefinition ID (e.g., "farm")
   hexId: string;       // Location (Anchor Hex)
-  constructionPoints: number; // Current construction progress
-  isBuilt: boolean;    // True if constructionPoints >= def.construction
+  currentHP: number;   // 0 during construction, builds up to maxHP
+  maxHP: number;       // Cached from definition (def.hp)
+  isBuilt: boolean;    // True when currentHP >= maxHP
+  isDisabled: boolean; // True when HP too low to function
 }
+
+// === TITLES & CLOCKS (Addendum 002) ===
+
+export type TitleId = 'SURVIVOR' | 'FOUNDER' | 'THANE' | 'LORD' | 'WARDEN' | 'SAGE' | 'HIGH_PRIEST';
+
+export interface Clock {
+  id: string;
+  name: string;
+  type: 'AFFLICTION' | 'UNQUIET' | 'BARON' | 'CUSTOM';
+  segments: number;      // Total segments (usually 4)
+  filled: number;        // Currently filled
+  sourceId?: string;     // Related hex, domain, or aspect
+}
+
+// === REALM STATE ===
 
 export interface RealmState {
   rings: RealmCurrency;
@@ -57,6 +88,12 @@ export interface RealmState {
   phase: TurnPhase;
   ownedHexes: { id: string; landTags: string[] }[];
   actionPoints: { current: number; max: number };
+
+  // Addendum 002: New state fields
+  titles: TitleId[];
+  threat: number;          // Cumulative threat level (0+)
+  lastDelveTurn: number;   // Turn number of last DELVE (0 = never)
+  clocks: Clock[];
 }
 
 export const getWellnessStatus = (level: RealmWellnessLevel): RealmWellnessStatus => {

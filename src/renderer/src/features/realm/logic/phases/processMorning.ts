@@ -1,6 +1,4 @@
-import { getConstructionTarget } from '../../logic/buildings/constructionManager';
-import { BuildingInstance } from '../../types/realmTypes';
-import { RealmState } from '../../types/realmTypes';
+import { BuildingInstance, RealmState } from '../../types/realmTypes';
 import { getBuildingDef } from '../../utils/buildingRegistry';
 
 export interface MorningResult {
@@ -27,37 +25,17 @@ export function processMorning(state: RealmState): MorningResult {
 
   // 1. Iterate Constructed Buildings
   state.buildings.forEach(b => {
-    let building = { ...b }; // Clone to avoid mutation of original if passed by ref
+    let building = { ...b }; // Clone to avoid mutation
 
     // A. Construction Progress
     if (!building.isBuilt) {
-      // Stub: Advance by 1 point per turn automatically?
-      // Or does it require workers assigned?
-      // For now, let's say it advances by 1 automatically (or via assigned workers logic later).
-      // Let's assume 1 point per turn base rate.
-      // We can't mutate 'b' directly if we want to return a clean log, 
-      // but 'state' here is likely a draft or we need to return updates.
-      // Wait, processMorning returns a result, it doesn't mutate state directly?
-      // Actually, processTurn uses the result to calculate NET changes for Rings, but complex deep state updates?
-      // processTurn logic: "state = { ...state, buildings: ... }"
+      // Advance by 1 HP per turn (base rate)
+      building.currentHP += 1;
       
-      // We need to return specific building updates in MorningResult or handle it in the orchestrator?
-      // Current MorningResult: income, upkeep, netChange.
-      // It misses "buildingUpdates".
-      
-      // Let's log it for now and handle the mutation in Orchestrator? 
-      // Or better: processMorning SHOULD return the new buildings list?
-      // That changes the contract.
-      
-      // Alternative: Just log income here, and Orchestrator handles specific logic?
-      // No, Orchestrator delegates "Morning Logic" to this function.
-      // This function should probably return `newBuildings` list if it modifies them.
-      // Advance by 1 point per turn (Base)
-      building.constructionPoints += 1;
-      
-      const target = getConstructionTarget(building.defId);
-      if (building.constructionPoints >= target) {
+      // Check if construction complete
+      if (building.currentHP >= building.maxHP) {
         building.isBuilt = true;
+        building.isDisabled = false;
         
         // Log completion
         const def = getBuildingDef(building.defId);
@@ -65,8 +43,8 @@ export function processMorning(state: RealmState): MorningResult {
       }
     }
 
-    // B. Income (Only if built - could be newly built this turn!)
-    if (building.isBuilt) {
+    // B. Income (Only if built AND operational)
+    if (building.isBuilt && !building.isDisabled) {
        const def = getBuildingDef(building.defId);
        if (def) {
          if (def.income > 0) {

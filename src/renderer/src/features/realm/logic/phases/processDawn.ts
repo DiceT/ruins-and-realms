@@ -22,36 +22,56 @@ export function processDawn(state: RealmState): DawnResult {
 
   log.push(`Dawn of Turn ${state.date.turn}. The realm stirs.`);
 
-  // 1. Food Check
+  // 1. Food Check - 4-tier system per Addendum 006
   const foodResult = calculateFoodStatus(state.population, state.buildings);
   let newFoodStatus = foodResult.status;
 
-  if (foodResult.status === FoodStatus.STARVING) {
-    log.push(`STARVATION! Food Demand (${foodResult.demand}) exceeds Supply (${foodResult.supply}).`);
-    // Penalty: -1 Wellness
-    newWellness = Math.max(-4, newWellness - 1) as RealmWellnessLevel;
-  } else if (foodResult.status === FoodStatus.SURPLUS) {
-    log.push(`Surplus harvest! Supply (${foodResult.supply}) exceeds Demand (${foodResult.demand}).`);
-    // Bonus: Small chance for wellness? Or just log.
-  } else {
-    log.push(`Food supply stable (${foodResult.supply}/${foodResult.demand}).`);
+  switch (foodResult.status) {
+    case FoodStatus.STARVATION:
+      log.push(`STARVATION! Food Demand (${foodResult.demand}) far exceeds Supply (${foodResult.supply}).`);
+      // Penalty: -2 Wellness, population loss
+      newWellness = Math.max(-4, newWellness - 2) as RealmWellnessLevel;
+      if (state.population.total > 1) {
+        populationChange = -1;
+        log.push('A citizen has perished from hunger.');
+      }
+      break;
+    
+    case FoodStatus.SHORTAGE:
+      log.push(`Food shortage! Supply (${foodResult.supply}) below Demand (${foodResult.demand}).`);
+      // Penalty: -1 Wellness, no growth
+      newWellness = Math.max(-4, newWellness - 1) as RealmWellnessLevel;
+      break;
+    
+    case FoodStatus.FED:
+      log.push(`Food supply stable (${foodResult.supply}/${foodResult.demand}).`);
+      // Stable - no change
+      break;
+    
+    case FoodStatus.SURPLUS:
+      log.push(`Surplus harvest! Supply (${foodResult.supply}) exceeds Demand (${foodResult.demand}).`);
+      // Bonus: +1 Wellness
+      newWellness = Math.min(4, newWellness + 1) as RealmWellnessLevel;
+      break;
   }
 
   // 2. Wellness Check
   const status = getWellnessStatus(newWellness);
   
-  // 3. Population Growth/Decline Logic
-  // At +4 (EUPHORIC), pop grows
-  // At -4 (REBELLING), pop declines
-  if (newWellness >= 4) {
-    if (state.population.total < 10) { // Soft cap for testing
-      populationChange = 1;
-      log.push('The people are euphoric! A new family settles in the realm.');
-    }
-  } else if (newWellness <= -4) {
-    if (state.population.total > 1) {
-      populationChange = -1;
-      log.push('Rebellion and despair! Citizens flee the realm.');
+  // 3. Population Growth/Decline Logic (only if not already changed by starvation)
+  // At +4 (THRIVING), pop grows
+  // At -4 (CRISIS), pop declines
+  if (populationChange === 0) {
+    if (newWellness >= 4) {
+      if (state.population.total < 50) { // No arbitrary cap
+        populationChange = 1;
+        log.push('The people are thriving! A new family settles in the realm.');
+      }
+    } else if (newWellness <= -4) {
+      if (state.population.total > 1) {
+        populationChange = -1;
+        log.push('Crisis and despair! Citizens flee the realm.');
+      }
     }
   }
 

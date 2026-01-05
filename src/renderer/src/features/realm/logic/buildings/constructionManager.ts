@@ -11,19 +11,21 @@ export function startConstruction(defId: string, hexId: string): BuildingInstanc
   if (!def) throw new Error(`Invalid Building Definition ID: ${defId}`);
 
   return {
-    id: crypto.randomUUID(), // Unique ID
+    id: crypto.randomUUID(),
     defId: defId,
     hexId: hexId,
-    constructionPoints: 0,
-    isBuilt: false
+    currentHP: 1,           // Starts at 1 HP, builds toward maxHP
+    maxHP: def.hp,          // From building definition
+    isBuilt: false,
+    isDisabled: true        // Not operational until built
   };
 }
 
 /**
  * GET CONSTRUCTION TARGET
- * Helper to know how many points are needed.
+ * Returns the HP required to complete construction (same as maxHP).
  */
 export function getConstructionTarget(defId: string): number {
   const def = getBuildingDef(defId);
-  return def ? def.construction : 999;
+  return def ? def.hp : 999;
 }
