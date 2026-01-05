@@ -362,12 +362,10 @@ export interface SeedEjectionSettings {
   maxDistance: number
   /** Which side(s) of spine to eject seeds */
   ejectionSide: EjectionSide
-  /** Send 2 seeds same direction (one farther than the other) */
-  pairedEjection: boolean
+  /** How many seeds to eject at each ejection point: Single (1), Paired (2), Triplets (3) */
+  ejectionCount: 1 | 2 | 3
   /** Chance seed doesn't grow at all (0-1) */
   dudChance: number
-  /** Chance to eject a wall-seed instead of room-seed (0-1) */
-  wallSeedChance: number
 }
 
 // -----------------------------------------------------------------------------
@@ -452,6 +450,8 @@ export interface SpineSeedSettings {
   symmetryStrictPrimary: boolean
   /** If true, secondary (paired) mirror seeds grow in lockstep */
   symmetryStrictSecondary: boolean
+  /** If true, tertiary (triplets) mirror seeds grow in lockstep */
+  symmetryStrictTertiary: boolean
 
   // --- Debug ---
   debug: SpineSeedDebugFlags
@@ -492,9 +492,8 @@ export function createDefaultSpineSeedSettings(): SpineSeedSettings {
       minDistance: 3,
       maxDistance: 7, // User request: 7
       ejectionSide: 'both',
-      pairedEjection: true, // Ensure defaults match user intent (usually true for spine seed)
-      dudChance: 0.0,
-      wallSeedChance: 0.0
+      ejectionCount: 2, // Paired by default
+      dudChance: 0.0
     },
 
     roomGrowth: {
@@ -510,6 +509,7 @@ export function createDefaultSpineSeedSettings(): SpineSeedSettings {
     symmetryAxis: 'vertical',
     symmetryStrictPrimary: false,
     symmetryStrictSecondary: false,
+    symmetryStrictTertiary: false,
 
     debug: {
       showSpine: true,
@@ -547,6 +547,8 @@ export interface SpineTile {
 
 export interface RoomSeed {
   id: string
+  /** Domain this seed belongs to (e.g., 'Castle', 'Cavern') */
+  domain?: string
   /** Position where seed was ejected */
   position: GridCoord
   /** Spine tile this seed was ejected from */

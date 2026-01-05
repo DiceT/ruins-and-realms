@@ -85,10 +85,8 @@ export class LabelLayer implements ILayer {
         // Gold for rank 1, silver for rank 2, bronze for rank 3
         const rankColors = ['#FFD700', '#C0C0C0', '#CD7F32']
         const color = rankColors[Math.min(furthestInfo.rank - 1, 2)] || '#FFFFFF'
-        style = new TextStyle({
-          ...baseStyle,
-          fill: color
-        })
+        style = baseStyle.clone()
+        style.fill = color
       }
 
       const text = new Text({
@@ -104,6 +102,10 @@ export class LabelLayer implements ILayer {
   }
 
   destroy(): void {
-    this._container.destroy({ children: true })
+    try {
+      this._container.destroy({ children: true })
+    } catch (e) {
+      console.warn('LabelLayer destroy failed:', e)
+    }
   }
 }

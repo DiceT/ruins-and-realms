@@ -307,9 +307,6 @@ export class DungeonViewRenderer {
    * Render the dungeon view from seed growth state OR DungeonData
    */
   public renderDungeonView(data: SeedGrowthState | DungeonData, settings: SeedGrowthSettings, showRoomNumbers: boolean = true, showWalkmap: boolean = false): void {
-    console.log(`[DungeonViewRenderer] renderDungeonView. DataRooms: ${(data as any).rooms?.length}, ShowHeatMap: ${this.showHeatMap}, ShowWalkmap: ${showWalkmap}`)
-    console.log(`[DungeonViewRenderer] Current Visibility Flags: Fog=${this.showFog}, Light=${this.showLight}, Player=${this.showPlayer}`)
-    
     // Clean canvas via LayerManager helper
     this.clear()
     
@@ -355,10 +352,6 @@ export class DungeonViewRenderer {
         rooms = (data as any).rooms || []
         this.renderedRooms = rooms // Update interaction target list
         
-        // DEBUG: Verify TinyTitan
-        const tinyRooms = rooms.filter(r => r.bounds.w === 1 && r.bounds.h === 1)
-        console.warn(`[DungeonViewRenderer] Received ${rooms.length} rooms. 1x1 Rooms: ${tinyRooms.length}. TinyTitan Tagged: ${rooms.filter(r => (r.trellis as any)?.includes('#tinytitan')).length}`)
-        
         // Data must be pre-assembled by DungeonAssembler
         if ((data as any).corridors && (data as any).corridors.length > 0) {
             corridorTiles = (data as any).corridors[0].tiles.map(t => ({ x: t.x, y: t.y }))
@@ -369,7 +362,6 @@ export class DungeonViewRenderer {
     }
 
     // 3. Render floors (rooms + corridors) using FloorLayer with adapters
-    console.log('[DungeonViewRenderer] Rendering Floors for', rooms.length, 'rooms')
     const themeColors = toThemeColors(this.config)
     this.floorLayer.render(
       toFloorRenderData(rooms, corridorTiles),
@@ -439,8 +431,6 @@ export class DungeonViewRenderer {
     )
     
     // NOTE: VisibilityLayer doesn't need explicit render call here, it updates via updateVisibilityState
-    
-    console.log('[DungeonViewRenderer] Render Complete')
   }
 
 
@@ -451,69 +441,7 @@ export class DungeonViewRenderer {
    * Room Floor rendering
    */
   
-  private renderWalkmap(data: DungeonData, size: number): void {
-      const analysis = DungeonAnalysis.analyze(data)
-      const { roomCosts, walkableTiles, roomTraversals, doorTraversals } = analysis
-      
-      const graphics = new Graphics()
-      // Light blue with 50% transparency
-      graphics.fillStyle = { color: 0xADD8E6, alpha: 0.5 } // light blue
-      
-      for (const key of walkableTiles) {
-          const [x, y] = key.split(',').map(Number)
-          graphics.rect(x * size, y * size, size, size)
-          graphics.fill()
-      }
-      
-      // The walkmapContainer was removed, debugLayer now handles walkmap rendering
-      // this.walkmapContainer.addChild(graphics) 
-      
-      // Render Cost Labels
-    // User requested: 1/2 square above room number, 1/2 square below for traversals
-    const costStyle = {
-        fontFamily: 'Arial',
-        fontSize: Math.max(10, Math.floor(size / 2.5)),
-        fontWeight: 'normal',
-        fill: '#000000', // Black
-        align: 'center'
-    }
-    
-    for (const room of data.rooms) {
-        // Use bounds center for consistency with room numbers
-        const cx = room.bounds.x + room.bounds.w / 2
-        const cy = room.bounds.y + room.bounds.h / 2
-        
-        const cost = roomCosts.get(room.id)
-        if (cost !== undefined) {
-            // Position: Center - 0.5 Y (above)
-            const text = new Text({
-                text: `(${cost})`,
-                style: costStyle
-            })
-            text.anchor.set(0.5)
-            text.x = cx * size
-            text.y = (cy - 0.5) * size
-            
-            // this.walkmapContainer.addChild(text) // Now handled by debugLayer
-        }
-        
-        // Render room/door traversal counts
-        // Position: Center + 0.5 Y (below)
-        const roomCount = roomTraversals.get(room.id) ?? 0
-        const doorCount = doorTraversals.get(room.id) ?? 0
-        
-        const labelText = `R:${roomCount} D:${doorCount}`
-        const traversalLabel = new Text({
-            text: labelText,
-            style: costStyle // Match font size to movement costs
-        })
-        traversalLabel.anchor.set(0.5)
-        traversalLabel.x = cx * size
-        traversalLabel.y = (cy + 0.5) * size
-        
-        // this.walkmapContainer.addChild(traversalLabel) // Now handled by debugLayer
-    }
-}
+
   
   /**
    * Destroy and cleanup

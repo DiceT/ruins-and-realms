@@ -151,32 +151,7 @@ export class MapEngine {
         
         // Note: shaderManager doesn't have an update method - filters are static
 
-        // LOG INPUT DEBUG
-        if (this.app.ticker.lastTime % 60 === 0) {
-          /*
-         const viewport = this.options.viewport as any
-         const hitArea = viewport.hitArea
-         const worldPos = this.camera.toWorld(this.app.renderer.events.pointer.global.x, this.app.renderer.events.pointer.global.y)
-         console.log('[MapEngine] Input Debug:', {
-           screen: { w: this.app.screen.width, h: this.app.screen.height },
-           viewport: { x: viewport.x, w: hitArea ? hitArea.width : 'N/A' },
-           mouse: { x: this.app.renderer.events.pointer.global.x, y: this.app.renderer.events.pointer.global.y },
-           world: { x: worldPos.x, y: worldPos.y },
-           hovered: { x: this.interactionState.hoveredTile.x, y: this.interactionState.hoveredTile.y }
-         }) 
-         */
-        }
-
         this.gridSystem.draw()
-
-        // Debug log once per second
-        // if (performance.now() - lastLog > 1000) {
-        //   console.log('[MapEngine] Ticker Heartbeat', {
-        //     mode: this.interactionState.mode,
-        //     hover: this.interactionState.hoveredTile
-        //   })
-        //   lastLog = performance.now()
-        // }
       }
     }
     this.app.ticker.add(this.tickerCallback)
@@ -217,7 +192,6 @@ export class MapEngine {
       const local = this.camera.container.toLocal(global)
       const { x, y } = this.gridSystem.getGridCoords(local.x, local.y)
 
-      console.log('[MapEngine] Click Debug:', { mode: this.interactionState.mode, x, y })
 
       // Generic Click Callback moved to 'idle' state check below
       // this.options.onHexClicked?.(x, y)
@@ -225,19 +199,15 @@ export class MapEngine {
       // Legacy dungeon placement modes - stubbed out (now using SeedGrowthGenerator)
       if (this.interactionState.mode === 'placing_entrance') {
         // Dungeon entrance placement removed - handled by SeedGrowthGenerator
-        console.log('[MapEngine] placing_entrance mode is deprecated')
       } else if (this.interactionState.mode === 'placing_room') {
         // Dungeon room placement removed
-        console.log('[MapEngine] placing_room mode is deprecated')
       } else if (this.interactionState.mode === 'placing_exit') {
         // Dungeon exit placement removed
-        console.log('[MapEngine] placing_exit mode is deprecated')
       } else if (this.interactionState.mode === 'idle') {
         // Generic Click Callback (Only in Idle)
         this.options.onHexClicked?.(x, y)
       } else if (this.interactionState.mode === 'placing_new_room') {
         // Dungeon new room placement removed
-        console.log('[MapEngine] placing_new_room mode is deprecated')
       } else if (this.interactionState.mode === 'placing_town') {
         const { x, y } = this.interactionState.hoveredTile
         if (this.options.onTownPlaced) {
@@ -258,11 +228,9 @@ export class MapEngine {
   }
 
   public centerCamera(gridWidth: number, gridHeight: number): void {
-      console.log('[MapEngine] centerCamera called with grid size:', gridWidth, gridHeight)
       const tileSize = this.gridSystem.config.size
       const worldW = gridWidth * tileSize
       const worldH = gridHeight * tileSize
-      console.log('[MapEngine] targeting world center:', worldW / 2, worldH / 2, 'TileSize:', tileSize)
       this.camera.centerAt(worldW / 2, worldH / 2)
   }
 
@@ -330,7 +298,5 @@ export class MapEngine {
 
     // Clear window reference
     ;(window as any).__MAP_ENGINE__ = null
-
-    console.log('[MapEngine] Destroyed')
   }
 }

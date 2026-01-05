@@ -61,7 +61,7 @@ export class PouchBuilder {
       
       // Calculate how many MORE seeds we need for this event
       const needsSymmetry = this.needsSymmetry(candidate, settings, rng)
-      const needsPaired = settings.ejection.pairedEjection
+      const needsPaired = (settings.ejection.ejectionCount || 1) >= 2  // Legacy compat
       
       // Expand into physical seeds
       const expandedSeeds = this.expandSeed(candidate, settings, rng, needsSymmetry, needsPaired, seedCount, targetCount, queueAccessor)
@@ -76,18 +76,7 @@ export class PouchBuilder {
       }
     }
     
-    // 3. Log for debugging
-    console.groupCollapsed(`[PouchBuilder] Generated Pouch (${rawPouch.length} physical, limit=${targetCount})`)
-    rawPouch.forEach((s, i) => {
-        const shape = s.type === 'wall' ? 'Wall' : 'Room'
-        const cluster = s.clusterId ? `[${s.clusterId}] ` : ''
-        const side = s.side || '?'
-        const dist = typeof s.distance === 'object' ? s.distance.min : s.distance
-        const interval = typeof s.interval === 'object' ? s.interval.min : s.interval
-        console.log(`${i}: ${cluster}${shape} side:${side} dist:${dist} int:${interval} (${s.id || 'virtual'})`)
-    })
-    console.groupEnd()
-
+    // 3. Return pouch
     return rawPouch
   }
 
@@ -104,21 +93,31 @@ export class PouchBuilder {
   }
 
   /**
-   * Expands a seed into physical seeds based on symmetry/paired settings.
+   * Expands a seed into physical seeds based on symmetry/ejectionCount settings.
    * Each physical seed counts toward the limit.
+   * 
+   * ejectionCount:
+   * - 1 (Single): One seed per side
+   * - 2 (Paired): Primary + Secondary per side
+   * - 3 (Triplets): Primary + Secondary + Tertiary per side
+   * 
+   * When symmetry is active, L/R pairs are linked via symmetryPartnerId.
    */
   private static expandSeed(
     firstSeed: ManualSeedConfig, 
     settings: SpineSeedSettings, 
     rng: SeededRNG,
     needsSymmetry: boolean,
-    needsPaired: boolean,
+    needsPaired: boolean, // Legacy param, now uses ejectionCount
     currentCount: number,
     targetCount: number,
     queue: QueueAccessor
   ): ManualSeedConfig[] {
     const { ejection, roomGrowth } = settings
     const results: ManualSeedConfig[] = []
+    
+    // Get ejection count (1 = Single, 2 = Paired, 3 = Triplets)
+    const ejectionCount = ejection.ejectionCount || 1
     
     // Determine sides
     let baseSide: SeedSide = firstSeed.side || ejection.ejectionSide
@@ -136,6 +135,31 @@ export class PouchBuilder {
     let totalSeeds = 0
     const maxSeeds = targetCount - currentCount + 1 // +1 because first is already counted
     
+    // Generate unique IDs for linking symmetric pairs
+    const primaryPairId = needsSymmetry ? `sym_pri_${rng.nextInt(0, 999999)}` : undefined
+    const secondaryPairId = needsSymmetry && ejectionCount >= 2 ? `sym_sec_${rng.nextInt(0, 999999)}` : undefined
+    const tertiaryPairId = needsSymmetry && ejectionCount >= 3 ? `sym_ter_${rng.nextInt(0, 999999)}` : undefined
+    
+    // Pre-calculate shared values for symmetric seeds (identical distance, width, height)
+    const sharedPrimary = needsSymmetry ? {
+      dist: this.resolveRange(firstSeed.distance, ejection.minDistance, ejection.maxDistance, rng),
+      width: this.resolveRange(firstSeed.width, roomGrowth.minWidth, roomGrowth.maxWidth, rng),
+      height: this.resolveRange(firstSeed.height, roomGrowth.minHeight, roomGrowth.maxHeight, rng),
+      interval: this.resolveRange(firstSeed.interval, ejection.minInterval, ejection.maxInterval, rng)
+    } : null
+    
+    const sharedSecondary = needsSymmetry && ejectionCount >= 2 ? {
+      offset: rng.nextInt(ejection.minDistance, ejection.maxDistance),
+      width: rng.nextInt(roomGrowth.minWidth, roomGrowth.maxWidth),
+      height: rng.nextInt(roomGrowth.minHeight, roomGrowth.maxHeight)
+    } : null
+    
+    const sharedTertiary = needsSymmetry && ejectionCount >= 3 ? {
+      offset: rng.nextInt(ejection.minDistance, ejection.maxDistance),
+      width: rng.nextInt(roomGrowth.minWidth, roomGrowth.maxWidth),
+      height: rng.nextInt(roomGrowth.minHeight, roomGrowth.maxHeight)
+    } : null
+
     for (const side of sides) {
       if (totalSeeds >= maxSeeds) break
       
@@ -143,43 +167,73 @@ export class PouchBuilder {
       const seed = totalSeeds === 0 ? firstSeed : queue.next()
       totalSeeds++
       
-      // Resolve values
-      const dist = this.resolveRange(seed.distance, ejection.minDistance, ejection.maxDistance, rng)
-      const width = this.resolveRange(seed.width, roomGrowth.minWidth, roomGrowth.maxWidth, rng)
-      const height = this.resolveRange(seed.height, roomGrowth.minHeight, roomGrowth.maxHeight, rng)
-      const interval = this.resolveRange(seed.interval, ejection.minInterval, ejection.maxInterval, rng)
+      // Resolve values for PRIMARY (use shared if symmetric)
+      const dist = sharedPrimary?.dist ?? this.resolveRange(seed.distance, ejection.minDistance, ejection.maxDistance, rng)
+      const width = sharedPrimary?.width ?? this.resolveRange(seed.width, roomGrowth.minWidth, roomGrowth.maxWidth, rng)
+      const height = sharedPrimary?.height ?? this.resolveRange(seed.height, roomGrowth.minHeight, roomGrowth.maxHeight, rng)
+      const interval = sharedPrimary?.interval ?? this.resolveRange(seed.interval, ejection.minInterval, ejection.maxInterval, rng)
       
       // PRIMARY SEED
+      const primaryId = `${seed.pouchId || 'seed'}_${side}_pri`
       const primary: ManualSeedConfig = {
         ...seed,
+        id: primaryId,
         side: side,
         distance: { min: dist, max: dist },
         width: { min: width, max: width },
         height: { min: height, max: height },
-        // First seed gets normal interval, rest get 0 (same spine tile)
-        interval: { min: results.length === 0 ? interval : 0, max: results.length === 0 ? interval : 0 }
+        interval: { min: results.length === 0 ? interval : 0, max: results.length === 0 ? interval : 0 },
+        symmetryPartnerId: primaryPairId
       }
       results.push(primary)
       
-      // SECONDARY SEED (if paired and we have room)
-      if (needsPaired && totalSeeds < maxSeeds) {
+      // SECONDARY SEED (if ejectionCount >= 2 and we have room)
+      if (ejectionCount >= 2 && totalSeeds < maxSeeds) {
         const secSeed = queue.next()
         totalSeeds++
         
-        const pairedOffset = rng.nextInt(ejection.minDistance, ejection.maxDistance)
-        const secDist = dist + pairedOffset
-        const secWidth = this.resolveRange(secSeed.width, roomGrowth.minWidth, roomGrowth.maxWidth, rng)
-        const secHeight = this.resolveRange(secSeed.height, roomGrowth.minHeight, roomGrowth.maxHeight, rng)
+        const secOffset = sharedSecondary?.offset ?? rng.nextInt(ejection.minDistance, ejection.maxDistance)
+        const secDist = dist + secOffset
+        const secWidth = sharedSecondary?.width ?? this.resolveRange(secSeed.width, roomGrowth.minWidth, roomGrowth.maxWidth, rng)
+        const secHeight = sharedSecondary?.height ?? this.resolveRange(secSeed.height, roomGrowth.minHeight, roomGrowth.maxHeight, rng)
         
+        const secondaryId = `${secSeed.pouchId || 'seed'}_${side}_sec`
         const secondary: ManualSeedConfig = {
           ...secSeed,
+          id: secondaryId,
           side: side,
           distance: { min: secDist, max: secDist },
           width: { min: secWidth, max: secWidth },
           height: { min: secHeight, max: secHeight },
-          interval: { min: 0, max: 0 } // Same spine tile
+          interval: { min: 0, max: 0 },
+          symmetryPartnerId: secondaryPairId
         }
         results.push(secondary)
+      }
+      
+      // TERTIARY SEED (if ejectionCount >= 3 and we have room)
+      if (ejectionCount >= 3 && totalSeeds < maxSeeds) {
+        const terSeed = queue.next()
+        totalSeeds++
+        
+        const secOffset = sharedSecondary?.offset ?? rng.nextInt(ejection.minDistance, ejection.maxDistance)
+        const terOffset = sharedTertiary?.offset ?? rng.nextInt(ejection.minDistance, ejection.maxDistance)
+        const terDist = dist + secOffset + terOffset
+        const terWidth = sharedTertiary?.width ?? this.resolveRange(terSeed.width, roomGrowth.minWidth, roomGrowth.maxWidth, rng)
+        const terHeight = sharedTertiary?.height ?? this.resolveRange(terSeed.height, roomGrowth.minHeight, roomGrowth.maxHeight, rng)
+        
+        const tertiaryId = `${terSeed.pouchId || 'seed'}_${side}_ter`
+        const tertiary: ManualSeedConfig = {
+          ...terSeed,
+          id: tertiaryId,
+          side: side,
+          distance: { min: terDist, max: terDist },
+          width: { min: terWidth, max: terWidth },
+          height: { min: terHeight, max: terHeight },
+          interval: { min: 0, max: 0 },
+          symmetryPartnerId: tertiaryPairId
+        }
+        results.push(tertiary)
       }
     }
     

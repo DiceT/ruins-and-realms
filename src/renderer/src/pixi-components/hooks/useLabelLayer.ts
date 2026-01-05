@@ -51,8 +51,13 @@ export function useLabelLayer(
 
   // Re-render when data or config changes
   useEffect(() => {
-    if (layerRef.current && data && config) {
+    if (!layerRef.current) return
+    
+    if (data && config) {
       layerRef.current.render(data, config)
+    } else {
+      // Clear the layer when disabled
+      layerRef.current.clear()
     }
   }, [data, config])
 

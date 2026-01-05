@@ -9,7 +9,6 @@ class MapFacadeService {
    * @param mapData The map serialization object.
    */
   async loadMap(mapData: any): Promise<void> {
-    console.log('[MapFacade] Loading map', mapData)
     // In the future, this will emit an event or update a store that the MapCanvas listens to.
     // For now, we will just prove the data flow.
   }
@@ -18,7 +17,6 @@ class MapFacadeService {
    * Center the viewport on a specific coordinate.
    */
   centerView(x: number, y: number): void {
-    console.log(`[MapFacade] Centering view on ${x}, ${y}`)
   }
 }
 

@@ -24,8 +24,6 @@ import flairOverlay from '../assets/images/overland-tiles/flair_empty_0.png'
 // Seed Growth System
 import {
   SeedGrowthGenerator,
-  SeedGrowthRenderer,
-  DungeonViewRenderer,
   RoomClassifier,
   CorridorPathfinder,
   SeedGrowthSettings,
@@ -34,7 +32,6 @@ import {
   MaskToolMode,
   // Spine-Seed Generator
   SpineSeedGenerator,
-  SpineSeedRenderer,
   SpineSeedSettings,
   SpineSeedState,
   createDefaultSpineSeedSettings,
@@ -73,6 +70,7 @@ interface Plot {
 export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const pixiContainerRef = useRef<HTMLDivElement>(null)
+  const rightPanelRef = useRef<HTMLDivElement>(null)
 
   // Core Systems Refs
   const appRef = useRef<Application | null>(null)
@@ -452,7 +450,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
               dungeonViewRendererRef.current.focusOnTile(startX, startY)
             }
           } else if (shouldSyncCamera) {
-            console.log('[GameWindow] Triggering Initial Camera Focus via Controller')
             dungeonControllerRef.current.resetCameraToGridCenter()
           }
         }
@@ -500,7 +497,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         }
       }
     }
-    console.log('[GameWindow] Render Effect Complete. Renderer Exists:', !!dungeonViewRendererRef.current)
   }, [viewAsDungeon, gameMode, showMap, seedGrowthSettings, seedGrowthState, spineSeedState, spineSeedSettings, generatorMode, activeLight, isReady]) // Added activeLight dependency to re-init logic if light changes? No, handleLightChange separately.
 
   // Update Light Profile when activeLight changes
@@ -525,7 +521,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
   // Debug Toggles Effect
   useEffect(() => {
     const renderer = dungeonControllerRef.current?.getDungeonViewRenderer()
-    console.log(`[GameWindow] Debug Toggle Effect: Fog=${showFog}, Light=${showLight}, Renderer=${!!renderer}`)
     if (renderer) {
       renderer.setDebugVisibility(showFog, showLight)
     }
@@ -636,6 +631,12 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         layout.setRightOpen(true)
         layout.resize()
 
+        // 5a. Initialize Dice Engine
+        if (rightPanelRef.current) {
+          diceEngine.initialize(rightPanelRef.current)
+          diceEngine.resize()
+        }
+
         setIsReady(true)
       } catch (err) {
         initializingRef.current = false
@@ -656,6 +657,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
         appRef.current.destroy(true, { children: true, texture: true })
         appRef.current = null
       }
+      diceEngine.destroy()
     }
   }, [])
 
@@ -745,8 +747,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
         // Create or reuse controller
         if (!dungeonControllerRef.current) {
-          // Force Rebuild Log
-          console.warn('[GameWindow] Creating new DungeonController instance...')
           dungeonControllerRef.current = new DungeonController({
             onStateChange: (state) => {
               // Sync React state for UI - use controller's current mode to avoid stale closure
@@ -1101,7 +1101,6 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
           <div
             onClick={() => {
               diceEngine.roll('2d8').then((result) => {
-                // console.log('Roll Result:', result)
               })
             }}
             style={{
@@ -1155,6 +1154,7 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
 
           {/* --- Right Panel --- */}
           <div
+            ref={rightPanelRef}
             style={{
               position: 'absolute',
               right: 0,

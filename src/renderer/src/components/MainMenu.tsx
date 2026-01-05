@@ -294,7 +294,9 @@ export const MainMenu = (): React.ReactElement => {
             onClick={() => {
               console.log('Card clicked:', i, config.isFirst ? '(New Adventure)' : '(Generic)')
               setShowMap(false)
-              setGamePhase('adventure')
+              // First card (New Adventure) goes to new @pixi/react dungeon
+              // Other cards go to legacy adventure mode
+              setGamePhase(config.isFirst ? 'dungeon' : 'adventure')
             }}
           />
         ))}

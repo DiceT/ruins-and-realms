@@ -96,6 +96,7 @@ export function toObjectLayerData(objects: DungeonObject[]): ObjectLayerData {
     objects: objects.map(obj => ({
       type: obj.type,
       position: { x: obj.x, y: obj.y },
+      rotation: obj.rotation,
       properties: obj.properties
     }))
   }

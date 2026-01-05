@@ -204,7 +204,7 @@ class ImageLoader {
         const img = new Image()
         img.onload = checkDone
         img.onerror = () => {
-          console.warn('Texture load failed:', entry.source)
+
           checkDone()
         }
         img.src = entry.source
@@ -215,7 +215,7 @@ class ImageLoader {
         const img = new Image()
         img.onload = checkDone
         img.onerror = () => {
-          console.warn('Bump load failed:', entry.bump)
+
           checkDone()
         }
         img.src = entry.bump
@@ -228,6 +228,6 @@ class ImageLoader {
     imageLoadingState = 'complete'
     waitingCallbacks.forEach((cb) => cb(globalImageCache))
     waitingCallbacks.length = 0
-    console.log('DiceColors: All images loaded.')
+
   }
 }

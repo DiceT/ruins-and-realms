@@ -39,7 +39,6 @@ export class GameOrchestrator {
     // Create DungeonController (Phase A - skeleton only)
     this.dungeonController = new DungeonController(callbacks)
     
-    console.log('[GameOrchestrator] Initialized')
   }
 
   public getApp(): Application | null {
@@ -57,7 +56,6 @@ export class GameOrchestrator {
   // --- Mode Switching ---
 
   public setMode(mode: string): void {
-    console.log(`[GameOrchestrator] Switching mode to: ${mode}`)
     // TODO: Implement actual mode switching logic (unload previous, load new)
   }
 

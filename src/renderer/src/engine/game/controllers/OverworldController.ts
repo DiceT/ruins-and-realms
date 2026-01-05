@@ -62,7 +62,6 @@ export class OverworldController {
   constructor(callbacks: OverworldControllerCallbacks = {}) {
     this.callbacks = callbacks
     this.overworldManager = new OverworldManager()
-    console.log('[OverworldController] Created')
   }
 
   /**
@@ -76,7 +75,6 @@ export class OverworldController {
    * Initialize the controller with PixiJS app and layout
    */
   public init(app: Application, layout: GameLayout): void {
-    console.log('[OverworldController] init()')
     
     this.app = app
     this.layout = layout
@@ -92,12 +90,7 @@ export class OverworldController {
    * Initialize the MapEngine for hex grid rendering
    */
   public initMapEngine(): void {
-    if (!this.app || !this.layout) {
-      console.error('[OverworldController] Cannot init MapEngine - not initialized')
-      return
-    }
-
-    console.log('[OverworldController] initMapEngine()')
+    if (!this.app || !this.layout) return
 
     this.mapEngine = new MapEngine(this.app, {
       viewport: this.layout.middlePanel,
@@ -542,7 +535,6 @@ export class OverworldController {
   // --- Lifecycle ---
   
   public destroy(): void {
-    console.log('[OverworldController] destroy()')
     
     if (this.mapEngine) {
       this.mapEngine.destroy()

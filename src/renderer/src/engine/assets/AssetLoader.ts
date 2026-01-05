@@ -1,12 +1,14 @@
 import { Assets, Texture } from 'pixi.js'
 import { MusicSystem } from '../audio/MusicSystem'
 import { TerrainAssetLoader } from '../map/TerrainAssetLoader'
+import { DungeonAssetLoader } from './DungeonAssetLoader'
 
 // Define modules for glob imports
 const overlandTiles = import.meta.glob('@/assets/images/overland-tiles/*/*.png', { eager: true }) as Record<string, { default: string }>
 const adventureCards = import.meta.glob('@/assets/images/ui/adventure-cards/*.png', { eager: true }) as Record<string, { default: string }>
 const crackedGlasses = import.meta.glob('@/assets/images/ui/cracked-glass/*.png', { eager: true }) as Record<string, { default: string }>
 const audioTracks = import.meta.glob('@/assets/audio/music/*.{mp3,wav,ogg}', { eager: true }) as Record<string, { default: string }>
+const dungeonIcons = import.meta.glob('@/assets/images/icons/*.svg', { eager: true }) as Record<string, { default: string }>
 
 export class AssetLoader {
   private static totalAssets = 0
@@ -73,6 +75,18 @@ export class AssetLoader {
     for (const path in adventureCards) texturesToLoad.push(adventureCards[path].default)
     for (const path in crackedGlasses) texturesToLoad.push(crackedGlasses[path].default)
 
+    // Dungeon Icons (doors, stairs, etc.)
+    const iconUrlToType: Record<string, string> = {}
+    for (const path in dungeonIcons) {
+      const match = path.match(/\/([^/]+)\.svg$/)
+      if (match) {
+        const type = match[1] // e.g., "door", "door-locked", "stairs"
+        const src = dungeonIcons[path].default
+        texturesToLoad.push(src)
+        iconUrlToType[src] = type
+      }
+    }
+
     this.totalAssets = texturesToLoad.length
     console.log(`[AssetLoader] Loading ${this.totalAssets} assets...`)
 
@@ -83,7 +97,7 @@ export class AssetLoader {
       // Load
       const loadedTextures = await Promise.all(batch.map(src => Assets.load<Texture>(src)))
       
-      // Register with TerrainAssetLoader if it's a terrain
+      // Register with appropriate loaders
       for (let j = 0; j < batch.length; j++) {
         const src = batch[j]
         const tex = loadedTextures[j]
@@ -91,8 +105,14 @@ export class AssetLoader {
         // Optimize: Set pixel art scaling here globally
         tex.source.scaleMode = 'nearest'
         
+        // Terrain assets
         if (urlToType[src]) {
              TerrainAssetLoader.register(urlToType[src], tex)
+        }
+        
+        // Dungeon icon assets
+        if (iconUrlToType[src]) {
+             DungeonAssetLoader.register(iconUrlToType[src], tex)
         }
       }
       
@@ -103,6 +123,9 @@ export class AssetLoader {
       // Small tick to let UI breathe
       await new Promise(resolve => setTimeout(resolve, 10))
     }
+    
+    // Mark dungeon assets as loaded
+    DungeonAssetLoader.setLoaded()
     
     console.log('[AssetLoader] Complete.')
   }

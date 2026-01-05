@@ -56,7 +56,6 @@ export class LayerManager {
     const layer = this.layers.get(key)
     if (layer) {
       const newState = visible ?? !layer.container.visible
-      console.log(`[LayerManager] Toggling ${key}: ${layer.container.visible} -> ${newState} (Z:${layer.config.zIndex})`)
       layer.container.visible = newState
       layer.config.visible = newState // Update config to match
     } else {

@@ -922,6 +922,9 @@ export class SpineSeedGenerator {
       isComplete: isDud,
       generation,
       
+      // Symmetry linking (for lockstep growth)
+      partnerId: config.symmetryPartnerId,
+      
       // Metadata (Locked Scope v1)
       configSource: config,
       tags: config.tags,
@@ -1053,7 +1056,10 @@ export class SpineSeedGenerator {
         : this.settings.symmetryStrictPrimary
 
     if (isStrict && seed.partnerId) {
-        const partner = this.state.roomSeeds.find(s => s.id === seed.partnerId)
+        // Find partner: the OTHER seed with the same partnerId group (not itself)
+        const partner = this.state.roomSeeds.find(s => 
+            s.partnerId === seed.partnerId && s.id !== seed.id
+        )
         
         // If partner is alive (not a dud), we enforce lockstep
         if (partner && !partner.isDead) {

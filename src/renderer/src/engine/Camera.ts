@@ -54,11 +54,6 @@ export class Camera {
 
     // Wheel is a native event on the canvas
     this.app.canvas.addEventListener('wheel', this._boundWheel, { passive: false })
-
-    console.log('[Camera] Init complete. Listening on stage.', {
-      stageMode: this.app.stage.eventMode,
-      hitArea: this.app.stage.hitArea
-    })
   }
 
   public destroy(): void {
@@ -71,12 +66,6 @@ export class Camera {
   }
 
   private onPointerDown(e: FederatedPointerEvent): void {
-    console.log('[Camera] onPointerDown', {
-      type: e.type,
-      button: e.button,
-      global: e.global,
-      target: e.target
-    })
     // Filter events: only drag if we clicked the interaction target or its children
     const target = e.target
     let found = false
@@ -90,30 +79,20 @@ export class Camera {
     }
 
     if (!found) {
-      console.log('[Camera] Target not found in hierarchy', {
-        interactionTarget: this.interactionTarget
-      })
       return
     }
 
     // Middle Mouse (1) or Alt + Left Click (0)
     if (e.button === 1 || (e.button === 0 && (e.originalEvent as unknown as MouseEvent).altKey)) {
-      console.log('[Camera] Drag Start', { button: e.button })
       // CRITICAL: Prevent browser scroll mode on middle click
       e.preventDefault()
 
       this.isDragging = true
       this.lastData = new Point(e.global.x, e.global.y)
-    } else {
-      console.log('[Camera] Not a panning button', {
-        button: e.button,
-        altKey: (e.originalEvent as unknown as MouseEvent).altKey
-      })
     }
   }
 
   private onPointerUp(): void {
-    if (this.isDragging) console.log('[Camera] Drag End')
     this.isDragging = false
     this.lastData = null
   }
@@ -126,8 +105,6 @@ export class Camera {
 
     const dx = currentX - this.lastData.x
     const dy = currentY - this.lastData.y
-
-    console.log('[Camera] Panning', { dx, dy, newX: this.container.position.x + dx })
 
     this.container.position.x += dx
     this.container.position.y += dy
@@ -255,13 +232,6 @@ export class Camera {
 
     const scale = Math.min(scaleX, scaleY, this.options.maxZoom)
     const finalScale = Math.max(scale, this.options.minZoom)
-
-    console.log('[Camera] fitToView Calculation:', {
-      viewDim: { viewW, viewH },
-      worldDim: { worldWidth, worldHeight },
-      padd: padding,
-      scales: { scaleX, scaleY, scale, finalScale }
-    })
 
     this.container.scale.set(finalScale)
 

@@ -33,7 +33,6 @@ export class ShaderManager {
 
   public enable(type: ShaderType) {
     if (!this.activeShaders.has(type)) {
-      console.log(`[ShaderManager] Enabling ${type}`)
       this.activeShaders.add(type)
       this.reapplyFilters()
     }
@@ -41,7 +40,6 @@ export class ShaderManager {
 
   public disable(type: ShaderType) {
     if (this.activeShaders.has(type)) {
-      console.log(`[ShaderManager] Disabling ${type}`)
       this.activeShaders.delete(type)
       this.reapplyFilters()
     }
@@ -49,7 +47,6 @@ export class ShaderManager {
 
   public toggle(type: ShaderType, force?: boolean) {
     const shouldEnable = force !== undefined ? force : !this.activeShaders.has(type)
-    console.log(`[ShaderManager] Toggling ${type} to ${shouldEnable}`)
     if (shouldEnable) {
       this.enable(type)
     } else {

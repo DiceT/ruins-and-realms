@@ -24,4 +24,9 @@ export { useLabelLayer } from './useLabelLayer'
 export { useBackgroundLayer } from './useBackgroundLayer'
 export { useVisibilityLayer } from './useVisibilityLayer'
 export { useSpineDebugLayer } from './useSpineDebugLayer'
+export { useWalkmapLayer } from './useWalkmapLayer'
+export { useHeatmapLayer } from './useHeatmapLayer'
+export { useObjectLayer } from './useObjectLayer'
 export { usePanZoom } from './usePanZoom'
+
+

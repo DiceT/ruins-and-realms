@@ -63,8 +63,6 @@ export class CellTrellis implements ITrellis {
                 }
             }
         }
-        
-        console.log(`[CellTrellis] Room ${room.id} Neighbors: N=${hasNorthNeighbor} S=${hasSouthNeighbor} W=${hasWestNeighbor} E=${hasEastNeighbor}`)
 
         // Define walls
         const walls = {

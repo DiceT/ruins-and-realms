@@ -49,7 +49,7 @@ export class FloorLayer implements ILayer {
 
     // Render corridor floors
     for (const pos of corridorTiles) {
-      this.graphics.rect(pos.x * tileSize, pos.y * tileSize, tileSize - 1, tileSize - 1)
+      this.graphics.rect(pos.x * tileSize, pos.y * tileSize, tileSize, tileSize)
       this.graphics.fill({ color: theme.floor.color })
     }
   }

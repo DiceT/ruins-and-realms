@@ -37,7 +37,6 @@ export class BackgroundSystem {
 
       // Start Parallax Loop
       this.app.ticker.add(this.update, this)
-      console.log('[BackgroundSystem] Loaded and added to stage.', { visible: this.isVisible })
     } catch (err) {
       console.error('[BackgroundSystem] Failed to load background:', err)
     }
@@ -89,7 +88,6 @@ export class BackgroundSystem {
   }
 
   public setVisible(visible: boolean): void {
-    console.log('[BackgroundSystem] setVisible:', visible)
     this.isVisible = visible
     if (this.bgSprite) {
       this.bgSprite.visible = visible

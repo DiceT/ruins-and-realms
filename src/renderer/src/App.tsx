@@ -6,6 +6,7 @@ import { GameWindow } from '@/components/GameWindow'
 import { DebugToolbar } from '@/components/DebugToolbar'
 import { PixiTestPage } from '@/pixi-components/PixiTestPage'
 import { DungeonTestPage } from '@/pixi-components/DungeonTestPage'
+import { DungeonPage } from '@/pages/DungeonPage'
 
 function App() {
   const gamePhase = useAppStore((state) => state.gamePhase)
@@ -30,7 +31,12 @@ function App() {
     return <DungeonTestPage />
   }
 
-  // Adventure phase - show the game window
+  // NEW: Dungeon mode with @pixi/react
+  if (gamePhase === 'dungeon') {
+    return <DungeonPage />
+  }
+
+  // Adventure phase - show the game window (overworld mode)
   return (
     <AppLayout>
       <GameWindow onBack={() => setGamePhase('menu')} />
@@ -40,3 +46,4 @@ function App() {
 }
 
 export default App
+

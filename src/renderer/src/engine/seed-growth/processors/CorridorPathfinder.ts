@@ -1157,7 +1157,6 @@ export class CorridorPathfinder {
         // If this is a #cell room, and we just found its exit, block the opposing wall.
         // Also block ALL other walls if we want STRICTLY one exit (user said "Cells can only have one exit").
         if (room.trellis?.some(t => t.startsWith('#cell'))) {
-            console.log(`[CorridorPathfinder] Cell ${room.id} got exit, blocking other walls. Trellis:`, room.trellis)
             const { x, y, w, h } = room.bounds
             const door = path[0] // First tile of path is the startPoint (the door)
             

@@ -7,7 +7,8 @@ export { SeedGrowthGenerator } from './generators/SeedGrowthGenerator'
 export { SpineSeedGenerator } from './generators/SpineSeedGenerator'
 export { DungeonAssembler } from './generators/DungeonAssembler'
 
-// Renderers
+// Renderers (DEPRECATED - replaced by @pixi/react components in pixi-components/)
+// TODO: Remove once GameWindow is migrated to use DungeonPage
 export { SeedGrowthRenderer } from './renderers/SeedGrowthRenderer'
 export { SpineSeedRenderer } from './renderers/SpineSeedRenderer'
 export { DungeonViewRenderer } from './renderers/DungeonViewRenderer'

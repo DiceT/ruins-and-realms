@@ -82,7 +82,6 @@ export class DungeonController {
 
   constructor(callbacks: DungeonControllerCallbacks = {}) {
     this.callbacks = callbacks
-    console.log('[DungeonController] Created')
   }
 
   /**
@@ -95,7 +94,6 @@ export class DungeonController {
     seedSettings: SeedGrowthSettings,
     spineSettings: SpineSeedSettings
   ): void {
-    console.log('[DungeonController] init()')
     
     this.app = app
     this.layout = layout
@@ -192,7 +190,6 @@ export class DungeonController {
   public updateSettings(seedSettings: SeedGrowthSettings, spineSettings: SpineSeedSettings): void {
     this.seedSettings = seedSettings
     this.spineSettings = spineSettings
-    console.log('[DungeonController] Settings Updated. Symmetry:', spineSettings.symmetry, 'Branch:', spineSettings.branchChance)
   }
 
   /**
@@ -202,7 +199,6 @@ export class DungeonController {
     if (this.generatorMode === mode) return
     
     this.generatorMode = mode
-    console.log('[DungeonController] Mode set to:', mode)
     
     // If initialized, switch renderers
     if (this.initialized) {
@@ -295,8 +291,6 @@ export class DungeonController {
   // --- Generation Methods ---
 
   public regenerate(): void {
-    console.log('[DungeonController] regenerate()')
-    
     this.stopAnimation()
     
     // Clear dungeon view to prevent stale graphics
@@ -309,7 +303,6 @@ export class DungeonController {
       this.seedGrowthRenderer.render(this.seedGrowthGen.getState(), this.seedSettings)
       this.runChunkedGeneration('organic')
     } else if (this.spineSeedGen && this.spineSeedRenderer && this.spineSettings) {
-      console.log('[DungeonController] Regenerating Spine. Symmetry:', this.spineSettings.symmetry)
       this.spineSeedGen.reset(this.spineSettings)
       this.spineSeedRenderer.render(this.spineSeedGen.getState(), this.spineSettings)
       this.runChunkedGeneration('spineSeed')
@@ -482,8 +475,6 @@ export class DungeonController {
    * Toggle between seed view and dungeon view
    */
   public setViewAsDungeon(enabled: boolean): void {
-    console.log('[DungeonController] setViewAsDungeon:', enabled)
-    
     if (!this.app || !this.layout) return
     
     const state = this.getCurrentState()
@@ -686,12 +677,9 @@ export class DungeonController {
     // CRITICAL: Ensure view dimensions are up to date!
     // The renderer might have initialized with default 800x600.
     if (this.app) {
-       const screen = this.app.screen
        // Use full screen dimensions since we are rendering to stage
        this.dungeonViewRenderer.setViewDimensions(screen.width, screen.height)
     }
-    
-    console.log('[DungeonController] Resetting Camera to Grid Center:', gridWidth, gridHeight)
     
     // User requested offset: (width + 4) / 2
     // Standard center is (width - 1) / 2
@@ -779,7 +767,6 @@ export class DungeonController {
   }
 
   public setShowFog(enabled: boolean): void {
-    console.log(`[DungeonController] setShowFog: ${enabled}. ExpManager exists: ${!!this.explorationManager}`)
     this.showFog = enabled
     this.dungeonViewRenderer?.setDebugVisibility(enabled, this.showLight)
     this.explorationManager?.updateVisibility()
@@ -857,8 +844,6 @@ export class DungeonController {
   // --- Cleanup ---
 
   public destroy(): void {
-    console.log('[DungeonController] destroy()')
-    
     this.stopAnimation()
     
     // Cleanup player/visibility

@@ -231,7 +231,7 @@ export class RollController {
   public update(time: number) {
     // Always update dice that are rolling
     // Settle check
-    // console.log("RollController Update Time:", time); // Debugging Liquid Shader
+
 
     let allStopped = true
 
@@ -267,7 +267,7 @@ export class RollController {
         if (v < 0.01 && w < 0.01) {
           die.stopped = true
           die.result = this.getDieValue(die)
-          console.log(`Die ${die.rollId} stopped. Result: ${die.result}`)
+
         } else {
           allStopped = false
         }
@@ -276,7 +276,7 @@ export class RollController {
 
     if (allStopped && this.isRolling && this.activeDice.length > 0) {
       this.isRolling = false
-      console.log('All dice stopped.')
+
       this.finishRoll()
     }
   }

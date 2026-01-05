@@ -59,12 +59,6 @@ export function DungeonTestPage() {
                 // Assemble final dungeon
                 const data = DungeonAssembler.assembleSpine(state, settings)
                 setDungeonData(data)
-
-                console.log('[DungeonTestPage] Generated dungeon:', {
-                    rooms: data.rooms.length,
-                    spineLength: data.spine.length,
-                    gridSize: `${data.gridWidth}x${data.gridHeight}`
-                })
             } catch (error) {
                 console.error('[DungeonTestPage] Generation failed:', error)
             } finally {

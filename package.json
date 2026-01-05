@@ -34,6 +34,7 @@
     "nanoid": "^5.1.6",
     "pixi-viewport": "^6.0.3",
     "pixi.js": "^8.14.3",
+    "rc-slider": "^11.1.9",
     "react-use": "^17.6.0",
     "sass": "^1.97.1",
     "three": "^0.124.0",

@@ -17,7 +17,6 @@ class DiceFacadeService {
    * @returns A promise that resolves to the roll result after the 3D animation completes.
    */
   async roll(formula: string): Promise<RollResult> {
-    console.log(`[DiceFacade] Rolling: ${formula}`)
     // TODO: Connect to actual 3D engine
     return Promise.resolve({
       total: 0,
@@ -30,7 +29,6 @@ class DiceFacadeService {
    * Clear the dice tray of all visible dice.
    */
   clearTray(): void {
-    console.log('[DiceFacade] Clearing tray')
   }
 }
 

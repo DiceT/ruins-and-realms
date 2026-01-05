@@ -30,7 +30,7 @@ export class AudioManager {
         this.audioContext
           .resume()
           .then(() => {
-            console.log('AudioManager: AudioContext resumed successfully.')
+
             this.enabled = true // Ensure enabled
           })
           .catch((e) => console.error('AudioManager: Failed to resume AudioContext:', e))
@@ -71,7 +71,7 @@ export class AudioManager {
         const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
         this.buffers.set(key, audioBuffer)
       } catch (e) {
-        console.warn(`Failed to load sound: ${url}`, e)
+
       }
     }
 
@@ -98,7 +98,7 @@ export class AudioManager {
 
     await Promise.all(promises)
     this.loaded = true
-    console.log('AudioManager: All sounds loaded.')
+
   }
 
   public playDiceHit(velocity: number) {
@@ -152,13 +152,13 @@ export class AudioManager {
 
   private playSound(key: string, intensity: number) {
     if (!this.buffers.has(key)) {
-      console.warn(`AudioManager: Sound buffer missing for key: ${key}`)
+
       return
     }
     const buffer = this.buffers.get(key)
     if (!buffer) return
 
-    console.log(`AudioManager: Playing ${key} (Vol: ${this.volume}, Int: ${intensity.toFixed(2)})`)
+
 
     const source = this.audioContext.createBufferSource()
     source.buffer = buffer

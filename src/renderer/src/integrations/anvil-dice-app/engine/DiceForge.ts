@@ -541,7 +541,7 @@ export class DiceForge {
       }
 
       // --- Emissive Map Generation (for Glow effects) ---
-      let emissiveTex: THREE.Texture | undefined = undefined
+      let emissiveTex: THREE.Texture | null = null
       // Only generate specifically for Liquid Core (or if explicitly requested later)
       if (theme.material === 'liquid_core') {
         const canvasEmit = document.createElement('canvas')
@@ -572,7 +572,7 @@ export class DiceForge {
       }
 
       // --- Alpha Map Generation (for Solid Numbers on Transparent Shell) ---
-      let alphaTex: THREE.Texture | undefined = undefined
+      let alphaTex: THREE.Texture | null = null
       if (theme.material === 'liquid_core') {
         const canvasAlpha = document.createElement('canvas')
         canvasAlpha.width = 256

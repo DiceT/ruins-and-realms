@@ -26,6 +26,10 @@ export class EngineCore {
     // this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.renderer.setClearColor(0x000000, 0) // Force transparent background
     this.renderer.domElement.style.pointerEvents = 'none' // Ensure clicks pass through canvas
+    this.renderer.domElement.style.position = 'absolute'
+    this.renderer.domElement.style.top = '0'
+    this.renderer.domElement.style.left = '0'
+    this.renderer.domElement.style.zIndex = '5'
     container.appendChild(this.renderer.domElement)
 
     // Initialize Systems

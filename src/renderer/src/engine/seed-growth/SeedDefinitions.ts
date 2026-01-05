@@ -35,6 +35,7 @@ export interface ManualSeedConfig {
     // Identity
     id?: string
     type?: string
+    domain?: string  // e.g., 'Castle', 'Cavern', 'Dungeon'
     tags?: string[]
 
     // Geometry
@@ -68,5 +69,8 @@ export interface ManualSeedConfig {
 
     // Pouch Tracking (1-based index)
     pouchId?: number
+    
+    // Symmetry Partner (set by PouchBuilder for linked symmetric seeds)
+    symmetryPartnerId?: string
 }
 

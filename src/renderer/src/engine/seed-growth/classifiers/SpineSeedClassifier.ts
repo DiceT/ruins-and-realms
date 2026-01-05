@@ -19,7 +19,6 @@ export class SpineSeedClassifierFixed {
    */
   public classify(state: SpineSeedState, settings: SpineSeedSettings): DungeonData {
     const rawSeeds = state.roomSeeds || []
-    console.warn(`[SpineSeedClassifier] Classifying ${rawSeeds.length} seeds. First 5 IDs:`, rawSeeds.slice(0, 5).map(s => s.id).join(', '))
     
     // 1. Prune rooms (e.g. 1x1 or 1xN seeds that failed to grow)
     const prunedRooms = this.pruneRooms(rawSeeds)
@@ -62,10 +61,6 @@ export class SpineSeedClassifierFixed {
       const isImmune = !!seed.content?.immuneToPruning || hasTag
       const isBigEnough = seed.currentBounds.w > 1 && seed.currentBounds.h > 1
       
-      if (seed.id.includes('spawn') || hasTag) {
-          console.warn(`[SpineSeedClassifierFixed] Checking ${seed.id}: Immune=${isImmune} (Tag=${hasTag}), Size=${seed.currentBounds.w}x${seed.currentBounds.h}, Keep=${isImmune || isBigEnough}`)
-      }
-
       if (isImmune) return true
       return isBigEnough
     })
