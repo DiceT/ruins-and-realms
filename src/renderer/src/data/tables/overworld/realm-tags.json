@@ -1,0 +1,471 @@
+{
+  "meta": {
+    "name": "Ruins & Realms Tag System",
+    "version": "0.1.0",
+    "description": "Binary resource and infrastructure tags that enable building chains and realm development"
+  },
+
+  "resource_tags": {
+    "tier_1_common": {
+      "TIMBER": {
+        "name": "Timber",
+        "description": "Access to harvestable wood",
+        "sources": ["Forest", "Old-Growth Forest", "Wooded Hills", "Orchard/Grove"],
+        "color": "#4a7c3f",
+        "icon": "tree"
+      },
+      "STONE": {
+        "name": "Stone",
+        "description": "Access to quarryable rock",
+        "sources": ["Hills", "Foothills", "Rocky Ridge", "Quarry (building)"],
+        "color": "#7d7d7d",
+        "icon": "mountain"
+      },
+      "WATER": {
+        "name": "Water",
+        "description": "Access to fresh water",
+        "sources": ["Lake", "River", "Stream/Creek", "Hidden Spring", "Well (building)"],
+        "color": "#4a90d9",
+        "icon": "droplet"
+      },
+      "FERTILE": {
+        "name": "Fertile Land",
+        "description": "Land suitable for agriculture",
+        "sources": ["Meadow/Clearing", "Farmland", "Floodplain", "Grassland"],
+        "color": "#8b6914",
+        "icon": "wheat"
+      },
+      "GAME": {
+        "name": "Game",
+        "description": "Huntable wildlife present",
+        "sources": ["Forest", "Wooded Hills", "Moor/Heath", "Old-Growth Forest"],
+        "color": "#5c4033",
+        "icon": "paw-print"
+      },
+      "HERBS": {
+        "name": "Herbs",
+        "description": "Medicinal and alchemical plants",
+        "sources": ["Marsh", "Bog/Fen", "Meadow/Clearing", "Overgrown Garden"],
+        "color": "#2d5a27",
+        "icon": "leaf"
+      }
+    },
+
+    "tier_2_uncommon": {
+      "ORE": {
+        "name": "Ore",
+        "description": "Metal ore deposits",
+        "sources": ["Mine (building)", "Abandoned Mine (Domain)", "Hills (rare)"],
+        "color": "#8b4513",
+        "icon": "pickaxe"
+      },
+      "PEAT": {
+        "name": "Peat",
+        "description": "Burnable fuel source",
+        "sources": ["Bog/Fen", "Marsh"],
+        "color": "#3d2817",
+        "icon": "flame"
+      },
+      "CLAY": {
+        "name": "Clay",
+        "description": "Potter's clay deposits",
+        "sources": ["Floodplain", "Wet Lowlands", "River banks"],
+        "color": "#c67b4e",
+        "icon": "jar"
+      },
+      "FISH": {
+        "name": "Fish",
+        "description": "Fishable waters",
+        "sources": ["Lake + Fishery", "River + Fishery"],
+        "color": "#1e90ff",
+        "icon": "fish"
+      },
+      "SALT": {
+        "name": "Salt",
+        "description": "Salt deposits or evaporation",
+        "sources": ["Dry Flats/Hardpan", "Coastal (if applicable)", "Salt Mine"],
+        "color": "#f0f0f0",
+        "icon": "gem"
+      },
+      "HONEY": {
+        "name": "Honey",
+        "description": "Bee cultivation",
+        "sources": ["Meadow + Apiary", "Orchard + Apiary"],
+        "color": "#ffc125",
+        "icon": "hexagon"
+      }
+    },
+
+    "tier_3_rare": {
+      "IRONWOOD": {
+        "name": "Ironwood",
+        "description": "Rare hardwood with metal-like properties",
+        "sources": ["Specific Old-Growth (discovery)", "Domain reward"],
+        "color": "#2f4f4f",
+        "icon": "tree-deciduous"
+      },
+      "SILVERVEIN": {
+        "name": "Silver Vein",
+        "description": "Precious metal deposits",
+        "sources": ["Abandoned Mine (rare)", "Cavern System", "Domain reward"],
+        "color": "#c0c0c0",
+        "icon": "coins"
+      },
+      "GOLDVEIN": {
+        "name": "Gold Vein",
+        "description": "Precious metal deposits",
+        "sources": ["Deep Mine", "Domain reward"],
+        "color": "#ffd700",
+        "icon": "coins"
+      },
+      "GEMSTONE": {
+        "name": "Gemstones",
+        "description": "Precious stones",
+        "sources": ["Cavern System", "Deep Mine", "Domain reward"],
+        "color": "#e11584",
+        "icon": "diamond"
+      },
+      "ANCIENT_STONE": {
+        "name": "Ancient Stone",
+        "description": "Pre-human worked stone with residual power",
+        "sources": ["Standing Stones", "Half-Buried Stone Circle", "Ancient Ruin"],
+        "color": "#4a4a6a",
+        "icon": "landmark"
+      },
+      "DEEP_ORE": {
+        "name": "Deep Ore",
+        "description": "High-quality ore from the depths",
+        "sources": ["Cavern System (cleared)", "Deep Mine"],
+        "color": "#4a3728",
+        "icon": "pickaxe"
+      },
+      "BLESSED_WATER": {
+        "name": "Blessed Water",
+        "description": "Sacred spring with healing properties",
+        "sources": ["Hidden Spring + Temple", "Wayside Shrine (rare)"],
+        "color": "#87ceeb",
+        "icon": "sparkles"
+      },
+      "BRIMITE": {
+        "name": "Brimite",
+        "description": "Volcanicite glass, sharp and heat-resistant",
+        "sources": ["Burn Scar (rare)", "Volcanic terrain", "Domain reward"],
+        "color": "#ff4500",
+        "icon": "flame"
+      }
+    },
+
+    "tier_4_legendary": {
+      "MYTHRIL": {
+        "name": "Mythril",
+        "description": "Legendary lightweight metal",
+        "sources": ["Quest chain", "Legendary Domain"],
+        "color": "#b0c4de",
+        "icon": "sparkles"
+      },
+      "WORLDROOT": {
+        "name": "Worldroot",
+        "description": "Connection to the World Tree",
+        "sources": ["Unique discovery", "Campaign reward"],
+        "color": "#228b22",
+        "icon": "tree"
+      },
+      "LEYLINE": {
+        "name": "Leyline Nexus",
+        "description": "Magical energy convergence",
+        "sources": ["Standing Stones + Observatory + Full Moon", "Unique discovery"],
+        "color": "#9400d3",
+        "icon": "zap"
+      },
+      "BLOOD_IRON": {
+        "name": "Blood Iron",
+        "description": "Cursed ore, powerful but corrupting",
+        "sources": ["Corrupted Mine", "Aspect Heart"],
+        "color": "#8b0000",
+        "icon": "skull"
+      },
+      "ASPECT_HEART": {
+        "name": "Aspect Heart",
+        "description": "Crystallized essence of a defeated Aspect",
+        "sources": ["Destroy Aspect source completely"],
+        "color": "#4b0082",
+        "icon": "heart"
+      }
+    }
+  },
+
+  "infrastructure_tags": {
+    "production": {
+      "MILLING": {
+        "name": "Milling",
+        "description": "Grain processing capability",
+        "granted_by": ["Mill", "Windmill"],
+        "color": "#daa520",
+        "icon": "cog"
+      },
+      "SMITHING": {
+        "name": "Smithing",
+        "description": "Metalworking capability",
+        "granted_by": ["Blacksmith"],
+        "color": "#b87333",
+        "icon": "anvil"
+      },
+      "SMELTING": {
+        "name": "Smelting",
+        "description": "Ore refining capability",
+        "granted_by": ["Smelter"],
+        "color": "#ff6347",
+        "icon": "flame"
+      },
+      "MASONRY": {
+        "name": "Masonry",
+        "description": "Stone construction capability",
+        "granted_by": ["Mason's Yard"],
+        "color": "#808080",
+        "icon": "brick-wall"
+      },
+      "BREWING": {
+        "name": "Brewing",
+        "description": "Alcohol production",
+        "granted_by": ["Brewery"],
+        "color": "#8b4513",
+        "icon": "beer"
+      },
+      "TANNING": {
+        "name": "Tanning",
+        "description": "Leather processing",
+        "granted_by": ["Tannery"],
+        "color": "#8b6914",
+        "icon": "scroll"
+      },
+      "WOODWORKING": {
+        "name": "Woodworking",
+        "description": "Advanced wood construction",
+        "granted_by": ["Carpenter", "Sawmill"],
+        "color": "#deb887",
+        "icon": "axe"
+      },
+      "ALCHEMY": {
+        "name": "Alchemy",
+        "description": "Potion and compound creation",
+        "granted_by": ["Alchemist's Laboratory"],
+        "color": "#9932cc",
+        "icon": "flask"
+      }
+    },
+
+    "commerce": {
+      "TRADE": {
+        "name": "Trade",
+        "description": "Ability to conduct commerce",
+        "granted_by": ["Market", "Trading Post"],
+        "color": "#ffd700",
+        "icon": "scale"
+      },
+      "LUXURY_TRADE": {
+        "name": "Luxury Trade",
+        "description": "High-value goods commerce",
+        "granted_by": ["Merchant Guild", "Luxury Store"],
+        "color": "#daa520",
+        "icon": "crown"
+      },
+      "BLACK_MARKET": {
+        "name": "Black Market",
+        "description": "Illicit trade connections",
+        "granted_by": ["Black Market"],
+        "color": "#2f2f2f",
+        "icon": "mask"
+      }
+    },
+
+    "knowledge": {
+      "LEARNING": {
+        "name": "Learning",
+        "description": "Research and study capability",
+        "granted_by": ["Library", "Ancient Ruin (cleared)"],
+        "color": "#4169e1",
+        "icon": "book"
+      },
+      "SCRIBING": {
+        "name": "Scribing",
+        "description": "Document production",
+        "granted_by": ["Scriptorium"],
+        "color": "#191970",
+        "icon": "feather"
+      },
+      "ARCANE": {
+        "name": "Arcane",
+        "description": "Magical research capability",
+        "granted_by": ["Wizard's Tower", "Magical Academy"],
+        "color": "#8a2be2",
+        "icon": "wand"
+      },
+      "ASTRONOMY": {
+        "name": "Astronomy",
+        "description": "Celestial observation",
+        "granted_by": ["Observatory"],
+        "color": "#000080",
+        "icon": "star"
+      }
+    },
+
+    "spiritual": {
+      "SACRED": {
+        "name": "Sacred Ground",
+        "description": "Consecrated land",
+        "granted_by": ["Temple", "Cleansed Temple Domain", "Monastery"],
+        "color": "#fffacd",
+        "icon": "sun"
+      },
+      "HEALING": {
+        "name": "Healing",
+        "description": "Medical care capability",
+        "granted_by": ["Shrine", "Temple", "Hospice", "Apothecary"],
+        "color": "#ff69b4",
+        "icon": "heart-pulse"
+      },
+      "BURIAL": {
+        "name": "Burial",
+        "description": "Proper interment grounds",
+        "granted_by": ["Graveyard", "Catacombs (cleansed)", "Crematorium"],
+        "color": "#696969",
+        "icon": "cross"
+      }
+    },
+
+    "military": {
+      "DEFENSE": {
+        "name": "Defense",
+        "description": "Fortification capability",
+        "granted_by": ["Watchtower", "Palisade", "Stone Walls", "Gatehouse"],
+        "color": "#708090",
+        "icon": "shield"
+      },
+      "TRAINING": {
+        "name": "Training",
+        "description": "Military training capability",
+        "granted_by": ["Training Yard", "Barracks"],
+        "color": "#8b0000",
+        "icon": "swords"
+      },
+      "ARMORY": {
+        "name": "Armory",
+        "description": "Weapon and armor storage",
+        "granted_by": ["Armory", "Barracks"],
+        "color": "#4a4a4a",
+        "icon": "sword"
+      },
+      "STABLING": {
+        "name": "Stabling",
+        "description": "Horse and mount care",
+        "granted_by": ["Stables"],
+        "color": "#8b4513",
+        "icon": "horse"
+      }
+    },
+
+    "governance": {
+      "GOVERNANCE": {
+        "name": "Governance",
+        "description": "Administrative capability",
+        "granted_by": ["Manor", "Town Hall", "Guild Hall"],
+        "color": "#800080",
+        "icon": "landmark"
+      },
+      "LAW": {
+        "name": "Law",
+        "description": "Justice and enforcement",
+        "granted_by": ["Courthouse", "Jail"],
+        "color": "#2f4f4f",
+        "icon": "gavel"
+      },
+      "HOSPITALITY": {
+        "name": "Hospitality",
+        "description": "Traveler accommodation",
+        "granted_by": ["Inn", "Tavern"],
+        "color": "#cd853f",
+        "icon": "bed"
+      }
+    }
+  },
+
+  "special_tags": {
+    "ASPECT_TOUCHED": {
+      "name": "Aspect-Touched",
+      "description": "Land scarred by an Aspect but reclaimed",
+      "sources": ["Cleared Domain with Aspect"],
+      "effects": ["Unique resources possible", "Risk of re-corruption"],
+      "color": "#4b0082",
+      "icon": "warning"
+    },
+    "HAUNTED": {
+      "name": "Haunted",
+      "description": "Spiritual unrest lingers",
+      "sources": ["Failed cleansing", "Mass death", "Aspect remnant"],
+      "effects": ["Wellness -1 in hex", "Special events", "Ghost encounters"],
+      "color": "#e6e6fa",
+      "icon": "ghost"
+    },
+    "CURSED": {
+      "name": "Cursed",
+      "description": "Supernatural blight",
+      "sources": ["Desecrated Altar", "Failed ritual", "Aspect corruption"],
+      "effects": ["Buildings decay faster", "Crops fail", "Bad luck events"],
+      "color": "#2f0f2f",
+      "icon": "skull"
+    },
+    "BLESSED": {
+      "name": "Blessed",
+      "description": "Divine favor lingers",
+      "sources": ["Temple consecration", "Heroic sacrifice", "Divine event"],
+      "effects": ["Wellness +1 in hex", "Healing bonus", "Aspect resistance"],
+      "color": "#fff8dc",
+      "icon": "sparkles"
+    }
+  },
+
+  "title_tags": {
+    "SURVIVOR": {
+      "name": "Survivor",
+      "description": "Starting title - escaped the prison",
+      "unlocks": ["Basic buildings", "Claim land"],
+      "requirements": []
+    },
+    "FOUNDER": {
+      "name": "Founder",
+      "description": "Established a settlement",
+      "unlocks": ["Tavern", "Market", "Trade with merchants"],
+      "requirements": ["Claim 3 hexes", "Population 8+"]
+    },
+    "THANE": {
+      "name": "Thane",
+      "description": "Recognized local authority",
+      "unlocks": ["Guild Hall", "Advanced workshops", "Hire mercenaries"],
+      "requirements": ["Population 15+", "Manor built", "1 Domain cleared"]
+    },
+    "LORD": {
+      "name": "Lord/Lady",
+      "description": "Nobility recognized by the Baron",
+      "unlocks": ["All structures", "Political events", "Baron favor"],
+      "requirements": ["Clear Rank 8 Domain", "Guild Hall built", "Population 25+"]
+    },
+    "WARDEN": {
+      "name": "Warden",
+      "description": "Protector of the realm",
+      "unlocks": ["Fortress", "Military academy", "Raise army"],
+      "requirements": ["Clear 3 Domains", "DEFENSE tag", "TRAINING tag"]
+    },
+    "SAGE": {
+      "name": "Sage",
+      "description": "Master of knowledge",
+      "unlocks": ["Wizard's Tower", "Magical academy", "Arcane research"],
+      "requirements": ["LEARNING tag", "SCRIBING tag", "Clear Ancient Ruin"]
+    },
+    "HIGH_PRIEST": {
+      "name": "High Priest/Priestess",
+      "description": "Spiritual leader",
+      "unlocks": ["Cathedral", "Monastery", "Divine rituals"],
+      "requirements": ["SACRED tag", "Temple built", "Clear Temple Domain"]
+    }
+  }
+}

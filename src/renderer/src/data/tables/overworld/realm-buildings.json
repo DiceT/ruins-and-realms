@@ -1,0 +1,1756 @@
+{
+  "meta": {
+    "name": "Ruins & Realms Building System",
+    "version": "0.1.0",
+    "description": "Complete building definitions with stats, requirements, and benefits"
+  },
+
+  "building_stats_key": {
+    "hp": "Health Points - damage capacity before destruction",
+    "size": "Plot spaces required (1 = small, 2 = medium, 4 = large)",
+    "cost": "Construction cost in Rings",
+    "rank": "Rank modifier added to plot (affects taxes and value)",
+    "workers": "Workers required to operate",
+    "construction": "Turns to build",
+    "income": "Rings generated per turn (if any)",
+    "food": "Food contribution to realm supply"
+  },
+
+  "buildings": {
+    "agricultural": {
+      "11": {
+        "id": "farmstead",
+        "name": "Farmstead",
+        "description": "A basic farm with fields and a homestead",
+        "hp": 8,
+        "size": 2,
+        "cost": 25,
+        "rank": 4,
+        "workers": 2,
+        "construction": 2,
+        "income": 2,
+        "food": 2,
+        "requires": {
+          "tags": ["FERTILE"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Provides FOOD supply"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 15,
+            "bonus": "+1 food, +1 income"
+          },
+          "level_3": {
+            "cost": 25,
+            "bonus": "+1 food, +1 income, reduces blight risk"
+          }
+        }
+      },
+      "12": {
+        "id": "irrigation_ditch",
+        "name": "Irrigation Ditch",
+        "description": "Channels water to improve crop yields",
+        "hp": 4,
+        "size": 1,
+        "cost": 15,
+        "rank": 1,
+        "workers": 0,
+        "construction": 1,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": ["WATER"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Adjacent farms +1 food"]
+        },
+        "upgrades": null
+      },
+      "13": {
+        "id": "granary",
+        "name": "Granary",
+        "description": "Stores surplus grain against lean times",
+        "hp": 10,
+        "size": 2,
+        "cost": 35,
+        "rank": 2,
+        "workers": 1,
+        "construction": 2,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": ["farmstead"],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Stores 4 turns of food surplus", "Prevents SHORTAGE for 2 turns if food production fails"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "Stores 6 turns, +1 Wellness from food security"
+          }
+        }
+      },
+      "14": {
+        "id": "mill",
+        "name": "Mill",
+        "description": "Processes grain into flour for trade",
+        "hp": 8,
+        "size": 2,
+        "cost": 40,
+        "rank": 5,
+        "workers": 2,
+        "construction": 2,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": ["WATER"],
+          "buildings": ["farmstead"],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["MILLING"],
+          "effects": ["Converts grain to trade goods"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "+2 income"
+          }
+        }
+      },
+      "15": {
+        "id": "brewery",
+        "name": "Brewery",
+        "description": "Produces ale and spirits",
+        "hp": 8,
+        "size": 2,
+        "cost": 45,
+        "rank": 6,
+        "workers": 2,
+        "construction": 2,
+        "income": 4,
+        "food": 0,
+        "requires": {
+          "tags": ["WATER"],
+          "buildings": ["farmstead"],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["BREWING"],
+          "effects": ["+1 Wellness", "Tavern income +1 if present"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 30,
+            "bonus": "+2 income, unlocks export"
+          }
+        }
+      },
+      "16": {
+        "id": "vineyard",
+        "name": "Vineyard",
+        "description": "Cultivates grapes for wine production",
+        "hp": 6,
+        "size": 2,
+        "cost": 50,
+        "rank": 7,
+        "workers": 2,
+        "construction": 4,
+        "income": 5,
+        "food": 0,
+        "requires": {
+          "tags": ["FERTILE"],
+          "buildings": [],
+          "titles": ["FOUNDER"],
+          "terrain": ["Hills", "Meadow"]
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Luxury trade good", "+1 Fame when established"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 35,
+            "bonus": "+3 income, wines gain reputation"
+          }
+        }
+      },
+      "17": {
+        "id": "orchard",
+        "name": "Orchard",
+        "description": "Fruit and nut trees for food and trade",
+        "hp": 6,
+        "size": 2,
+        "cost": 30,
+        "rank": 4,
+        "workers": 1,
+        "construction": 3,
+        "income": 2,
+        "food": 1,
+        "requires": {
+          "tags": ["FERTILE", "WATER"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Slow to establish, steady returns"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "+1 food, +1 income"
+          }
+        }
+      },
+      "18": {
+        "id": "fishery",
+        "name": "Fishery",
+        "description": "Docks and boats for lake or river fishing",
+        "hp": 8,
+        "size": 2,
+        "cost": 35,
+        "rank": 5,
+        "workers": 2,
+        "construction": 2,
+        "income": 2,
+        "food": 2,
+        "requires": {
+          "tags": ["WATER"],
+          "buildings": [],
+          "titles": [],
+          "terrain": ["Lake", "River"]
+        },
+        "grants": {
+          "tags": ["FISH"],
+          "effects": ["Food not affected by land blight"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "+1 food, +1 income"
+          }
+        }
+      }
+    },
+
+    "extraction": {
+      "21": {
+        "id": "lumber_camp",
+        "name": "Lumber Camp",
+        "description": "Basic timber harvesting operation",
+        "hp": 6,
+        "size": 1,
+        "cost": 20,
+        "rank": 3,
+        "workers": 2,
+        "construction": 1,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": ["TIMBER"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Provides building materials", "-10% wood building costs"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 15,
+            "bonus": "+1 income, -15% wood costs"
+          }
+        }
+      },
+      "22": {
+        "id": "sawmill",
+        "name": "Sawmill",
+        "description": "Processes timber into lumber",
+        "hp": 8,
+        "size": 2,
+        "cost": 45,
+        "rank": 5,
+        "workers": 2,
+        "construction": 2,
+        "income": 4,
+        "food": 0,
+        "requires": {
+          "tags": ["TIMBER", "WATER"],
+          "buildings": ["lumber_camp"],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["WOODWORKING"],
+          "effects": ["Enables Carpenter", "-20% wood building costs"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "+2 income"
+          }
+        }
+      },
+      "23": {
+        "id": "quarry",
+        "name": "Quarry",
+        "description": "Extracts stone from hillsides",
+        "hp": 10,
+        "size": 2,
+        "cost": 40,
+        "rank": 4,
+        "workers": 3,
+        "construction": 2,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": ["STONE"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Provides building materials", "-10% stone building costs"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "+2 income, chance of GEMSTONE discovery"
+          }
+        }
+      },
+      "24": {
+        "id": "masons_yard",
+        "name": "Mason's Yard",
+        "description": "Cuts and shapes stone for construction",
+        "hp": 10,
+        "size": 2,
+        "cost": 55,
+        "rank": 5,
+        "workers": 2,
+        "construction": 2,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": ["STONE"],
+          "buildings": ["quarry"],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["MASONRY"],
+          "effects": ["Enables Stone Walls, Fortifications", "-20% stone building costs"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 30,
+            "bonus": "+2 income, monument construction"
+          }
+        }
+      },
+      "25": {
+        "id": "mine",
+        "name": "Mine",
+        "description": "Extracts ore from the earth",
+        "hp": 10,
+        "size": 2,
+        "cost": 60,
+        "rank": 6,
+        "workers": 4,
+        "construction": 3,
+        "income": 5,
+        "food": 0,
+        "requires": {
+          "tags": ["ORE"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Provides ore for smithing", "Chance of rare ore discovery"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 40,
+            "bonus": "+3 income, DEEP_ORE chance"
+          },
+          "level_3": {
+            "cost": 60,
+            "bonus": "+3 income, SILVERVEIN/GOLDVEIN chance"
+          }
+        }
+      },
+      "26": {
+        "id": "smelter",
+        "name": "Smelter",
+        "description": "Refines raw ore into usable metal",
+        "hp": 10,
+        "size": 2,
+        "cost": 70,
+        "rank": 6,
+        "workers": 3,
+        "construction": 2,
+        "income": 4,
+        "food": 0,
+        "requires": {
+          "tags": ["ORE"],
+          "buildings": ["mine"],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["SMELTING"],
+          "effects": ["Enables Blacksmith", "Ore becomes trade goods"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 40,
+            "bonus": "+3 income, quality metals"
+          }
+        }
+      },
+      "27": {
+        "id": "peat_harvest",
+        "name": "Peat Harvest",
+        "description": "Extracts burnable peat from bogs",
+        "hp": 4,
+        "size": 1,
+        "cost": 15,
+        "rank": 2,
+        "workers": 1,
+        "construction": 1,
+        "income": 1,
+        "food": 0,
+        "requires": {
+          "tags": ["PEAT"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Fuel for smelting without TIMBER", "Reduces heating costs"]
+        },
+        "upgrades": null
+      },
+      "28": {
+        "id": "clay_pit",
+        "name": "Clay Pit",
+        "description": "Extracts clay for pottery and bricks",
+        "hp": 6,
+        "size": 1,
+        "cost": 20,
+        "rank": 2,
+        "workers": 2,
+        "construction": 1,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": ["CLAY"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Enables Potter", "Brick buildings available"]
+        },
+        "upgrades": null
+      }
+    },
+
+    "crafting": {
+      "31": {
+        "id": "blacksmith",
+        "name": "Blacksmith",
+        "description": "Forges tools, weapons, and repairs gear",
+        "hp": 8,
+        "size": 1,
+        "cost": 50,
+        "rank": 5,
+        "workers": 2,
+        "construction": 2,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": ["SMELTING"],
+          "buildings": ["smelter"],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["SMITHING"],
+          "effects": ["Repairs gear", "Crafts basic weapons/tools", "Enables Armourer, Weaponsmith"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 30,
+            "bonus": "Free repairs, +2 income"
+          },
+          "level_3": {
+            "cost": 50,
+            "bonus": "+2 income, masterwork chance"
+          }
+        }
+      },
+      "32": {
+        "id": "armourer",
+        "name": "Armourer's Workshop",
+        "description": "Crafts protective armor",
+        "hp": 8,
+        "size": 2,
+        "cost": 75,
+        "rank": 7,
+        "workers": 2,
+        "construction": 2,
+        "income": 4,
+        "food": 0,
+        "requires": {
+          "tags": ["SMITHING"],
+          "buildings": ["blacksmith"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": ["ARMORY"],
+          "effects": ["Crafts armor", "Delve survival bonus"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 45,
+            "bonus": "+3 income, plate armor available"
+          }
+        }
+      },
+      "33": {
+        "id": "weaponsmith",
+        "name": "Weaponsmith",
+        "description": "Specializes in weapon crafting",
+        "hp": 8,
+        "size": 2,
+        "cost": 70,
+        "rank": 6,
+        "workers": 2,
+        "construction": 2,
+        "income": 4,
+        "food": 0,
+        "requires": {
+          "tags": ["SMITHING"],
+          "buildings": ["blacksmith"],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Crafts quality weapons", "Delve combat bonus"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 40,
+            "bonus": "+3 income, masterwork weapons"
+          }
+        }
+      },
+      "34": {
+        "id": "tannery",
+        "name": "Tannery",
+        "description": "Processes hides into leather",
+        "hp": 6,
+        "size": 1,
+        "cost": 35,
+        "rank": 3,
+        "workers": 2,
+        "construction": 1,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": ["GAME"],
+          "buildings": ["hunting_lodge"],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["TANNING"],
+          "effects": ["Leather goods for trade", "Enables light armor"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "+2 income"
+          }
+        }
+      },
+      "35": {
+        "id": "bowyer",
+        "name": "Bowyer",
+        "description": "Crafts bows and arrows",
+        "hp": 6,
+        "size": 1,
+        "cost": 40,
+        "rank": 4,
+        "workers": 1,
+        "construction": 1,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": ["TIMBER", "GAME"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Ranged weapons", "Hunting efficiency +1"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "+2 income, composite bows"
+          }
+        }
+      },
+      "36": {
+        "id": "carpenter",
+        "name": "Carpenter's Workshop",
+        "description": "Advanced woodworking and construction",
+        "hp": 8,
+        "size": 2,
+        "cost": 45,
+        "rank": 4,
+        "workers": 2,
+        "construction": 2,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": ["WOODWORKING"],
+          "buildings": ["sawmill"],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["-15% all building costs", "Furniture trade goods"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "-25% building costs"
+          }
+        }
+      },
+      "37": {
+        "id": "potter",
+        "name": "Potter's Workshop",
+        "description": "Creates pottery and ceramics",
+        "hp": 6,
+        "size": 1,
+        "cost": 30,
+        "rank": 3,
+        "workers": 1,
+        "construction": 1,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": ["CLAY"],
+          "buildings": ["clay_pit"],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Trade goods", "Storage vessels (granary +1 capacity)"]
+        },
+        "upgrades": null
+      },
+      "38": {
+        "id": "weaver",
+        "name": "Weaver's Workshop",
+        "description": "Creates cloth and textiles",
+        "hp": 6,
+        "size": 1,
+        "cost": 35,
+        "rank": 3,
+        "workers": 2,
+        "construction": 1,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Cloth trade goods", "+1 Wellness (warm clothes)"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "+2 income, fine textiles"
+          }
+        }
+      }
+    },
+
+    "commerce": {
+      "41": {
+        "id": "market",
+        "name": "Market",
+        "description": "Central trading hub",
+        "hp": 8,
+        "size": 2,
+        "cost": 60,
+        "rank": 8,
+        "workers": 2,
+        "construction": 2,
+        "income": 5,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["TRADE"],
+          "effects": ["Merchants visit", "Buy/sell goods", "Price information"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 40,
+            "bonus": "+3 income, merchant frequency +1"
+          }
+        }
+      },
+      "42": {
+        "id": "trading_post",
+        "name": "Trading Post",
+        "description": "Frontier trading station",
+        "hp": 6,
+        "size": 1,
+        "cost": 30,
+        "rank": 4,
+        "workers": 1,
+        "construction": 1,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["TRADE"],
+          "effects": ["Basic trade", "Rumors from travelers"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "Can upgrade to Market"
+          }
+        }
+      },
+      "43": {
+        "id": "warehouse",
+        "name": "Warehouse",
+        "description": "Bulk storage facility",
+        "hp": 10,
+        "size": 2,
+        "cost": 45,
+        "rank": 3,
+        "workers": 1,
+        "construction": 2,
+        "income": 1,
+        "food": 0,
+        "requires": {
+          "tags": ["TRADE"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Store surplus goods", "Trade capacity +50%"]
+        },
+        "upgrades": null
+      },
+      "44": {
+        "id": "central_store",
+        "name": "Centralised Store",
+        "description": "Bulk purchasing and distribution",
+        "hp": 8,
+        "size": 2,
+        "cost": 50,
+        "rank": 4,
+        "workers": 1,
+        "construction": 2,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": ["TRADE"],
+          "buildings": ["market"],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["-10% all building costs within 5 plots"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "-15% costs, range 8 plots"
+          }
+        }
+      },
+      "45": {
+        "id": "merchant_guild",
+        "name": "Merchant Guild",
+        "description": "Organized trade consortium",
+        "hp": 10,
+        "size": 2,
+        "cost": 100,
+        "rank": 10,
+        "workers": 2,
+        "construction": 3,
+        "income": 8,
+        "food": 0,
+        "requires": {
+          "tags": ["TRADE", "GOVERNANCE"],
+          "buildings": ["market", "guild_hall"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": ["LUXURY_TRADE"],
+          "effects": ["Trade routes", "Exotic goods access", "Price manipulation"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 60,
+            "bonus": "+5 income, foreign contacts"
+          }
+        }
+      },
+      "46": {
+        "id": "black_market",
+        "name": "Black Market",
+        "description": "Underground trade network",
+        "hp": 6,
+        "size": 1,
+        "cost": 40,
+        "rank": 2,
+        "workers": 1,
+        "construction": 1,
+        "income": 6,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": ["tavern"],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["BLACK_MARKET"],
+          "effects": ["Illegal goods", "+2 Infamy", "Risk of raid event"]
+        },
+        "upgrades": null
+      },
+      "47": {
+        "id": "inn",
+        "name": "Inn",
+        "description": "Lodging for travelers",
+        "hp": 8,
+        "size": 2,
+        "cost": 45,
+        "rank": 5,
+        "workers": 2,
+        "construction": 2,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["HOSPITALITY"],
+          "effects": ["Travelers bring rumors", "NPC recruitment chance"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "+2 income, better rumors"
+          }
+        }
+      },
+      "48": {
+        "id": "tavern",
+        "name": "Tavern",
+        "description": "Drinking establishment and social hub",
+        "hp": 8,
+        "size": 2,
+        "cost": 40,
+        "rank": 5,
+        "workers": 2,
+        "construction": 2,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["HOSPITALITY"],
+          "effects": ["+1 Wellness", "Mercenary hire", "Rumors"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "+2 income, +1 Wellness"
+          }
+        }
+      }
+    },
+
+    "knowledge": {
+      "51": {
+        "id": "shrine",
+        "name": "Shrine",
+        "description": "Small place of worship",
+        "hp": 6,
+        "size": 1,
+        "cost": 25,
+        "rank": 3,
+        "workers": 1,
+        "construction": 1,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["HEALING"],
+          "effects": ["+1 Wellness", "Minor healing"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "+1 Wellness, burial rites"
+          }
+        }
+      },
+      "52": {
+        "id": "temple",
+        "name": "Temple",
+        "description": "Major religious center",
+        "hp": 12,
+        "size": 4,
+        "cost": 80,
+        "rank": 8,
+        "workers": 3,
+        "construction": 4,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": ["shrine"],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["SACRED", "HEALING"],
+          "effects": ["+2 Wellness", "Blessings available", "Pilgrims visit"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 50,
+            "bonus": "+3 income from pilgrims"
+          }
+        }
+      },
+      "53": {
+        "id": "monastery",
+        "name": "Monastery",
+        "description": "Secluded religious community",
+        "hp": 10,
+        "size": 4,
+        "cost": 70,
+        "rank": 6,
+        "workers": 0,
+        "construction": 4,
+        "income": 3,
+        "food": 1,
+        "requires": {
+          "tags": ["SACRED"],
+          "buildings": ["temple"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": ["SCRIBING"],
+          "effects": ["Self-sufficient", "Scroll copying", "Sanctuary"]
+        },
+        "upgrades": null
+      },
+      "54": {
+        "id": "library",
+        "name": "Library",
+        "description": "Repository of knowledge",
+        "hp": 8,
+        "size": 2,
+        "cost": 60,
+        "rank": 6,
+        "workers": 2,
+        "construction": 2,
+        "income": 1,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["LEARNING"],
+          "effects": ["Research available", "Lore discovery"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 40,
+            "bonus": "Research speed +1, rare books"
+          }
+        }
+      },
+      "55": {
+        "id": "scriptorium",
+        "name": "Scriptorium",
+        "description": "Document production center",
+        "hp": 8,
+        "size": 2,
+        "cost": 70,
+        "rank": 7,
+        "workers": 2,
+        "construction": 2,
+        "income": 4,
+        "food": 0,
+        "requires": {
+          "tags": ["LEARNING"],
+          "buildings": ["library"],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["SCRIBING"],
+          "effects": ["Scroll production", "Map copying", "Treaty drafting"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 35,
+            "bonus": "+3 income, illuminated manuscripts"
+          }
+        }
+      },
+      "56": {
+        "id": "engravers_workshop",
+        "name": "Engraver's Workshop",
+        "description": "Rune carving and stone inscription",
+        "hp": 8,
+        "size": 2,
+        "cost": 90,
+        "rank": 8,
+        "workers": 2,
+        "construction": 2,
+        "income": 5,
+        "food": 0,
+        "requires": {
+          "tags": ["ANCIENT_STONE", "LEARNING"],
+          "buildings": ["library", "masons_yard"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Rune items", "Monument enhancement", "Magical research"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 50,
+            "bonus": "Runestone creation"
+          }
+        }
+      },
+      "57": {
+        "id": "observatory",
+        "name": "Observatory",
+        "description": "Celestial observation tower",
+        "hp": 8,
+        "size": 2,
+        "cost": 85,
+        "rank": 7,
+        "workers": 1,
+        "construction": 3,
+        "income": 1,
+        "food": 0,
+        "requires": {
+          "tags": ["LEARNING"],
+          "buildings": ["library"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": ["ASTRONOMY"],
+          "effects": ["Predict weather", "Aspect warnings", "Celestial events"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 45,
+            "bonus": "Leyline detection"
+          }
+        }
+      },
+      "58": {
+        "id": "alchemist_lab",
+        "name": "Alchemist's Laboratory",
+        "description": "Potion and compound creation",
+        "hp": 6,
+        "size": 2,
+        "cost": 65,
+        "rank": 6,
+        "workers": 1,
+        "construction": 2,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": ["HERBS", "LEARNING"],
+          "buildings": ["apothecary"],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["ALCHEMY"],
+          "effects": ["Potions", "Transmutation", "Dangerous experiments"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 40,
+            "bonus": "Advanced potions, +2 income"
+          }
+        }
+      }
+    },
+
+    "defense": {
+      "61": {
+        "id": "watchtower",
+        "name": "Watchtower",
+        "description": "Early warning structure",
+        "hp": 10,
+        "size": 1,
+        "cost": 35,
+        "rank": 3,
+        "workers": 1,
+        "construction": 2,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["DEFENSE"],
+          "effects": ["Threat warning", "Reveal adjacent hex threats", "-1 Threat in range"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "Range +1, signal fires"
+          }
+        }
+      },
+      "62": {
+        "id": "palisade",
+        "name": "Palisade",
+        "description": "Wooden defensive wall",
+        "hp": 12,
+        "size": 1,
+        "cost": 30,
+        "rank": 2,
+        "workers": 0,
+        "construction": 2,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": ["TIMBER"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Protects adjacent buildings", "HP buffer vs threats"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "+4 HP, spikes"
+          }
+        }
+      },
+      "63": {
+        "id": "stone_walls",
+        "name": "Stone Walls",
+        "description": "Serious fortification",
+        "hp": 20,
+        "size": 2,
+        "cost": 80,
+        "rank": 5,
+        "workers": 0,
+        "construction": 4,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": ["MASONRY"],
+          "buildings": ["masons_yard"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": ["DEFENSE"],
+          "effects": ["Major protection", "Siege resistance", "+1 Fame"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 50,
+            "bonus": "+10 HP, towers"
+          }
+        }
+      },
+      "64": {
+        "id": "gatehouse",
+        "name": "Gatehouse",
+        "description": "Fortified entry point",
+        "hp": 15,
+        "size": 1,
+        "cost": 60,
+        "rank": 4,
+        "workers": 2,
+        "construction": 2,
+        "income": 1,
+        "food": 0,
+        "requires": {
+          "tags": ["DEFENSE"],
+          "buildings": ["stone_walls"],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Controls access", "Toll collection", "Choke point"]
+        },
+        "upgrades": null
+      },
+      "65": {
+        "id": "barracks",
+        "name": "Barracks",
+        "description": "Military housing",
+        "hp": 10,
+        "size": 2,
+        "cost": 55,
+        "rank": 4,
+        "workers": 0,
+        "construction": 2,
+        "income": 0,
+        "food": -1,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["TRAINING", "ARMORY"],
+          "effects": ["Houses soldiers", "CLEAR action bonus", "Defense bonus"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 35,
+            "bonus": "Elite troops, +2 defense"
+          }
+        }
+      },
+      "66": {
+        "id": "training_yard",
+        "name": "Training Yard",
+        "description": "Combat training facility",
+        "hp": 6,
+        "size": 2,
+        "cost": 40,
+        "rank": 3,
+        "workers": 1,
+        "construction": 1,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["TRAINING"],
+          "effects": ["Delve combat bonus", "Worker defense"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "+1 delve bonus"
+          }
+        }
+      },
+      "67": {
+        "id": "armory_building",
+        "name": "Armory",
+        "description": "Weapon and armor storage",
+        "hp": 10,
+        "size": 2,
+        "cost": 50,
+        "rank": 4,
+        "workers": 1,
+        "construction": 2,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": ["SMITHING"],
+          "buildings": ["blacksmith"],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["ARMORY"],
+          "effects": ["Rapid equipping", "Gear storage", "Emergency defense"]
+        },
+        "upgrades": null
+      },
+      "68": {
+        "id": "fortified_manor",
+        "name": "Fortified Manor",
+        "description": "Defensible governance seat",
+        "hp": 15,
+        "size": 4,
+        "cost": 120,
+        "rank": 10,
+        "workers": 3,
+        "construction": 4,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": ["MASONRY", "DEFENSE"],
+          "buildings": ["manor", "stone_walls"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": ["GOVERNANCE", "DEFENSE"],
+          "effects": ["Last stand location", "+1 action", "Command center"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 80,
+            "bonus": "Castle upgrade path"
+          }
+        }
+      }
+    },
+
+    "governance": {
+      "71": {
+        "id": "well",
+        "name": "Well",
+        "description": "Water source",
+        "hp": 6,
+        "size": 1,
+        "cost": 15,
+        "rank": 1,
+        "workers": 0,
+        "construction": 1,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["WATER"],
+          "effects": ["Provides WATER tag if none present", "Fire fighting"]
+        },
+        "upgrades": null
+      },
+      "72": {
+        "id": "house",
+        "name": "House",
+        "description": "Population housing",
+        "hp": 6,
+        "size": 1,
+        "cost": 20,
+        "rank": 2,
+        "workers": 0,
+        "construction": 1,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Houses 4 population", "Required for growth beyond 10"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 15,
+            "bonus": "Houses 6, +1 Wellness"
+          }
+        }
+      },
+      "73": {
+        "id": "manor",
+        "name": "Manor",
+        "description": "Seat of governance",
+        "hp": 10,
+        "size": 4,
+        "cost": 80,
+        "rank": 8,
+        "workers": 2,
+        "construction": 3,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["GOVERNANCE"],
+          "effects": ["+1 action", "Edicts available", "Council positions"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 50,
+            "bonus": "+1 income, throne room"
+          }
+        }
+      },
+      "74": {
+        "id": "guild_hall",
+        "name": "Guild Hall",
+        "description": "Center of trade and craft guilds",
+        "hp": 10,
+        "size": 4,
+        "cost": 100,
+        "rank": 10,
+        "workers": 2,
+        "construction": 3,
+        "income": 4,
+        "food": 0,
+        "requires": {
+          "tags": ["GOVERNANCE", "SCRIBING"],
+          "buildings": ["manor", "scriptorium"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Advanced buildings unlock", "Trade bonuses", "Guild events"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 60,
+            "bonus": "+3 income, master craftsmen"
+          }
+        }
+      },
+      "75": {
+        "id": "courthouse",
+        "name": "Courthouse",
+        "description": "Center of law and justice",
+        "hp": 10,
+        "size": 2,
+        "cost": 70,
+        "rank": 6,
+        "workers": 2,
+        "construction": 2,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": ["GOVERNANCE"],
+          "buildings": ["manor"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": ["LAW"],
+          "effects": ["Reduces unrest", "Criminal events reduced", "Treaty enforcement"]
+        },
+        "upgrades": null
+      },
+      "76": {
+        "id": "jail",
+        "name": "Jail",
+        "description": "Holds criminals and prisoners",
+        "hp": 12,
+        "size": 2,
+        "cost": 45,
+        "rank": 3,
+        "workers": 1,
+        "construction": 2,
+        "income": 0,
+        "food": -1,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["LAW"],
+          "effects": ["Holds prisoners", "Quest hooks", "Reduces banditry"]
+        },
+        "upgrades": null
+      },
+      "77": {
+        "id": "monument",
+        "name": "Monument",
+        "description": "Structure of remembrance or pride",
+        "hp": 15,
+        "size": 1,
+        "cost": 50,
+        "rank": 5,
+        "workers": 0,
+        "construction": 2,
+        "income": 0,
+        "food": 0,
+        "requires": {
+          "tags": ["MASONRY"],
+          "buildings": ["masons_yard"],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["+2 Wellness", "+1 Fame", "Commemorates event"]
+        },
+        "upgrades": null
+      },
+      "78": {
+        "id": "town_hall",
+        "name": "Town Hall",
+        "description": "Administrative center",
+        "hp": 10,
+        "size": 4,
+        "cost": 90,
+        "rank": 8,
+        "workers": 3,
+        "construction": 3,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": ["GOVERNANCE"],
+          "buildings": ["manor"],
+          "titles": ["THANE"]
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Administrative efficiency", "-10% all costs", "Census"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 50,
+            "bonus": "+1 action, bureaucracy"
+          }
+        }
+      }
+    },
+
+    "special": {
+      "81": {
+        "id": "hunting_lodge",
+        "name": "Hunting Lodge",
+        "description": "Base for hunting operations",
+        "hp": 6,
+        "size": 1,
+        "cost": 30,
+        "rank": 3,
+        "workers": 1,
+        "construction": 1,
+        "income": 2,
+        "food": 1,
+        "requires": {
+          "tags": ["GAME"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Hunting income", "Food supplement", "Fur trade"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 20,
+            "bonus": "+1 food, +1 income"
+          }
+        }
+      },
+      "82": {
+        "id": "apothecary",
+        "name": "Apothecary",
+        "description": "Herbal medicine shop",
+        "hp": 6,
+        "size": 1,
+        "cost": 40,
+        "rank": 4,
+        "workers": 1,
+        "construction": 1,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": ["HERBS"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": ["HEALING"],
+          "effects": ["Healing available", "Poison cures", "Herb trade"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 25,
+            "bonus": "+2 income, rare remedies"
+          }
+        }
+      },
+      "83": {
+        "id": "stables",
+        "name": "Stables",
+        "description": "Horse breeding and care",
+        "hp": 8,
+        "size": 2,
+        "cost": 50,
+        "rank": 4,
+        "workers": 2,
+        "construction": 2,
+        "income": 2,
+        "food": -1,
+        "requires": {
+          "tags": ["FERTILE"],
+          "buildings": [],
+          "titles": ["FOUNDER"]
+        },
+        "grants": {
+          "tags": ["STABLING"],
+          "effects": ["Faster exploration", "Mount available", "Cavalry option"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 30,
+            "bonus": "Breeding program, +2 income"
+          }
+        }
+      },
+      "84": {
+        "id": "kennels",
+        "name": "Kennels",
+        "description": "Hunting and guard dogs",
+        "hp": 6,
+        "size": 1,
+        "cost": 25,
+        "rank": 2,
+        "workers": 1,
+        "construction": 1,
+        "income": 1,
+        "food": -1,
+        "requires": {
+          "tags": ["GAME"],
+          "buildings": [],
+          "titles": []
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["Hunting bonus", "Guard animals", "Tracking"]
+        },
+        "upgrades": null
+      },
+      "85": {
+        "id": "trophy_hall",
+        "name": "Trophy Hall",
+        "description": "Display of victories and conquests",
+        "hp": 8,
+        "size": 2,
+        "cost": 60,
+        "rank": 6,
+        "workers": 1,
+        "construction": 2,
+        "income": 2,
+        "food": 0,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": ["THANE"],
+          "special": "Must have cleared 1 Domain"
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["+2 Wellness", "+2 Fame", "Attracts adventurers"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 40,
+            "bonus": "+1 Wellness per Domain cleared"
+          }
+        }
+      },
+      "86": {
+        "id": "menagerie",
+        "name": "Menagerie",
+        "description": "Exotic creature collection",
+        "hp": 8,
+        "size": 4,
+        "cost": 100,
+        "rank": 8,
+        "workers": 2,
+        "construction": 3,
+        "income": 5,
+        "food": -2,
+        "requires": {
+          "tags": [],
+          "buildings": [],
+          "titles": ["LORD"],
+          "special": "Must have captured exotic creature"
+        },
+        "grants": {
+          "tags": [],
+          "effects": ["+3 Fame", "Exotic trade", "Risk of escape event"]
+        },
+        "upgrades": null
+      },
+      "87": {
+        "id": "wizards_tower",
+        "name": "Wizard's Tower",
+        "description": "Arcane research facility",
+        "hp": 10,
+        "size": 2,
+        "cost": 150,
+        "rank": 10,
+        "workers": 1,
+        "construction": 4,
+        "income": 3,
+        "food": 0,
+        "requires": {
+          "tags": ["LEARNING", "ARCANE"],
+          "buildings": ["library"],
+          "titles": ["SAGE"],
+          "special": "Requires Tier 3+ resource tag"
+        },
+        "grants": {
+          "tags": ["ARCANE"],
+          "effects": ["Magical research", "Enchantment", "Scrying", "Dangerous experiments"]
+        },
+        "upgrades": {
+          "level_2": {
+            "cost": 100,
+            "bonus": "Teleportation circle, +5 income"
+          }
+        }
+      },
+      "88": {
+        "id": "special_roll",
+        "name": "SPECIAL",
+        "description": "Roll twice or unique building",
+        "special_rule": "Roll twice and combine, OR consult rare buildings table, OR design unique building based on context"
+      }
+    }
+  }
+}

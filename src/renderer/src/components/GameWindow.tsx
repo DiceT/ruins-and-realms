@@ -45,6 +45,7 @@ import { LIGHT_PROFILES, LightSourceType } from '../engine/data/LightingData'
 import { SeedGrowthControlPanel } from './SeedGrowthControlPanel'
 import { UnclaimedLogModal } from './UnclaimedLogModal'
 import { DungeonControlPanel } from './DungeonControlPanel'
+import { RealmDebugUI } from '../features/realm/components/RealmDebugUI'
 import { Container } from 'pixi.js'
 
 interface LandTypeEntry {
@@ -1490,6 +1491,11 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             activeLight={activeLight}
             onActiveLightChange={setActiveLight}
           />
+        )}
+
+        {/* Realm Debug UI */}
+        {gameMode === 'overworld' && showMap && (
+          <RealmDebugUI />
         )}
 
 
