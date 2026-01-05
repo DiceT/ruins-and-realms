@@ -7,6 +7,7 @@ import { MapEngine } from '../MapEngine'
 export class HexGridSystem extends BaseGridSystem {
   constructor(engine: MapEngine) {
     super(engine)
+    this.config.thickness = 1
   }
 
   public draw(): void {
@@ -64,8 +65,13 @@ export class HexGridSystem extends BaseGridSystem {
     }
 
     // Stroke
+    // Stroke - Scale inversely to camera zoom
+    const zoom = camera ? camera.zoom : 1; 
+    // MapEngine camera property is a Camera instance which has a 'scale' getter returning number.
+    const scale = camera.scale || 1;
+    
     this.graphics.stroke({
-      width: this.config.thickness,
+      width: 1 / scale, // Maintain 1px visual width
       color: 0x333333,
       alpha: 1.0
     })

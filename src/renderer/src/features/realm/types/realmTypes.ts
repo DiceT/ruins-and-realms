@@ -18,15 +18,45 @@ export enum RealmWellnessStatus {
   THRIVING = 'THRIVING'    // >= +4
 }
 
+export enum FoodStatus {
+  SURPLUS = 'SURPLUS',
+  STABLE = 'STABLE',
+  STARVING = 'STARVING'
+}
+
 export interface RealmDate {
   turn: number; // Absolute turn count (1 turn = 1 week)
+}
+
+import { TurnPhase } from './turnTypes';
+
+export interface BuildingInstance {
+  id: string;          // Unique Instance ID
+  defId: string;       // Reference to BuildingDefinition ID (e.g., "farm")
+  hexId: string;       // Location (Anchor Hex)
+  constructionPoints: number; // Current construction progress
+  isBuilt: boolean;    // True if constructionPoints >= def.construction
 }
 
 export interface RealmState {
   rings: RealmCurrency;
   population: RealmPopulation;
   wellness: RealmWellnessLevel;
+  foodStatus: FoodStatus;
   date: RealmDate;
+  buildings: BuildingInstance[];
+  
+  // Politics
+  tax: {
+    amount: number;
+    daysUntilDue: number;
+    status: 'PAID' | 'DUE' | 'OVERDUE';
+  };
+  baronPatience: number; // 0-100, fail at 0?
+
+  phase: TurnPhase;
+  ownedHexes: { id: string; landTags: string[] }[];
+  actionPoints: { current: number; max: number };
 }
 
 export const getWellnessStatus = (level: RealmWellnessLevel): RealmWellnessStatus => {

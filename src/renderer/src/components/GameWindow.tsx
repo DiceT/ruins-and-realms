@@ -1517,8 +1517,8 @@ export const GameWindow = ({ onBack }: GameWindowProps): React.ReactElement => {
             <div
               style={{
                 position: 'fixed',
-                left: tooltip.x + 15,
-                top: tooltip.y + 15,
+                left: (Number.isNaN(tooltip.x) ? 0 : tooltip.x) + 15,
+                top: (Number.isNaN(tooltip.y) ? 0 : tooltip.y) + 15,
                 backgroundColor: 'rgba(0,0,0,0.8)',
                 color: '#fff',
                 padding: '5px 10px',

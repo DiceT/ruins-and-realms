@@ -6,28 +6,28 @@ This document outlines the step-by-step implementation of the Realm Management S
 
 ### 1.1. Core Types Definition
 **File:** `src/features/realm/types/realmTypes.ts`
-- [ ] Define `RealmCurrency` (Rings).
-- [ ] Define `RealmPopulation` (Count, Workers).
-- [ ] Define `RealmWellness` (Enum/Range -4 to +4).
-- [ ] Define `RealmDate` (Turn count, Season).
-- [ ] Define `RealmState` interface aggregating these.
+- [x] Define `RealmCurrency` (Rings).
+- [x] Define `RealmPopulation` (Count, Workers).
+- [x] Define `RealmWellness` (Enum/Range -4 to +4).
+- [x] Define `RealmDate` (Turn count, Season).
+- [x] Define `RealmState` interface aggregating these.
 
 ### 1.2. JSON Data Schemas
 **File:** `src/features/realm/data/schemas.ts`
-- [ ] Define `TagDefinition` interface (Types: Resource, Infrastructure, Special).
-- [ ] Define `BuildingDefinition` interface (Costs, Requirements, Outputs).
+- [x] Define `TagDefinition` interface (Types: Resource, Infrastructure, Special).
+- [x] Define `BuildingDefinition` interface (Costs, Requirements, Outputs).
 
 ### 1.3. Static Data Injection
 **File:** `src/features/realm/data/tags.json`
-- [ ] Create initial JSON with Tier 1 Resource Tags (Timber, Stone, Water, Fertile).
+- [x] Create initial JSON with Tier 1 Resource Tags (Timber, Stone, Water, Fertile).
 
 **File:** `src/features/realm/data/buildings.json`
-- [ ] Create initial JSON with basic buildings (Farm, Mine, Hovel).
+- [x] Create initial JSON with basic buildings (Farm, Mine, Hovel).
 
 ### 1.4. Realm Store Initialization
 **File:** `src/features/realm/store/realmStore.ts`
-- [ ] Create Zustand store `useRealmStore`.
-- [ ] Initialize with "Prison Escape" defaults (Pop: 4, Rings: 2d6, Turn: 1).
+- [x] Create Zustand store `useRealmStore`.
+- [x] Initialize with "Prison Escape" defaults (Pop: 4, Rings: 2d6, Turn: 1).
 - [ ] Create selectors for specific stats.
 
 ---
@@ -36,29 +36,29 @@ This document outlines the step-by-step implementation of the Realm Management S
 
 ### 2.1. Turn Phase Enums
 **File:** `src/features/realm/types/turnTypes.ts`
-- [ ] Define `TurnPhase` enum (Dawn, Morning, Midday, Dusk, Night).
+- [x] Define `TurnPhase` enum (Dawn, Morning, Midday, Dusk, Night).
 
 ### 2.2. Phase: Dawn (Status Check)
 **File:** `src/features/realm/logic/phases/processDawn.ts`
-- [ ] Implement function to check Food Status (Starvation vs Surplus).
-- [ ] Implement Wellness adjustment logic.
-- [ ] Implement Population change logic (Growth/Decline).
+- [x] Implement function to check Food Status (Starvation vs Surplus).
+- [x] Implement Wellness adjustment logic.
+- [x] Implement Population change logic (Growth/Decline).
 
 ### 2.3. Phase: Morning (Economy)
 **File:** `src/features/realm/logic/phases/processMorning.ts`
-- [ ] Implement Income collection (iterate existing buildings).
-- [ ] Implement Upkeep deduction.
-- [ ] Stub Tax check (every 4th turn).
+- [x] Implement Income collection (iterate existing buildings).
+- [x] Implement Upkeep deduction.
+- [x] Stub Tax check (every 4th turn).
 
 ### 2.4. Phase: Night (Resolution)
 **File:** `src/features/realm/logic/phases/processNight.ts`
-- [ ] Implement Turn increment.
-- [ ] Implement Worker reset (return to pool).
+- [x] Implement Turn increment.
+- [x] Implement Worker reset (return to pool).
 
 ### 2.5. Turn Orchestrator
 **File:** `src/features/realm/logic/turnOrchestrator.ts`
-- [ ] Create `advanceTurn()` function that calls Dawn -> Morning -> (Player Acts) -> Dusk -> Night in sequence.
-- [ ] *Note: Midday is player-controlled and not auto-advanced.*
+- [x] Create `advanceTurn()` function that calls Dawn -> Morning -> (Player Acts) -> Dusk -> Night in sequence.
+- [x] *Note: Midday is player-controlled and not auto-advanced.*
 
 ---
 
@@ -66,23 +66,23 @@ This document outlines the step-by-step implementation of the Realm Management S
 
 ### 3.1. Tag Resolution System
 **File:** `src/features/realm/logic/tags/tagResolver.ts`
-- [ ] Implement `resolveAvailableTags(state)`:
-    - Scans owned Hexes for terrain tags.
-    - Scans constructed Buildings for infrastructure tags.
-    - Returns unique list of active Tags.
+- [x] Implement `resolveAvailableTags(state)`:
+    - [x] Scans owned Hexes for terrain tags.
+    - [x] Scans constructed Buildings for infrastructure tags.
+    - [x] Returns unique list of active Tags.
 
 ### 3.2. Building Requirement Checker
 **File:** `src/features/realm/logic/buildings/buildingValidator.ts`
-- [ ] Implement `canBuild(buildingId, state)`:
-    - Checks Resource Cost (Rings).
-    - Checks Tag Requirements (e.g., specific terrain/infrastructure).
-    - Checks Population availability.
+- [x] Implement `canBuild(buildingId, state)`:
+    - [x] Checks Resource Cost (Rings).
+    - [x] Checks Tag Requirements (e.g., specific terrain/infrastructure).
+    - [x] Checks Population availability.
 
 ### 3.3. Construction Logic
 **File:** `src/features/realm/logic/buildings/constructionManager.ts`
-- [ ] Implement `startConstruction(buildingId, hexId)`.
-- [ ] Add "Under Construction" state to building instance.
-- [ ] Update `processMorning` to advance construction clocks.
+- [x] Implement `startConstruction(buildingId, hexId)`.
+- [x] Add "Under Construction" state to building instance.
+- [x] Update `processMorning` to advance construction clocks.
 
 ---
 
@@ -90,19 +90,19 @@ This document outlines the step-by-step implementation of the Realm Management S
 
 ### 4.1. Action Definitions
 **File:** `src/features/realm/config/actions.ts`
-- [ ] Define available actions map (Build, Explore, Repair, etc.).
-- [ ] Define Action Cost structure (AP cost, Resource cost).
+- [x] Define available actions map (Build, Explore, Repair, etc.).
+- [x] Define Action Cost structure (AP cost, Resource cost).
 
 ### 4.2. Action Dispatcher
 **File:** `src/features/realm/logic/actions/actionDispatcher.ts`
-- [ ] Implement `executeAction(actionType, payload)`.
-- [ ] Validate AP availability (Base 2).
-- [ ] Deduct AP and route to specific handler.
+- [x] Implement `executeAction(actionType, payload)`.
+- [x] Validate AP availability (Base 2).
+- [x] Deduct AP and route to specific handler.
 
 ### 4.3. Specific Handlers
 **Folder:** `src/features/realm/logic/actions/handlers/`
-- [ ] `handleExplore.ts`: Reveal adjacent hex logic.
-- [ ] `handleRepair.ts`: Restore Building HP.
+- [x] `handleExplore.ts`: Reveal adjacent hex logic.
+- [x] `handleRepair.ts`: Restore Building HP.
 - [ ] `handleRest.ts`: Simple Wellness boost.
 
 ---
@@ -130,10 +130,11 @@ This document outlines the step-by-step implementation of the Realm Management S
 
 ## Phase 6: State Persistence & Integration
 
-### 6.1. Save/Load Adapter
-**File:** `src/features/realm/persistence/realmAdapter.ts`
-- [ ] Adapt RealmState to/from main SaveGame JSON.
-- [ ] Ensure Clocks and partial states (construction) persist.
+### 6.1. Save/Load System
+**File:** `src/services/PersistenceService.ts`
+- [ ] Create `PersistenceService` to manage local storage.
+- [ ] Implement `saveGame(key, data)` and `loadGame(key)`.
+- [ ] Connect `useRealmStore` to persistence (Manual save or auto-persist).
 
 ### 6.2. Delve Integration
 **File:** `src/features/realm/integration/delveHooks.ts`
