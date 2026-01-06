@@ -72,16 +72,19 @@ export class OverworldController {
   }
 
   /**
-   * Initialize the controller with PixiJS app and layout
+   * Initialize the controller with PixiJS app and optional container
+   * If no container provided, uses app.stage directly for full-screen rendering
    */
-  public init(app: Application, layout: GameLayout): void {
+  public init(app: Application, viewport?: Container): void {
     
     this.app = app
-    this.layout = layout
     
     // Create main container for overworld rendering
     this.container = new Container()
-    layout.middlePanel.addChild(this.container)
+    
+    // Use provided viewport or app.stage for full-screen
+    const targetContainer = viewport || app.stage
+    targetContainer.addChild(this.container)
     
     this.initialized = true
   }
@@ -90,10 +93,11 @@ export class OverworldController {
    * Initialize the MapEngine for hex grid rendering
    */
   public initMapEngine(): void {
-    if (!this.app || !this.layout) return
+    if (!this.app) return
 
+    // Use app.stage for full viewport (no side panels)
     this.mapEngine = new MapEngine(this.app, {
-      viewport: this.layout.middlePanel,
+      viewport: this.container || this.app.stage,
       gridType: 'hex',
       width: 100,
       height: 100,

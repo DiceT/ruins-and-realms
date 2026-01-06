@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { RealmState, RealmCurrency, RealmPopulation, RealmWellnessLevel, RealmDate, FoodStatus } from '../types/realmTypes';
+import { RealmState, RealmCurrency, RealmPopulation, RealmWellnessLevel, RealmDate, FoodStatus, TerrainType, createOwnedHex } from '../types/realmTypes';
 import { processTurn } from '../logic/turnOrchestrator';
 import { RealmAction } from '../config/actions';
 import { executeAction } from '../logic/actions/actionDispatcher';
@@ -51,10 +51,12 @@ const INITIAL_STATE: RealmState = {
     max: 2      // Potentially upgradable (Manor, etc.)
   },
   // Addendum 002: New state fields
-  titles: ['SURVIVOR'],      // Start with SURVIVOR title
+  titles: ['SURVIVOR'],
   threat: 0,
   lastDelveTurn: 0,
-  clocks: []
+  clocks: [],
+  // Addendum 010: Loot
+  inventory: []
 };
 
 export const useRealmStore = create<RealmState & RealmActions>((set, get) => ({
@@ -89,8 +91,8 @@ export const useRealmStore = create<RealmState & RealmActions>((set, get) => ({
   }),
 
   // Debug/Cheat
-  addOwnedHex: (hexId: string, tags: string[]) => set((state) => ({
-    ownedHexes: [...state.ownedHexes, { id: hexId, landTags: tags }]
+  addOwnedHex: (hexId: string, tags: string[], terrain: TerrainType = 'PLAINS') => set((state) => ({
+    ownedHexes: [...state.ownedHexes, createOwnedHex(hexId, terrain, tags)]
   })),
 
   // Persistence
@@ -113,7 +115,8 @@ export const useRealmStore = create<RealmState & RealmActions>((set, get) => ({
       titles: state.titles,
       threat: state.threat,
       lastDelveTurn: state.lastDelveTurn,
-      clocks: state.clocks
+      clocks: state.clocks,
+      inventory: state.inventory
     };
     PersistenceService.save('realm', dataToSave);
     console.log('[Realm] State saved');

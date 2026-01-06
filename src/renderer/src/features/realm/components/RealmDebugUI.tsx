@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useRealmStore } from '../stores/useRealmStore';
 import { getWellnessStatus } from '../types/realmTypes';
 import { DELVE_COOLDOWN_TURNS } from '../config/actions';
+import { RealmManagementModal } from './RealmManagementModal';
 
 export const RealmDebugUI: React.FC = () => {
     const state = useRealmStore();
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Calculate DELVE availability (month-based reset)
     const currentMonth = Math.ceil(state.date.turn / DELVE_COOLDOWN_TURNS);
@@ -19,7 +21,7 @@ export const RealmDebugUI: React.FC = () => {
         <div style={{
             position: 'absolute',
             top: '10px',
-            right: '320px',
+            right: '10px',
             backgroundColor: 'rgba(0, 0, 0, 0.85)',
             color: '#eee',
             padding: '15px',
@@ -108,10 +110,16 @@ export const RealmDebugUI: React.FC = () => {
 
             <div style={{ borderTop: '1px solid #ccc', margin: '10px 0', paddingTop: '10px' }}>
                 <div style={{ marginBottom: '5px' }}><strong>AP: {state.actionPoints.current}/{state.actionPoints.max}</strong></div>
-                <div style={{ display: 'flex', gap: '5px' }}>
+                <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
                     <button onClick={() => state.saveRealm()} style={{ ...btnStyle, backgroundColor: '#447', flex: 1 }}>Save</button>
                     <button onClick={() => state.loadRealm()} style={{ ...btnStyle, backgroundColor: '#447', flex: 1 }}>Load</button>
                 </div>
+                <button
+                    onClick={() => setIsModalOpen(true)}
+                    style={{ ...btnStyle, width: '100%', backgroundColor: '#2a4a2a', border: '1px solid #4a8a4a' }}
+                >
+                    📜 Realm Management
+                </button>
             </div>
 
             {state.buildings.length > 0 && (
@@ -125,6 +133,8 @@ export const RealmDebugUI: React.FC = () => {
                     ))}
                 </div>
             )}
+
+            <RealmManagementModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
         </div>
     );
 };

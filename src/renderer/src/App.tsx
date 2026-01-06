@@ -3,6 +3,7 @@ import { LoadingScreen } from '@/components/LoadingScreen'
 import { MainMenu } from '@/components/MainMenu'
 import { AppLayout } from '@/components/AppLayout'
 import { GameWindow } from '@/components/GameWindow'
+import { RealmGameWindow } from '@/components/RealmGameWindow'
 import { DebugToolbar } from '@/components/DebugToolbar'
 import { PixiTestPage } from '@/pixi-components/PixiTestPage'
 import { DungeonTestPage } from '@/pixi-components/DungeonTestPage'
@@ -31,12 +32,17 @@ function App() {
     return <DungeonTestPage />
   }
 
-  // NEW: Dungeon mode with @pixi/react
+  // Dungeon mode with @pixi/react
   if (gamePhase === 'dungeon') {
     return <DungeonPage />
   }
 
-  // Adventure phase - show the game window (overworld mode)
+  // Realm/Overworld mode - the main game screen
+  if (gamePhase === 'realm' || gamePhase === 'adventure') {
+    return <RealmGameWindow onExit={() => setGamePhase('menu')} />
+  }
+
+  // Fallback: Legacy GameWindow (can be removed later)
   return (
     <AppLayout>
       <GameWindow onBack={() => setGamePhase('menu')} />
@@ -46,4 +52,5 @@ function App() {
 }
 
 export default App
+
 

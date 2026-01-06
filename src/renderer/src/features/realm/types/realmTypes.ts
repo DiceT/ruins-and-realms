@@ -67,7 +67,59 @@ export interface Clock {
   sourceId?: string;     // Related hex, domain, or aspect
 }
 
+// === PLOT CAPACITY & TERRAIN (Addendum 004/005) ===
+
+export type TerrainType = 'PLAINS' | 'FOREST' | 'HILLS' | 'MOUNTAIN' | 'MARSH' | 'COAST' | 'RIVER' | 'RUINS';
+
+export interface OwnedHex {
+  id: string;
+  landTags: string[];           // Resource tags (FERTILE, TIMBER, etc.)
+  terrain: TerrainType;
+  buildingPoints: {
+    total: number;              // Capacity (default 100)
+    used: number;               // Consumed by buildings
+  };
+}
+
+export const DEFAULT_HEX_CAPACITY = 100;
+
+export function createOwnedHex(id: string, terrain: TerrainType = 'PLAINS', tags: string[] = []): OwnedHex {
+  return {
+    id,
+    landTags: tags,
+    terrain,
+    buildingPoints: {
+      total: DEFAULT_HEX_CAPACITY,
+      used: 0
+    }
+  };
+}
+
 // === REALM STATE ===
+
+// Loot & Commerce (Addendum 010)
+export type LootRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'LEGENDARY';
+
+export interface LootItem {
+  id: string;
+  name: string;
+  rarity: LootRarity;
+  value: number;           // Sell value in Rings
+  effects?: {
+    wellness?: number;
+    threat?: number;
+    tag?: string;
+  };
+  sourceHexId?: string;    // Where it was found
+}
+
+export interface MerchantVisit {
+  id: string;
+  name: string;
+  inventory: LootItem[];
+  wantsToBuy: string[];    // Item IDs merchant will buy
+  departsTurn: number;     // When merchant leaves
+}
 
 export interface RealmState {
   rings: RealmCurrency;
@@ -83,17 +135,21 @@ export interface RealmState {
     daysUntilDue: number;
     status: 'PAID' | 'DUE' | 'OVERDUE';
   };
-  baronPatience: number; // 0-100, fail at 0?
+  baronPatience: number;
 
   phase: TurnPhase;
-  ownedHexes: { id: string; landTags: string[] }[];
+  ownedHexes: OwnedHex[];
   actionPoints: { current: number; max: number };
 
-  // Addendum 002: New state fields
+  // Addendum 002: State fields
   titles: TitleId[];
-  threat: number;          // Cumulative threat level (0+)
-  lastDelveTurn: number;   // Turn number of last DELVE (0 = never)
+  threat: number;
+  lastDelveTurn: number;
   clocks: Clock[];
+  
+  // Addendum 010: Loot & Commerce
+  inventory: LootItem[];
+  activeMerchant?: MerchantVisit;
 }
 
 export const getWellnessStatus = (level: RealmWellnessLevel): RealmWellnessStatus => {

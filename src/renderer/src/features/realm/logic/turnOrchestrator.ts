@@ -46,7 +46,7 @@ export function processTurn(currentState: RealmState): TurnResult {
   const dawn = processDawn(state);
   logs.push(...dawn.log);
   
-  // Apply Dawn Results
+  // Apply Dawn Results (including threat damage to buildings and title progression)
   state = {
     ...state,
     wellness: dawn.newWellness,
@@ -55,7 +55,10 @@ export function processTurn(currentState: RealmState): TurnResult {
       total: Math.max(0, state.population.total + dawn.populationChange),
       availableWorkers: Math.max(0, state.population.availableWorkers + dawn.populationChange)
     },
-    foodStatus: dawn.foodStatus // Update status
+    foodStatus: dawn.foodStatus,
+    buildings: dawn.updatedBuildings,  // Includes threat damage
+    titles: dawn.newTitles,            // Title progression
+    threat: dawn.newThreat             // Updated threat level
   };
 
   // 4. MORNING

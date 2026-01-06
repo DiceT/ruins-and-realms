@@ -1,8 +1,9 @@
 import { RealmState } from '../../types/realmTypes';
-import { RealmAction, RealmActionType, BuildActionPayload, ExploreActionPayload, DelveActionPayload } from '../../config/actions';
+import { RealmAction, RealmActionType, BuildActionPayload, ExploreActionPayload, DelveActionPayload, RepairActionPayload } from '../../config/actions';
 import { handleBuild, ActionResult } from './handlers/handleBuild';
 import { handleExplore } from './handlers/handleExplore';
 import { handleDelve } from './handlers/handleDelve';
+import { handleRepair } from './handlers/handleRepair';
 
 /**
  * EXECUTE ACTION
@@ -52,7 +53,8 @@ export function executeAction(state: RealmState, action: RealmAction): ActionRes
       break;
 
     case RealmActionType.REPAIR:
-      return { newState: state, success: false, message: 'Repair not yet implemented.' };
+      result = handleRepair(state, action.payload as RepairActionPayload);
+      break;
 
     default:
       return { newState: state, success: false, message: 'Unknown Action Type' };

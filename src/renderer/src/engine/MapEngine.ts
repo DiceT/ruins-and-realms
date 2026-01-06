@@ -1,9 +1,11 @@
-import { Application, Container, TickerCallback, Graphics } from 'pixi.js'
+import { Application, Container, TickerCallback, Graphics, Assets, TilingSprite, Texture } from 'pixi.js'
 import { Camera } from './Camera'
 import { BaseGridSystem } from './systems/BaseGridSystem'
 import { SquareGridSystem } from './systems/SquareGridSystem'
 import { HexGridSystem } from './systems/HexGridSystem'
 import { ShaderManager } from './managers/ShaderManager'
+
+import darkParchment from '../assets/images/backgrounds/dark-parchment.png'
 
 export type GridType = 'square' | 'hex'
 
@@ -98,6 +100,21 @@ export class MapEngine {
       overlay: new Container({ label: 'OverlayLayer' }),
       interaction: new Container({ label: 'InteractionLayer' })
     }
+
+    // Load Background Texture
+    Assets.load(darkParchment).then((texture: Texture) => {
+        if (this.destroyed) return;
+        
+        // Create huge tiling sprite to cover the world
+        const bg = new TilingSprite(texture, 100000, 100000);
+        bg.anchor.set(0.5); // Center it
+        bg.alpha = 1.0;
+        
+        // Add to background layer
+        this.layers.background.addChild(bg);
+    }).catch(err => {
+        console.error("Failed to load background parchment:", err);
+    });
 
     // Add Layers to Camera Container in Render Order (Bottom to Top)
     this.camera.container.addChild(this.layers.background)

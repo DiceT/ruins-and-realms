@@ -72,8 +72,8 @@ export class HexGridSystem extends BaseGridSystem {
     
     this.graphics.stroke({
       width: 1 / scale, // Maintain 1px visual width
-      color: 0x333333,
-      alpha: 1.0
+      color: 0xCAD5D7,
+      alpha: 0.5
     })
 
     // Override background color to match 'LIVE' tiles from SquareGridSystem (0xf5f8f7)
