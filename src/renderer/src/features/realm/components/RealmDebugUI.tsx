@@ -3,10 +3,12 @@ import { useRealmStore } from '../stores/useRealmStore';
 import { getWellnessStatus } from '../types/realmTypes';
 import { DELVE_COOLDOWN_TURNS } from '../config/actions';
 import { RealmManagementModal } from './RealmManagementModal';
+import CombatDialog from '../../combat/components/CombatDialog';
 
 export const RealmDebugUI: React.FC = () => {
     const state = useRealmStore();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isCombatOpen, setIsCombatOpen] = useState(false);
 
     // Calculate DELVE availability (month-based reset)
     const currentMonth = Math.ceil(state.date.turn / DELVE_COOLDOWN_TURNS);
@@ -120,6 +122,12 @@ export const RealmDebugUI: React.FC = () => {
                 >
                     📜 Realm Management
                 </button>
+                <button
+                    onClick={() => setIsCombatOpen(true)}
+                    style={{ ...btnStyle, width: '100%', marginTop: '5px', backgroundColor: '#622', border: '1px solid #944' }}
+                >
+                    ⚔️ Test Combat
+                </button>
             </div>
 
             {state.buildings.length > 0 && (
@@ -135,6 +143,8 @@ export const RealmDebugUI: React.FC = () => {
             )}
 
             <RealmManagementModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+
+            {isCombatOpen && <CombatDialog onClose={() => setIsCombatOpen(false)} />}
         </div>
     );
 };

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "skeleton",
+    "name": "Skeleton",
+    "level": 1,
+    "hp": 6,
+    "maxHp": 6,
+    "xp": 15,
+    "shift": 1,
+    "maneuvers": [
+      { "name": "Rusty Slash", "dice": [4, 4], "damage": "D6" },
+      { "name": "Bone Jab", "dice": [5, 3], "damage": "D6" },
+      { "name": "Clatter Guard", "dice": [3, 5], "damage": "D6-1", "effect": "+1 Defense this round" }
+    ],
+    "interrupts": [
+      { "trigger": "Primary 4", "effect": "-1 damage", "type": "armor" }
+    ],
+    "mishap": "Bones scatter. Skeleton is stunned, loses next attack.",
+    "prime": "Skull bite! D6+2 damage, ignores armor.",
+    "loot": "Bone fragments, chance of rusty weapon",
+    "description": "Animated bones held together by necromantic will. Mindless but persistent."
+  },
+  {
+    "id": "zombie",
+    "name": "Zombie",
+    "level": 1,
+    "hp": 10,
+    "maxHp": 10,
+    "xp": 20,
+    "shift": 0,
+    "maneuvers": [
+      { "name": "Shambling Grab", "dice": [4, 5], "damage": "D6", "effect": "On hit: target -1 Shift next round" },
+      { "name": "Rotting Slam", "dice": [5, 4], "damage": "D6+1" },
+      { "name": "Hungry Lunge", "dice": [3, 4], "damage": "D6" }
+    ],
+    "interrupts": [
+      { "trigger": "Primary 3", "effect": "-2 damage", "type": "armor" }
+    ],
+    "mishap": "Stumbles over own feet. Falls prone, loses next attack.",
+    "prime": "Bite and hold! D6+3 damage, target grappled (escape DC 4).",
+    "loot": "Tattered clothing, occasional coin purse",
+    "description": "Slow but durable. The rot makes them hard to hurt with slashing weapons."
+  }
+]

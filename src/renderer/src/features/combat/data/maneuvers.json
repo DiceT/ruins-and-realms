@@ -1,0 +1,74 @@
+[
+  {
+    "id": "guard_strike",
+    "name": "Guard Strike",
+    "tier": 1,
+    "dice": [4, 4],
+    "damage": "1d6-1",
+    "effect": null,
+    "description": "Balanced stance, textbook form"
+  },
+  {
+    "id": "measured_thrust",
+    "name": "Measured Thrust",
+    "tier": 1,
+    "dice": [5, 4],
+    "damage": "1d6",
+    "effect": null,
+    "description": "Probing attack, shield ready"
+  },
+  {
+    "id": "defensive_slash",
+    "name": "Defensive Slash",
+    "tier": 1,
+    "dice": [4, 5],
+    "damage": "1d6",
+    "effect": "Shield set +1",
+    "description": "Conservative swing, shield high"
+  },
+  {
+    "id": "shield_bash",
+    "name": "Shield Bash",
+    "tier": 1,
+    "dice": [3, 6],
+    "damage": "1d6-1",
+    "effect": "Target loses 1 Shift Point next round",
+    "description": "Lead with the shield, sword following behind"
+  },
+  {
+    "id": "quick_jab",
+    "name": "Quick Jab",
+    "tier": 1,
+    "dice": [5, 3],
+    "damage": "1d6",
+    "effect": null,
+    "description": "Fast thrust, minimal commitment"
+  },
+  {
+    "id": "warding_blow",
+    "name": "Warding Blow",
+    "tier": 1,
+    "dice": [3, 5],
+    "damage": "1d6-2",
+    "effect": "+1 Defense this round",
+    "description": "Keep them at distance"
+  },
+  {
+    "id": "rising_cut",
+    "name": "Rising Cut",
+    "tier": 1,
+    "dice": [4, 3],
+    "damage": "1d6-2",
+    "effect": null,
+    "description": "Upward slash from low guard"
+  },
+  {
+    "id": "steady_advance",
+    "name": "Steady Advance",
+    "tier": 1,
+    "dice": [5, 5],
+    "damage": "1d6+1",
+    "effect": null,
+    "description": "Step forward, strike with weight"
+  }
+]

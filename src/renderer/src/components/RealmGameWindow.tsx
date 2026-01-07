@@ -168,7 +168,6 @@ export const RealmGameWindow: React.FC<RealmGameWindowProps> = ({ onExit }) => {
             if (!appRef.current || !containerRef.current) return;
             const { clientWidth, clientHeight } = containerRef.current;
             appRef.current.renderer.resize(clientWidth, clientHeight);
-            layoutRef.current?.resize();
         };
 
         window.addEventListener('resize', handleResize);
