@@ -22,8 +22,8 @@ const CombatDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         combatEngine.rollDice();
     };
 
-    const handleManeuver = (id: string) => {
-        combatEngine.executeManeuver(id);
+    const handleGambit = (id: string) => {
+        combatEngine.executeGambit(id);
     };
 
     const handlePass = () => {
@@ -34,8 +34,13 @@ const CombatDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         combatEngine.rollEnemyDicePublic();
     };
 
+    const handleInitiative = () => {
+        combatEngine.rollInitiative();
+    };
+
     const handleStart = () => {
-        combatEngine.startCombat('skeleton'); // Hardcoded for test
+        // Test with multiple enemies
+        combatEngine.startCombat(['skeleton', 'zombie']);
     };
 
     if (!state.isActive && !state.gameEnded) { // gameEnded is heuristic, using isActive for now
@@ -74,16 +79,19 @@ const CombatDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                 name="Hero"
                                 hp={state.player.hp}
                                 maxHp={state.player.maxHp}
-                                maxShift={state.player.maxShift}
-                                maneuvers={combatEngine.getAllEquippedManeuvers()}
+                                maxGuide={state.player.maxGuide}
+                                gambits={combatEngine.getAllEquippedGambits()}
                                 armor={state.player.armor}
+                                activeEffects={state.player.activeEffects}
                                 currentRoll={state.currentRoll}
                                 enemyRoll={state.enemyRoll}
-                                onManeuverClick={(m) => handleManeuver(m.id)}
+                                onGambitClick={(m) => handleGambit(m.id)}
                             />
                             {/* Player Landing Tray */}
                             <div style={styles.landingTray}>
-                                {state.currentRoll ? (
+                                {state.turnPhase === 'initiative' ? (
+                                    <button style={styles.rollButton} onClick={handleInitiative}>ROLL INITIATIVE</button>
+                                ) : state.currentRoll ? (
                                     <>
                                         <div style={{ ...styles.landingDie, backgroundColor: '#d64541' }}>
                                             {state.currentRoll[0]}
@@ -91,8 +99,8 @@ const CombatDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                         <div style={{ ...styles.landingDie, backgroundColor: '#4183d7' }}>
                                             {state.currentRoll[1]}
                                         </div>
-                                        {/* MISS button if no maneuvers available */}
-                                        {combatEngine.getAvailableManeuvers().length === 0 && (
+                                        {/* MISS button if no gambits available */}
+                                        {combatEngine.getAvailableGambits().length === 0 && (
                                             <button style={styles.missButton} onClick={handlePass}>MISS</button>
                                         )}
                                     </>
@@ -107,48 +115,69 @@ const CombatDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                         {/* Divider */}
                         <div style={{ width: '3px', height: '520px', backgroundColor: '#555', margin: '0 15px' }} />
 
-                        {/* Enemy Card + Tray */}
-                        {state.enemy && (
-                            <div style={styles.cardColumn}>
-                                <EnemyCard
-                                    enemy={state.enemy}
-                                    currentRoll={state.enemyRoll}
-                                    playerRoll={state.currentRoll}
-                                    onManeuverClick={(m, i) => {
-                                        if (state.turnPhase === 'enemy-resolve') {
-                                            combatEngine.resolveEnemyManeuver(i);
-                                        }
+                        {/* Enemy Cards from enemies array */}
+                        {state.enemies.map((enemyInstance, index) => {
+                            const isSelected = index === state.selectedTargetIndex;
+                            const isCurrentTurn = index === state.currentEnemyIndex;
+                            const isDefeated = enemyInstance.currentHp <= 0;
+
+                            return (
+                                <div
+                                    key={enemyInstance.instanceId}
+                                    style={{
+                                        ...styles.cardColumn,
+                                        opacity: isDefeated ? 0.4 : 1,
+                                        cursor: isDefeated ? 'not-allowed' : 'pointer',
                                     }}
-                                />
-                                {/* Enemy Landing Tray */}
-                                <div style={styles.landingTray}>
-                                    {state.turnPhase === 'enemy-roll' && !state.enemyRoll ? (
-                                        <button style={styles.rollButton} onClick={handleEnemyRoll}>ROLL D88</button>
-                                    ) : state.enemyRoll ? (
-                                        <>
-                                            <div style={{ ...styles.landingDie, backgroundColor: '#8b2323' }}>
-                                                {state.enemyRoll[0]}
-                                            </div>
-                                            <div style={{ ...styles.landingDie, backgroundColor: '#cc5500' }}>
-                                                {state.enemyRoll[1]}
-                                            </div>
-                                            {/* MISS button if no enemy maneuvers match */}
-                                            {combatEngine.getAvailableEnemyManeuvers().length === 0 && (
-                                                <button style={styles.missButton} onClick={() => combatEngine.enemyMiss()}>MISS</button>
+                                    onClick={() => !isDefeated && combatEngine.selectTarget(index)}
+                                >
+                                    <EnemyCard
+                                        enemy={enemyInstance.creature}
+                                        currentHp={enemyInstance.currentHp}
+                                        activeEffects={enemyInstance.activeEffects}
+                                        currentRoll={isCurrentTurn ? state.enemyRoll : null}
+                                        playerRoll={state.currentRoll}
+                                        initiativeRoll={enemyInstance.initiativeRoll}
+                                        isSelected={isSelected}
+                                        isCurrentTurn={isCurrentTurn}
+                                        onGambitClick={(m, i) => {
+                                            if (state.turnPhase === 'enemy-resolve' && isCurrentTurn) {
+                                                combatEngine.resolveEnemyGambit(i);
+                                            }
+                                        }}
+                                    />
+                                    {/* Enemy Landing Tray - only show for current turn enemy */}
+                                    {isCurrentTurn && (
+                                        <div style={styles.landingTray}>
+                                            {state.turnPhase === 'enemy-roll' && !state.enemyRoll ? (
+                                                <button style={styles.rollButton} onClick={handleEnemyRoll}>ROLL D88</button>
+                                            ) : state.enemyRoll ? (
+                                                <>
+                                                    <div style={{ ...styles.landingDie, backgroundColor: '#8b2323' }}>
+                                                        {state.enemyRoll[0]}
+                                                    </div>
+                                                    <div style={{ ...styles.landingDie, backgroundColor: '#cc5500' }}>
+                                                        {state.enemyRoll[1]}
+                                                    </div>
+                                                    {/* MISS button if no enemy gambits match */}
+                                                    {combatEngine.getAvailableEnemyGambits().length === 0 && (
+                                                        <button style={styles.missButton} onClick={() => combatEngine.enemyMiss()}>MISS</button>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <span style={{ color: '#666', fontSize: '10px' }}>Waiting...</span>
                                             )}
-                                        </>
-                                    ) : (
-                                        <span style={{ color: '#666', fontSize: '10px' }}>Waiting...</span>
+                                        </div>
                                     )}
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })}
 
-                        {/* Placeholder enemy slots */}
-                        {[...Array(3)].map((_, i) => (
-                            <div key={i} style={styles.cardColumn}>
+                        {/* Placeholder enemy slots (fill remaining) */}
+                        {[...Array(Math.max(0, 3 - state.enemies.length))].map((_, i) => (
+                            <div key={`placeholder-${i}`} style={styles.cardColumn}>
                                 <div style={{ width: '280px', height: '750px', border: '1px dashed #533', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', fontSize: '12px' }}>
-                                    Enemy {i + 2}
+                                    Empty
                                 </div>
                             </div>
                         ))}

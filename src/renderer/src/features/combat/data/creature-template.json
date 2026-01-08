@@ -1,0 +1,46 @@
+{
+  "id": "",
+  "name": "",
+  "portrait": "",
+  "level": 1,
+  "hp": 0,
+  "maxHp": 0,
+  "xp": 0,
+  "guide": 0,
+  "gambits": [
+    {
+      "name": "",
+      "dice": [4, 4],
+      "damage": "1d6",
+      "effect": null
+    }
+  ],
+  "armor": [],
+  "ripostes": [
+    {
+      "id": "",
+      "name": "",
+      "trigger": { "die": "primary", "value": 4 },
+      "effect": { "type": "modifyDamage", "value": -1 }
+    }
+  ],
+  "apex": {
+    "name": "",
+    "damage": "1d6+2",
+    "effect": ""
+  },
+  "nadir": {
+    "name": "",
+    "effect": {
+      "id": "",
+      "name": "",
+      "timing": "turnStart",
+      "target": "self",
+      "duration": 1,
+      "stacks": false,
+      "action": { "type": "stun" }
+    }
+  },
+  "loot": "",
+  "description": ""
+}

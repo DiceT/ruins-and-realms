@@ -1,17 +1,18 @@
 import React from 'react';
-import { Maneuver, DiceRoll, PlayerArmor } from '../types';
+import { Gambit, DiceRoll, Armor, TriggerCondition, StatusEffect, EFFECT_ICONS } from '../types';
 import { useSettings } from '../../../integrations/anvil-dice-app';
 
 interface PlayerCardProps {
     name: string;
     hp: number;
     maxHp: number;
-    maxShift: number;
-    maneuvers: Maneuver[];
-    armor?: PlayerArmor[];
+    maxGuide: number;
+    gambits: Gambit[];
+    armor?: Armor[];
+    activeEffects?: StatusEffect[];
     currentRoll?: DiceRoll | null;
-    enemyRoll?: DiceRoll | null;  // For armor activation
-    onManeuverClick?: (maneuver: Maneuver) => void;
+    enemyRoll?: DiceRoll | null;
+    onGambitClick?: (gambit: Gambit) => void;
 }
 
 // Dice triangle component with settings colors
@@ -122,15 +123,16 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
     name,
     hp,
     maxHp,
-    maxShift,
-    maneuvers,
+    maxGuide,
+    gambits,
     armor = [],
+    activeEffects = [],
     currentRoll,
     enemyRoll,
-    onManeuverClick
+    onGambitClick
 }) => {
-    // Calculate if maneuver is reachable
-    const getManeuverStatus = (m: Maneuver): 'exact' | 'reachable' | 'none' => {
+    // Calculate if gambit is reachable
+    const getGambitStatus = (m: Gambit): 'exact' | 'reachable' | 'none' => {
         if (!currentRoll) return 'none';
         const [p, s] = currentRoll;
         const [tp, ts] = m.dice;
@@ -138,32 +140,37 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
         // Exact match
         if (p === tp && s === ts) return 'exact';
 
-        // Reachable within maxShift
+        // Reachable within maxGuide
         const distance = Math.abs(p - tp) + Math.abs(s - ts);
-        if (distance <= maxShift) return 'reachable';
+        if (distance <= maxGuide) return 'reachable';
 
         return 'none';
     };
 
-    // Parse armor trigger like "Primary 4" or "Secondary 2" or "P5" or "S2"
-    const parseArmorTrigger = (trigger: string): { isPrimary: boolean; value: number } | null => {
-        const match = trigger.match(/(Primary|Secondary|P|S)\s*(\d+)/i);
-        if (!match) return null;
-        const [, die, value] = match;
-        const isPrimary = die.toLowerCase().startsWith('p');
-        return { isPrimary, value: parseInt(value) };
+    // Check if trigger condition is met based on enemy roll
+    const isTriggerActive = (trigger: TriggerCondition): boolean => {
+        if (!enemyRoll) return false;
+        const comparison = trigger.comparison || '=';
+        const targetVal = trigger.value;
+
+        const dieValue = trigger.die === 'primary' ? enemyRoll[0]
+            : trigger.die === 'secondary' ? enemyRoll[1]
+                : Math.max(enemyRoll[0], enemyRoll[1]);
+
+        switch (comparison) {
+            case '=': return dieValue === targetVal;
+            case '<': return dieValue < targetVal;
+            case '>': return dieValue > targetVal;
+            case '<=': return dieValue <= targetVal;
+            case '>=': return dieValue >= targetVal;
+            default: return dieValue === targetVal;
+        }
     };
 
     // Check if any trigger in the array is active based on enemy roll
-    const isAnyTriggerActive = (triggers: string[]): boolean => {
+    const isAnyTriggerActive = (triggers: TriggerCondition[]): boolean => {
         if (!enemyRoll) return false;
-        return triggers.some(trigger => {
-            const parsed = parseArmorTrigger(trigger);
-            if (!parsed) return false;
-            if (parsed.isPrimary && enemyRoll[0] === parsed.value) return true;
-            if (!parsed.isPrimary && enemyRoll[1] === parsed.value) return true;
-            return false;
-        });
+        return triggers.some(trigger => isTriggerActive(trigger));
     };
 
     // Check if dynamic shield is active (uses player's secondary as trigger value)
@@ -185,6 +192,21 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
                 <span style={{ color: '#555', fontSize: '12px' }}>Portrait</span>
             </div>
 
+            {/* Active Effects Badges */}
+            {activeEffects && activeEffects.length > 0 && (
+                <div style={styles.effectBadges}>
+                    {activeEffects.map((effect, i) => (
+                        <div
+                            key={`${effect.id}-${i}`}
+                            style={styles.effectBadge}
+                            title={`${effect.name}${typeof effect.duration === 'number' ? ` (${effect.duration} turns)` : ''}`}
+                        >
+                            <span>{EFFECT_ICONS[effect.action.type] || '✨'}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {/* Stats Row: HP left, Shift right */}
             <div style={styles.statsRow}>
                 <div style={styles.statBox}>
@@ -192,15 +214,15 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
                     <div style={styles.statLabel}>HP</div>
                 </div>
                 <div style={styles.statBox}>
-                    <div style={styles.statValue}>{maxShift}</div>
-                    <div style={styles.statLabel}>SHIFT</div>
+                    <div style={styles.statValue}>{maxGuide}</div>
+                    <div style={styles.statLabel}>GUIDE</div>
                 </div>
             </div>
 
-            {/* Maneuvers */}
+            {/* Gambits */}
             <div style={styles.maneuvers}>
-                {maneuvers.map((m) => {
-                    const status = getManeuverStatus(m);
+                {gambits.map((m) => {
+                    const status = getGambitStatus(m);
                     return (
                         <div
                             key={m.id}
@@ -210,7 +232,7 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
                                 ...(status === 'reachable' ? styles.maneuverReachable : {}),
                                 cursor: status !== 'none' ? 'pointer' : 'default'
                             }}
-                            onClick={() => status !== 'none' && onManeuverClick?.(m)}
+                            onClick={() => status !== 'none' && onGambitClick?.(m)}
                         >
                             <div style={styles.diceContainer}>
                                 <DiceTriangle value={m.dice[0]} isPrimary={true} />
@@ -219,7 +241,9 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
                             <div style={styles.maneuverInfo}>
                                 <span style={styles.maneuverName}>{m.name}</span>
                                 <span style={styles.maneuverDamage}>{m.damage}</span>
-                                {m.effect && <span style={styles.maneuverEffect}>{m.effect}</span>}
+                                {m.effect && <span style={styles.maneuverEffect}>
+                                    {typeof m.effect === 'string' ? m.effect : m.effect.name}
+                                </span>}
                             </div>
                         </div>
                     );
@@ -229,7 +253,7 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
                 {armor.length > 0 && armor.map((a) => {
                     // For dynamic shield, use player's secondary roll as the trigger value
                     const effectiveTriggers = a.isDynamic && currentRoll
-                        ? [`P${currentRoll[1]}`]
+                        ? [{ die: 'primary' as const, value: currentRoll[1] }]
                         : a.triggers;
                     const isActive = a.isDynamic
                         ? isShieldActive()
@@ -251,17 +275,22 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
                                         <EmptyArmorTriangle />
                                     )
                                 ) : (
-                                    effectiveTriggers.map((trigger, i) => {
-                                        const parsed = parseArmorTrigger(trigger);
-                                        return parsed && (
-                                            <ArmorTriangle key={i} value={parsed.value} isPrimary={parsed.isPrimary} />
-                                        );
-                                    })
+                                    effectiveTriggers.map((trigger, i) => (
+                                        <ArmorTriangle
+                                            key={i}
+                                            value={trigger.value}
+                                            isPrimary={trigger.die === 'primary'}
+                                        />
+                                    ))
                                 )}
                             </div>
                             <div style={styles.maneuverInfo}>
                                 <span style={styles.armorName}>{a.name}</span>
-                                <span style={styles.armorEffect}>{a.effect}</span>
+                                <span style={styles.armorEffect}>
+                                    {a.effect.type === 'modifyDamage' && a.effect.value
+                                        ? `Block ${Math.abs(a.effect.value)}`
+                                        : a.effect.type}
+                                </span>
                             </div>
                         </div>
                     );
@@ -440,6 +469,26 @@ const styles: { [key: string]: React.CSSProperties } = {
         fontWeight: 'bold',
         cursor: 'pointer',
         fontSize: '11px'
+    },
+    effectBadges: {
+        display: 'flex',
+        flexWrap: 'wrap' as const,
+        gap: '4px',
+        padding: '4px 8px',
+        backgroundColor: '#252530',
+        minHeight: '24px'
+    },
+    effectBadge: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '22px',
+        height: '22px',
+        backgroundColor: '#3a3a4a',
+        border: '1px solid #555',
+        borderRadius: '4px',
+        fontSize: '14px',
+        cursor: 'help'
     }
 };
 

@@ -1,12 +1,17 @@
 import React from 'react';
-import { Creature, EnemyManeuver, Interrupt, DiceRoll } from '../types';
+import { Creature, EnemyGambit, Riposte, DiceRoll, StatusEffect, EFFECT_ICONS } from '../types';
 import { useSettings } from '../../../integrations/anvil-dice-app';
 
 interface EnemyCardProps {
     enemy: Creature;
-    currentRoll?: DiceRoll | null;  // Enemy's roll for maneuver highlighting
-    playerRoll?: DiceRoll | null;   // Player's roll for interrupt checking
-    onManeuverClick?: (maneuver: EnemyManeuver, index: number) => void;
+    currentHp?: number;  // Override HP from EnemyInstance
+    activeEffects?: StatusEffect[];
+    currentRoll?: DiceRoll | null;
+    playerRoll?: DiceRoll | null;
+    initiativeRoll?: number | null;  // Display initiative on portrait
+    isSelected?: boolean;  // Target selection highlight
+    isCurrentTurn?: boolean;  // Whose turn it is
+    onGambitClick?: (gambit: EnemyGambit, index: number) => void;
 }
 
 // Enemy dice triangle - uses fixed enemy colors (distinct from player)
@@ -39,8 +44,8 @@ const DiceTriangle: React.FC<{ value: number; isPrimary: boolean }> = ({ value, 
     );
 };
 
-// Interrupt triangle - uses PLAYER's dice colors since interrupts trigger off player's roll
-const InterruptTriangle: React.FC<{ value: number; isPrimary: boolean }> = ({ value, isPrimary }) => {
+// Riposte triangle - uses PLAYER's dice colors since ripostes trigger off player's roll
+const RiposteTriangle: React.FC<{ value: number; isPrimary: boolean }> = ({ value, isPrimary }) => {
     const { settings } = useSettings();
     const color = isPrimary
         ? settings.theme.diceColor
@@ -87,9 +92,21 @@ const ManeuverRow: React.FC<{ maneuver: EnemyManeuver }> = ({ maneuver }) => (
     </div>
 );
 
-export const EnemyCard: React.FC<EnemyCardProps> = ({ enemy, currentRoll, playerRoll, onManeuverClick }) => {
-    // Calculate if maneuver is reachable (enemy uses their own shift)
-    const getManeuverStatus = (m: EnemyManeuver): 'exact' | 'reachable' | 'none' => {
+export const EnemyCard: React.FC<EnemyCardProps> = ({
+    enemy,
+    currentHp,
+    activeEffects = [],
+    currentRoll,
+    playerRoll,
+    initiativeRoll,
+    isSelected,
+    isCurrentTurn,
+    onGambitClick
+}) => {
+    // Use currentHp from props if provided, otherwise fall back to enemy.hp
+    const displayHp = currentHp !== undefined ? currentHp : enemy.hp;
+    // Calculate if gambit is reachable (enemy uses their own guide)
+    const getGambitStatus = (m: EnemyGambit): 'exact' | 'reachable' | 'none' => {
         if (!currentRoll) return 'none';
         const [p, s] = currentRoll;
         const [tp, ts] = m.dice;
@@ -97,64 +114,101 @@ export const EnemyCard: React.FC<EnemyCardProps> = ({ enemy, currentRoll, player
         if (p === tp && s === ts) return 'exact';
 
         const distance = Math.abs(p - tp) + Math.abs(s - ts);
-        if (distance <= enemy.shift) return 'reachable';
+        if (distance <= enemy.guide) return 'reachable';
 
         return 'none';
     };
 
-    // Check if interrupt is triggered by PLAYER'S roll
-    const isInterruptActive = (intr: Interrupt): boolean => {
+    // Check if riposte is triggered by PLAYER'S roll
+    const isRiposteActive = (riposte: Riposte): boolean => {
         if (!playerRoll) return false;
-        // Parse trigger like "Primary 4" or "Secondary 3"
-        const match = intr.trigger.match(/(Primary|Secondary)\s*(\d+)/i);
-        if (!match) return false;
-        const [, die, value] = match;
-        const targetVal = parseInt(value);
-        if (die.toLowerCase() === 'primary' && playerRoll[0] === targetVal) return true;
-        if (die.toLowerCase() === 'secondary' && playerRoll[1] === targetVal) return true;
-        return false;
-    };
+        const trigger = riposte.trigger;
+        const comparison = trigger.comparison || '=';
+        const targetVal = trigger.value;
 
-    // Parse interrupt trigger to get die type and value for DiceTriangle
-    const parseInterruptTrigger = (trigger: string): { isPrimary: boolean; value: number } | null => {
-        const match = trigger.match(/(Primary|Secondary)\s*(\d+)/i);
-        if (!match) return null;
-        const [, die, value] = match;
-        return {
-            isPrimary: die.toLowerCase() === 'primary',
-            value: parseInt(value)
-        };
+        const dieValue = trigger.die === 'primary' ? playerRoll[0]
+            : trigger.die === 'secondary' ? playerRoll[1]
+                : Math.max(playerRoll[0], playerRoll[1]); // 'either'
+
+        switch (comparison) {
+            case '=': return dieValue === targetVal;
+            case '<': return dieValue < targetVal;
+            case '>': return dieValue > targetVal;
+            case '<=': return dieValue <= targetVal;
+            case '>=': return dieValue >= targetVal;
+            default: return dieValue === targetVal;
+        }
     };
 
     return (
-        <div style={styles.card}>
+        <div style={{
+            ...styles.card,
+            border: isSelected ? '2px solid #ffcc00' : styles.card.border,
+            boxShadow: isCurrentTurn ? '0 0 15px rgba(255,100,100,0.6)' : styles.card.boxShadow,
+        }}>
             {/* Header with Level */}
             <div style={styles.header}>
-                <span style={styles.name}>{enemy.name}</span>
+                <span style={{
+                    ...styles.name,
+                    color: isSelected ? '#ffcc00' : styles.name.color,
+                    textShadow: isSelected ? '1px 1px 2px #000' : 'none',
+                }}>{enemy.name}</span>
                 <span style={styles.level}>Lvl {enemy.level}</span>
             </div>
 
-            {/* Portrait - with border */}
+            {/* Portrait - with border and initiative overlay */}
             <div style={styles.portrait}>
                 <span style={{ color: '#555', fontSize: '12px' }}>Portrait</span>
+                {initiativeRoll !== null && initiativeRoll !== undefined && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        backgroundColor: 'rgba(0,0,0,0.75)',
+                        color: '#fff',
+                        padding: '8px 16px',
+                        borderRadius: '4px',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        textAlign: 'center',
+                    }}>
+                        Initiative<br />{initiativeRoll}
+                    </div>
+                )}
             </div>
 
-            {/* Stats Row: HP left, Shift right */}
+            {/* Active Effects Badges */}
+            {activeEffects && activeEffects.length > 0 && (
+                <div style={styles.effectBadges}>
+                    {activeEffects.map((effect, i) => (
+                        <div
+                            key={`${effect.id}-${i}`}
+                            style={styles.effectBadge}
+                            title={`${effect.name}${typeof effect.duration === 'number' ? ` (${effect.duration} turns)` : ''}`}
+                        >
+                            <span>{EFFECT_ICONS[effect.action.type] || '✨'}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Stats Row: HP left, Guide right */}
             <div style={styles.statsRow}>
                 <div style={styles.statBox}>
-                    <div style={styles.statValue}>{enemy.hp}<span style={styles.statDivider}>/</span>{enemy.maxHp}</div>
+                    <div style={styles.statValue}>{displayHp}<span style={styles.statDivider}>/</span>{enemy.maxHp}</div>
                     <div style={styles.statLabel}>HP</div>
                 </div>
                 <div style={styles.statBox}>
-                    <div style={styles.statValue}>{enemy.shift}</div>
-                    <div style={styles.statLabel}>SHIFT</div>
+                    <div style={styles.statValue}>{enemy.guide}</div>
+                    <div style={styles.statLabel}>GUIDE</div>
                 </div>
             </div>
 
-            {/* Maneuvers */}
+            {/* Gambits */}
             <div style={styles.maneuvers}>
-                {enemy.maneuvers.map((m, i) => {
-                    const status = getManeuverStatus(m);
+                {enemy.gambits.map((m, i) => {
+                    const status = getGambitStatus(m);
                     return (
                         <div
                             key={i}
@@ -164,7 +218,7 @@ export const EnemyCard: React.FC<EnemyCardProps> = ({ enemy, currentRoll, player
                                 ...(status === 'reachable' ? styles.maneuverReachable : {}),
                                 cursor: status !== 'none' ? 'pointer' : 'default'
                             }}
-                            onClick={() => status !== 'none' && onManeuverClick?.(m, i)}
+                            onClick={() => status !== 'none' && onGambitClick?.(m, i)}
                         >
                             <div style={styles.diceContainer}>
                                 <DiceTriangle value={m.dice[0]} isPrimary={true} />
@@ -173,36 +227,48 @@ export const EnemyCard: React.FC<EnemyCardProps> = ({ enemy, currentRoll, player
                             <div style={styles.maneuverInfo}>
                                 <span style={styles.maneuverName}>{m.name}</span>
                                 <span style={styles.maneuverDamage}>{m.damage}</span>
-                                {m.effect && <span style={styles.maneuverEffect}>{m.effect}</span>}
+                                {m.effect && <span style={styles.maneuverEffect}>{m.effect.name}</span>}
                             </div>
                         </div>
                     );
                 })}
 
-                {/* Interrupts - right under maneuvers */}
-                {enemy.interrupts && enemy.interrupts.length > 0 && enemy.interrupts.map((intr, i) => {
-                    const parsed = parseInterruptTrigger(intr.trigger);
+                {/* Ripostes - right under gambits */}
+                {enemy.ripostes && enemy.ripostes.length > 0 && enemy.ripostes.map((riposte, i) => {
                     return (
-                        <div key={`int - ${i} `} style={{
+                        <div key={`riposte-${i}`} style={{
                             ...styles.interruptRow,
-                            ...(isInterruptActive(intr) ? styles.interruptActive : {})
+                            ...(isRiposteActive(riposte) ? styles.interruptActive : {})
                         }}>
                             <div style={styles.diceContainer}>
-                                {parsed && <InterruptTriangle value={parsed.value} isPrimary={parsed.isPrimary} />}
+                                <RiposteTriangle
+                                    value={riposte.trigger.value}
+                                    isPrimary={riposte.trigger.die === 'primary'}
+                                />
                             </div>
                             <div style={styles.interruptInfo}>
-                                <span style={styles.interruptName}>Interrupt</span>
-                                <span style={styles.interruptEffect}>{intr.effect}</span>
+                                <span style={styles.interruptName}>{riposte.name}</span>
+                                <span style={styles.interruptEffect}>
+                                    {riposte.effect.type === 'modifyDamage' && riposte.effect.value
+                                        ? `${riposte.effect.value > 0 ? '+' : ''}${riposte.effect.value} damage`
+                                        : riposte.effect.type}
+                                </span>
                             </div>
                         </div>
                     );
                 })}
             </div>
 
-            {/* Mishap/Prime */}
+            {/* Apex/Nadir */}
             <div style={styles.specialSection}>
-                <div style={styles.mishap} title={enemy.mishap}>💀 Mishap</div>
-                <div style={styles.prime} title={enemy.prime}>👑 Prime</div>
+                <div style={styles.specialRow}>
+                    <div style={styles.apexHeader}>{enemy.apex.name}</div>
+                    <div style={styles.apexText}>{enemy.apex.damage}{enemy.apex.effect ? ` - ${enemy.apex.effect}` : ''}</div>
+                </div>
+                <div style={styles.specialRow}>
+                    <div style={styles.nadirHeader}>{enemy.nadir.name}</div>
+                    <div style={styles.nadirText}>{enemy.nadir.effect.name || 'Effect'}</div>
+                </div>
             </div>
         </div>
     );
@@ -355,20 +421,36 @@ const styles: { [key: string]: React.CSSProperties } = {
     },
     specialSection: {
         display: 'flex',
-        justifyContent: 'space-around',
-        padding: '3px',
+        flexDirection: 'column',
+        padding: '6px 8px',
         backgroundColor: '#252020',
-        borderTop: '1px solid #533'
+        borderTop: '1px solid #533',
+        gap: '6px'
     },
-    mishap: {
+    specialRow: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px'
+    },
+    nadirHeader: {
         color: '#a66',
-        fontSize: '9px',
-        cursor: 'help'
+        fontSize: '11px',
+        fontWeight: 'bold'
     },
-    prime: {
+    nadirText: {
+        color: '#888',
+        fontSize: '10px',
+        lineHeight: '1.3'
+    },
+    apexHeader: {
         color: '#da6',
-        fontSize: '9px',
-        cursor: 'help'
+        fontSize: '11px',
+        fontWeight: 'bold'
+    },
+    apexText: {
+        color: '#888',
+        fontSize: '10px',
+        lineHeight: '1.3'
     },
     maneuverExact: {
         backgroundColor: '#6a4a4a',
@@ -412,6 +494,26 @@ const styles: { [key: string]: React.CSSProperties } = {
         color: 'white',
         borderRadius: '4px',
         border: '2px solid rgba(255,255,255,0.3)'
+    },
+    effectBadges: {
+        display: 'flex',
+        flexWrap: 'wrap' as const,
+        gap: '4px',
+        padding: '4px 8px',
+        backgroundColor: '#201515',
+        minHeight: '24px'
+    },
+    effectBadge: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '22px',
+        height: '22px',
+        backgroundColor: '#4a2a2a',
+        border: '1px solid #644',
+        borderRadius: '4px',
+        fontSize: '14px',
+        cursor: 'help'
     }
 };
 

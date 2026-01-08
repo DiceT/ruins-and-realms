@@ -2,42 +2,116 @@
   {
     "id": "skeleton",
     "name": "Skeleton",
+    "portrait": "",
     "level": 1,
     "hp": 6,
     "maxHp": 6,
     "xp": 15,
-    "shift": 1,
-    "maneuvers": [
-      { "name": "Rusty Slash", "dice": [4, 4], "damage": "D6" },
-      { "name": "Bone Jab", "dice": [5, 3], "damage": "D6" },
-      { "name": "Clatter Guard", "dice": [3, 5], "damage": "D6-1", "effect": "+1 Defense this round" }
+    "guide": 1,
+    "initiative": 0,
+    "gambits": [
+      { "name": "Rusty Slash", "dice": [4, 4], "damage": "1d6" },
+      { "name": "Bone Jab", "dice": [5, 3], "damage": "1d6" },
+      { 
+        "name": "Clatter Guard", 
+        "dice": [3, 5], 
+        "damage": "1d6-1",
+        "effect": {
+          "id": "clatter_defense",
+          "name": "Clatter Defense",
+          "description": "Block 1 damage",
+          "timing": "onTakeDamage",
+          "target": "self",
+          "duration": 1,
+          "stacks": false,
+          "action": { "type": "modifyDamage", "value": -1 }
+        }
+      }
     ],
-    "interrupts": [
-      { "trigger": "Primary 4", "effect": "-1 damage", "type": "armor" }
+    "ripostes": [
+      {
+        "id": "bony_deflection",
+        "name": "Bony Deflection",
+        "trigger": { "die": "primary", "value": 4 },
+        "effect": { "type": "modifyDamage", "value": -1 }
+      }
     ],
-    "mishap": "Bones scatter. Skeleton is stunned, loses next attack.",
-    "prime": "Skull bite! D6+2 damage, ignores armor.",
+    "apex": {
+      "name": "Skull Bite",
+      "damage": "1d6+2",
+      "effect": "Ignores armor"
+    },
+    "nadir": {
+      "name": "Bone Scatter",
+      "effect": {
+        "id": "bone_scatter_stun",
+        "name": "Scattered",
+        "description": "Skip next action",
+        "timing": "turnStart",
+        "target": "self",
+        "duration": 1,
+        "stacks": false,
+        "action": { "type": "skip" }
+      }
+    },
     "loot": "Bone fragments, chance of rusty weapon",
     "description": "Animated bones held together by necromantic will. Mindless but persistent."
   },
   {
     "id": "zombie",
     "name": "Zombie",
+    "portrait": "",
     "level": 1,
     "hp": 10,
     "maxHp": 10,
     "xp": 20,
-    "shift": 0,
-    "maneuvers": [
-      { "name": "Shambling Grab", "dice": [4, 5], "damage": "D6", "effect": "On hit: target -1 Shift next round" },
-      { "name": "Rotting Slam", "dice": [5, 4], "damage": "D6+1" },
-      { "name": "Hungry Lunge", "dice": [3, 4], "damage": "D6" }
+    "guide": 0,
+    "initiative": -2,
+    "gambits": [
+      { 
+        "name": "Shambling Grab", 
+        "dice": [4, 5], 
+        "damage": "1d6",
+        "effect": {
+          "id": "shamble_slow",
+          "name": "Grabbed",
+          "description": "-1 Guide",
+          "timing": "onHit",
+          "target": "opponent",
+          "duration": 1,
+          "stacks": false,
+          "action": { "type": "modifyGuide", "value": -1 }
+        }
+      },
+      { "name": "Rotting Slam", "dice": [5, 4], "damage": "1d6+1" },
+      { "name": "Hungry Lunge", "dice": [3, 4], "damage": "1d6" }
     ],
-    "interrupts": [
-      { "trigger": "Primary 3", "effect": "-2 damage", "type": "armor" }
+    "ripostes": [
+      {
+        "id": "rotting_hide",
+        "name": "Rotting Hide",
+        "trigger": { "die": "primary", "value": 3 },
+        "effect": { "type": "modifyDamage", "value": -2 }
+      }
     ],
-    "mishap": "Stumbles over own feet. Falls prone, loses next attack.",
-    "prime": "Bite and hold! D6+3 damage, target grappled (escape DC 4).",
+    "apex": {
+      "name": "Bite and Hold",
+      "damage": "1d6+3",
+      "effect": "Target grappled (escape DC 4)"
+    },
+    "nadir": {
+      "name": "Stumble",
+      "effect": {
+        "id": "stumble_prone",
+        "name": "Prone",
+        "description": "Skip next action",
+        "timing": "turnStart",
+        "target": "self",
+        "duration": 1,
+        "stacks": false,
+        "action": { "type": "skip" }
+      }
+    },
     "loot": "Tattered clothing, occasional coin purse",
     "description": "Slow but durable. The rot makes them hard to hurt with slashing weapons."
   }

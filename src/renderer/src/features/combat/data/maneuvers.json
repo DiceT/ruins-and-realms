@@ -23,7 +23,16 @@
     "tier": 1,
     "dice": [4, 5],
     "damage": "1d6",
-    "effect": "Shield set +1",
+    "effect": {
+      "id": "defensive_stance",
+      "name": "Defensive Stance",
+      "description": "Block 1 damage",
+      "timing": "onTakeDamage",
+      "target": "self",
+      "duration": 1,
+      "stacks": false,
+      "action": { "type": "modifyDamage", "value": -1 }
+    },
     "description": "Conservative swing, shield high"
   },
   {
@@ -32,7 +41,16 @@
     "tier": 1,
     "dice": [3, 6],
     "damage": "1d6-1",
-    "effect": "Target loses 1 Shift Point next round",
+    "effect": {
+      "id": "shield_stun",
+      "name": "Staggered",
+      "description": "-1 Guide next round",
+      "timing": "roundStart",
+      "target": "opponent",
+      "duration": 1,
+      "stacks": false,
+      "action": { "type": "modifyGuide", "value": -1 }
+    },
     "description": "Lead with the shield, sword following behind"
   },
   {
@@ -50,7 +68,16 @@
     "tier": 1,
     "dice": [3, 5],
     "damage": "1d6-2",
-    "effect": "+1 Defense this round",
+    "effect": {
+      "id": "warding_defense",
+      "name": "Warded",
+      "description": "Block 1 damage (stacks)",
+      "timing": "onTakeDamage",
+      "target": "self",
+      "duration": 1,
+      "stacks": true,
+      "action": { "type": "modifyDamage", "value": -1 }
+    },
     "description": "Keep them at distance"
   },
   {
